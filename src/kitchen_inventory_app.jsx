@@ -421,9 +421,8 @@ export default function App() {
   const saveStock = useCallback(async (newStock) => {
     setStock(newStock);
     dualSet("stock", STOCK_KEY, newStock);
-    snapshotStock(newStock);
     flash();
-  }, [snapshotStock]);
+  }, [dualSet]);
 
   const saveItemField = useCallback(async (id, field, rawVal) => {
     const numFields = ["upu", "max_stock", "reorder"];
@@ -540,7 +539,7 @@ export default function App() {
       dualSet("usage", USAGE_KEY, newLog);
       return newLog;
     });
-  }, []);
+  }, [dualSet]);
 
   // Compute weekly consumption for each item across all logged weeks
   const computeUsage = useCallback((log) => {
@@ -570,7 +569,9 @@ export default function App() {
 
   const updateStock = (id, val) => {
     const n = parseInt(val);
-    saveStock({ ...stock, [id]: isNaN(n) ? 0 : Math.max(0, n) });
+    const newStock = { ...stock, [id]: isNaN(n) ? 0 : Math.max(0, n) };
+    saveStock(newStock);
+    snapshotStock(newStock);
   };
 
   if (!user) return <LoginScreen onLogin={u => { setUser(u); setGroup(u.group || "demo"); setLoginError(""); }} error={loginError} setError={setLoginError} />;
