@@ -225,8 +225,8 @@ const USAGE_KEY    = (g) => storageKey(g, "usage");
 
 // ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
 // Replace these two values with your own from supabase.com → Project Settings → API
-const SUPABASE_URL   = "YOUR_SUPABASE_URL";
-const SUPABASE_ANON  = "YOUR_SUPABASE_ANON_KEY";
+const SUPABASE_URL   = "https://fsvlxosbbevzyvegbqry.supabase.co";
+const SUPABASE_ANON  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdmx4b3NiYmV2enl2ZWdicXJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0NzQ2MjgsImV4cCI6MjA4OTA1MDYyOH0.AcnnB4QecNHEu3-N_VS6aPHrpt9kq464arjNc2DNugU";
 const SUPABASE_READY = SUPABASE_URL !== "YOUR_SUPABASE_URL";
 
 // Lightweight REST helper — no SDK needed
