@@ -368,7 +368,7 @@ export default function App() {
   const [sectionOverrides, setSectionOverrides]   = useState({});
   const [addedItems, setAddedItems]               = useState({});
   const [orders, setOrders]                       = useState({});
-  const [settings, setSettings]                   = useState({ orderDay: 3 });
+  const [settings, setSettings]                   = useState({ orderDay: 3, vendors: [] });
   const [usageLog, setUsageLog]                   = useState({});
   const [inventory, setInventory]                 = useState(DEFAULT_INVENTORY);
   const [view, setView]                           = useState("inventory");
@@ -398,7 +398,7 @@ export default function App() {
       const sv    = await loadKey("sections", SECTION_KEY,  {});
       const ai    = await loadKey("added",    ADDED_KEY,    {});
       const ord   = await loadKey("orders",   ORDERS_KEY,   {});
-      const sett  = await loadKey("settings", SETTINGS_KEY, { orderDay: 3 });
+      const sett  = await loadKey("settings", SETTINGS_KEY, { orderDay: 3, vendors: [] });
       const usage = await loadKey("usage",    USAGE_KEY,    {});
 
       setStock(st); setOverrides(ov); setSectionOverrides(sv); setAddedItems(ai);
@@ -407,6 +407,35 @@ export default function App() {
       const inv = applyOverridesAndAdded(baseInv, ov, sv, ai);
       setInventory(inv);
       autoGenerateOrder(getWeekKey(), ord, inv, st, sett);
+
+      // Auto-reset stock for vendors whose order day was yesterday (end of day reset)
+      if (sett.vendors && sett.vendors.length > 0) {
+        const today = new Date();
+        const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+        const yesterdayDay = yesterday.getDay();
+        const lastResetKey = `last_reset_${yesterdayDay}`;
+        const lastResetDate = localStorage.getItem(lastResetKey);
+        const todayStr = today.toISOString().split("T")[0];
+        if (lastResetDate !== todayStr) {
+          const vendorsToReset = sett.vendors.filter(v => v.autoReset && v.orderDay === yesterdayDay);
+          if (vendorsToReset.length > 0) {
+            const resetNames = new Set(vendorsToReset.map(v => v.name.toLowerCase().trim()));
+            // Build new stock with only those vendor's items zeroed out
+            const allItems = DEFAULT_INVENTORY.flatMap(s => s.items);
+            const newSt = { ...st };
+            allItems.forEach(item => {
+              const sup = (item.supplier || "").toLowerCase().trim();
+              if (resetNames.has(sup)) newSt[item.id] = 0;
+            });
+            if (JSON.stringify(newSt) !== JSON.stringify(st)) {
+              setStock(newSt);
+              window.storage.set(STOCK_KEY(group), JSON.stringify(newSt)).catch(() => {});
+              sbSet(group, "stock", newSt);
+            }
+            localStorage.setItem(lastResetKey, todayStr);
+          }
+        }
+      }
     };
     load();
   }, [group]);
@@ -449,6 +478,50 @@ export default function App() {
     }
     flash();
   }, [addedItems, overrides, sectionOverrides, group, dualSet]);
+
+  // Add a brand new custom section
+  const addSection = useCallback((sectionName) => {
+    const key = sectionName.trim();
+    if (!key) return;
+    // Add an empty placeholder item so section is visible
+    const newId = Date.now();
+    const newItem = { id: newId, name: "New Item", order_unit: "Case", upu: 1, supplier: "", max_stock: 1, reorder: 1, _added: true };
+    setAddedItems(prev => {
+      const newAi = { ...prev, [key]: [...(prev[key] || []), newItem] };
+      dualSet("added", ADDED_KEY, newAi);
+      const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
+      setInventory(applyOverridesAndAdded(baseInv, overrides, sectionOverrides, newAi));
+      return newAi;
+    });
+    flash();
+  }, [overrides, sectionOverrides, group, dualSet]);
+
+  // Delete an entire section (hides default sections, removes added sections)
+  const deleteSection = useCallback((sectionKey) => {
+    // Remove all added items in this section
+    setAddedItems(prev => {
+      const newAi = { ...prev };
+      delete newAi[sectionKey];
+      dualSet("added", ADDED_KEY, newAi);
+      // Also hide all default items in this section via overrides
+      setOverrides(prevOv => {
+        const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
+        const sec = baseInv.find(s => s.section === sectionKey || (sectionOverrides[s.section] === sectionKey));
+        let newOv = { ...prevOv };
+        if (sec) {
+          sec.items.forEach(item => {
+            newOv[item.id] = { ...(newOv[item.id] || {}), _hidden: true };
+          });
+        }
+        dualSet("itemdata", ITEMDATA_KEY, newOv);
+        const inv = applyOverridesAndAdded(baseInv, newOv, sectionOverrides, newAi);
+        setInventory(inv);
+        return newOv;
+      });
+      return newAi;
+    });
+    flash();
+  }, [overrides, sectionOverrides, group, dualSet]);
 
   const saveSectionName = useCallback(async (originalName, newName) => {
     if (!newName.trim() || newName === originalName) return;
@@ -494,6 +567,50 @@ export default function App() {
     }
     flash();
   }, [addedItems, overrides, sectionOverrides, group, dualSet]);
+
+  // Add a brand new custom section
+  const addSection = useCallback((sectionName) => {
+    const key = sectionName.trim();
+    if (!key) return;
+    // Add an empty placeholder item so section is visible
+    const newId = Date.now();
+    const newItem = { id: newId, name: "New Item", order_unit: "Case", upu: 1, supplier: "", max_stock: 1, reorder: 1, _added: true };
+    setAddedItems(prev => {
+      const newAi = { ...prev, [key]: [...(prev[key] || []), newItem] };
+      dualSet("added", ADDED_KEY, newAi);
+      const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
+      setInventory(applyOverridesAndAdded(baseInv, overrides, sectionOverrides, newAi));
+      return newAi;
+    });
+    flash();
+  }, [overrides, sectionOverrides, group, dualSet]);
+
+  // Delete an entire section (hides default sections, removes added sections)
+  const deleteSection = useCallback((sectionKey) => {
+    // Remove all added items in this section
+    setAddedItems(prev => {
+      const newAi = { ...prev };
+      delete newAi[sectionKey];
+      dualSet("added", ADDED_KEY, newAi);
+      // Also hide all default items in this section via overrides
+      setOverrides(prevOv => {
+        const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
+        const sec = baseInv.find(s => s.section === sectionKey || (sectionOverrides[s.section] === sectionKey));
+        let newOv = { ...prevOv };
+        if (sec) {
+          sec.items.forEach(item => {
+            newOv[item.id] = { ...(newOv[item.id] || {}), _hidden: true };
+          });
+        }
+        dualSet("itemdata", ITEMDATA_KEY, newOv);
+        const inv = applyOverridesAndAdded(baseInv, newOv, sectionOverrides, newAi);
+        setInventory(inv);
+        return newOv;
+      });
+      return newAi;
+    });
+    flash();
+  }, [overrides, sectionOverrides, group, dualSet]);
 
   const autoGenerateOrder = useCallback((weekKey, existingOrders, inv, currentStock, sett) => {
     if (existingOrders[weekKey]) return;
@@ -579,6 +696,7 @@ export default function App() {
   return (
     <div style={{ minHeight:"100vh", background:"#0f172a", fontFamily:"'DM Sans',sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+      <style>{`@media (max-width: 768px) { .edit-pencil { display: none !important; } } .edit-cell:hover .edit-pencil { display: inline !important; }`}</style>
       {/* ── Top header: logo + user ── */}
       <header style={{ background:"#1e293b", borderBottom:"1px solid #1e293b", padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:60, position:"sticky", top:0, zIndex:101 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -645,7 +763,7 @@ export default function App() {
         {(view==="inventory" || user.role==="employee") &&
           <EmployeeView inventory={inventory} stock={stock} updateStock={updateStock} orderDay={settings.orderDay} />}
         {view==="backend" && user.role==="owner" &&
-          <BackendView inventory={inventory} stock={stock} saveItemField={saveItemField} saveSectionName={saveSectionName} addItem={addItem} removeItem={removeItem} />}
+          <BackendView inventory={inventory} stock={stock} saveItemField={saveItemField} saveSectionName={saveSectionName} addItem={addItem} removeItem={removeItem} addSection={addSection} deleteSection={deleteSection} />}
         {view==="order" && user.role==="owner" &&
           <OrderView inventory={inventory} stock={stock} orders={orders} currentWeekKey={getWeekKey()} saveOrder={saveOrder} settings={settings} />}
         {view==="history" && user.role==="owner" &&
@@ -661,17 +779,41 @@ export default function App() {
 
 // ─── MOE LOGO ─────────────────────────────────────────────────────────────────
 function MoeLogo({ size = "md" }) {
-  const s = size === "lg" ? 2 : 1;
-  const w = 72 * s, h = 36 * s;
+  const scale = size === "lg" ? 1.8 : size === "sm" ? 0.7 : 1;
+  const w = Math.round(120 * scale);
+  const h = Math.round(44 * scale);
   return (
-    <svg width={w} height={h} viewBox="0 0 72 36" xmlns="http://www.w3.org/2000/svg" style={{ display:"block", flexShrink:0 }}>
-      {/* Flame icon */}
-      <path d="M8 18 C6.5 14 5 12 6 9 C7 6 9 5 9 5 C8.5 8 10 9 11 11 C12 9 11.5 7 13 5 C14 8 14 11 12.5 13 C13.5 12 14.5 12 14.5 14 C14.5 17 12 19 10.5 19 C9 19 8 18 8 18Z" fill="#f97316"/>
-      <path d="M9.5 16 C9 14.5 9.5 13 10.5 12 C11 13 11.5 14.5 11 16 C10.5 17 9.5 17 9.5 16Z" fill="#fbbf24"/>
-      {/* M in white */}
-      <text x="17" y="26" fontFamily="'DM Sans',sans-serif" fontWeight="800" fontSize="22" fill="#f1f5f9" letterSpacing="-1">M</text>
-      {/* OE in orange */}
-      <text x="33" y="26" fontFamily="'DM Sans',sans-serif" fontWeight="800" fontSize="22" fill="#f97316" letterSpacing="-1">OE</text>
+    <svg width={w} height={h} viewBox="0 0 120 44" xmlns="http://www.w3.org/2000/svg" style={{ display:"block", flexShrink:0 }}>
+      {/* ── AI face head ── */}
+      <rect x="2" y="6" width="36" height="36" rx="9" fill="#1e293b" stroke="#f97316" stroke-width="1.5"/>
+      {/* Circuit line top */}
+      <line x1="20" y1="6" x2="20" y2="2" stroke="#f97316" strokeWidth="1.5"/>
+      <circle cx="20" cy="1" r="2" fill="#f97316"/>
+      {/* Circuit lines sides */}
+      <line x1="2" y1="18" x2="-1" y2="18" stroke="#475569" strokeWidth="1"/>
+      <circle cx="-2" cy="18" r="1.5" fill="#475569"/>
+      <line x1="38" y1="18" x2="41" y2="18" stroke="#f97316" strokeWidth="1.5"/>
+      <circle cx="42" cy="18" r="1.5" fill="#f97316"/>
+      <line x1="38" y1="26" x2="41" y2="26" stroke="#475569" strokeWidth="1"/>
+      <circle cx="42" cy="26" r="1.5" fill="#475569"/>
+      {/* Left ear port */}
+      <rect x="0" y="15" width="4" height="12" rx="2" fill="#334155"/>
+      {/* Right ear port */}
+      <rect x="36" y="15" width="4" height="12" rx="2" fill="#334155"/>
+      {/* Ring eye left */}
+      <circle cx="13" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
+      <circle cx="13" cy="21" r="3.5" fill="#f97316"/>
+      <circle cx="14.5" cy="19.5" r="1.2" fill="#fef3c7"/>
+      {/* Ring eye right */}
+      <circle cx="27" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
+      <circle cx="27" cy="21" r="3.5" fill="#f97316"/>
+      <circle cx="28.5" cy="19.5" r="1.2" fill="#fef3c7"/>
+      {/* Smile with circuit end dots */}
+      <path d="M13 33 Q20 38 27 33" fill="none" stroke="#f97316" strokeWidth="1.8" strokeLinecap="round"/>
+      <circle cx="13" cy="33" r="2" fill="#f97316"/>
+      <circle cx="27" cy="33" r="2" fill="#f97316"/>
+      {/* ── MOE wordmark ── */}
+      <text x="50" y="32" fontFamily="'DM Sans',sans-serif" fontWeight="900" fontSize="26" letterSpacing="-1.5" fill="#f1f5f9">M<tspan fill="#f97316">OE</tspan></text>
     </svg>
   );
 }
@@ -703,21 +845,30 @@ function LoginScreen({ onLogin, error, setError }) {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <div style={{ width:380 }}>
         <div style={{ textAlign:"center", marginBottom:32 }}>
-          <div style={{ display:"flex", justifyContent:"center", alignItems:"center", gap:10, marginBottom:12 }}>
-            {/* Flame */}
-            <svg width="38" height="48" viewBox="0 0 38 48" xmlns="http://www.w3.org/2000/svg">
-              <path d="M19 44 C11 44 5 38 5 30 C5 22 10 18 12 14 C13 11 12 8 14 5 C14 5 14 10 17 13 C18 10 17 6 20 3 C22 8 22 13 20 17 C23 15 25 14 26 16 C28 19 28 23 26 27 C28 25 30 25 30 28 C30 35 25 44 19 44Z" fill="#f97316"/>
-              <path d="M19 40 C15 40 12 37 12 33 C12 29 14 27 15 24 C16 26 16 29 15 31 C17 29 18 26 18 23 C20 25 21 28 20 31 C22 29 23 28 23 30 C23 34 21 40 19 40Z" fill="#fbbf24"/>
-              <path d="M19 36 C17.5 36 16.5 35 16.5 33 C16.5 31.5 17.5 30 19 29 C20.5 30 21.5 31.5 21.5 33 C21.5 35 20.5 36 19 36Z" fill="#fef3c7"/>
+          <div style={{ display:"flex", justifyContent:"center", alignItems:"center", marginBottom:12 }}>
+            <svg width="216" height="80" viewBox="0 0 120 44" xmlns="http://www.w3.org/2000/svg" style={{ display:"block" }}>
+              <rect x="2" y="6" width="36" height="36" rx="9" fill="#1e293b" stroke="#f97316" strokeWidth="1.5"/>
+              <line x1="20" y1="6" x2="20" y2="2" stroke="#f97316" strokeWidth="1.5"/>
+              <circle cx="20" cy="1" r="2" fill="#f97316"/>
+              <line x1="38" y1="18" x2="41" y2="18" stroke="#f97316" strokeWidth="1.5"/>
+              <circle cx="42" cy="18" r="1.5" fill="#f97316"/>
+              <line x1="38" y1="26" x2="41" y2="26" stroke="#475569" strokeWidth="1"/>
+              <circle cx="42" cy="26" r="1.5" fill="#475569"/>
+              <rect x="0" y="15" width="4" height="12" rx="2" fill="#334155"/>
+              <rect x="36" y="15" width="4" height="12" rx="2" fill="#334155"/>
+              <circle cx="13" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
+              <circle cx="13" cy="21" r="3.5" fill="#f97316"/>
+              <circle cx="14.5" cy="19.5" r="1.2" fill="#fef3c7"/>
+              <circle cx="27" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
+              <circle cx="27" cy="21" r="3.5" fill="#f97316"/>
+              <circle cx="28.5" cy="19.5" r="1.2" fill="#fef3c7"/>
+              <path d="M13 33 Q20 38 27 33" fill="none" stroke="#f97316" strokeWidth="1.8" strokeLinecap="round"/>
+              <circle cx="13" cy="33" r="2" fill="#f97316"/>
+              <circle cx="27" cy="33" r="2" fill="#f97316"/>
+              <text x="50" y="32" fontFamily="'DM Sans',sans-serif" fontWeight="900" fontSize="26" letterSpacing="-1.5" fill="#f1f5f9">M<tspan fill="#f97316">OE</tspan></text>
             </svg>
-            <div style={{ textAlign:"left" }}>
-              <div style={{ display:"flex", alignItems:"baseline", gap:0 }}>
-                <span style={{ color:"#f1f5f9", fontWeight:800, fontSize:42, lineHeight:1, letterSpacing:"-2px", fontFamily:"'DM Sans',sans-serif" }}>M</span>
-                <span style={{ color:"#f97316", fontWeight:800, fontSize:42, lineHeight:1, letterSpacing:"-2px", fontFamily:"'DM Sans',sans-serif" }}>OE</span>
-              </div>
-              <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", letterSpacing:"2px", marginTop:2 }}>MAKE ORDERING EASY</div>
-            </div>
           </div>
+          <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", letterSpacing:"2px", textAlign:"center", marginBottom:4 }}>MAKE ORDERING EASY</div>
           <p style={{ color:"#64748b", fontSize:14, margin:0 }}>Sign in to continue</p>
         </div>
         <div style={{ background:"#1e293b", borderRadius:16, border:"1px solid #334155", padding:28 }}>
@@ -789,6 +940,7 @@ function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
                     <button onClick={() => updateStock(item.id, Math.max(0,s-1))}
                       style={{ width:26, height:26, background:"#334155", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
                     <input type="number" value={s} min={0} onChange={e => updateStock(item.id, e.target.value)}
+                      onFocus={e => e.target.select()}
                       style={{ width:48, background:"#0f172a", border:"1px solid #22c55e", borderRadius:6, padding:"4px 6px", color:"#4ade80", fontSize:13, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
                     <button onClick={() => updateStock(item.id, s+1)}
                       style={{ width:26, height:26, background:"#334155", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
@@ -820,13 +972,13 @@ function EditableCell({ value, onSave, type="text", width=80 }) {
   const cancel = () => { setEditing(false); setDraft(String(value)); };
   if (!editing) return (
     <div onClick={open} title="Click to edit"
-      style={{ cursor:"text", color:"#e2e8f0", fontSize:12, padding:"4px 6px", borderRadius:5, border:"1px solid transparent", display:"inline-flex", alignItems:"center", gap:4, minWidth:width, transition:"all 0.12s" }}
+      className="edit-cell" style={{ cursor:"text", color:"#e2e8f0", fontSize:12, padding:"4px 6px", borderRadius:5, border:"1px solid transparent", display:"inline-flex", alignItems:"center", gap:4, minWidth:width, transition:"all 0.12s" }}
       onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.background="#1a2540"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor="transparent"; e.currentTarget.style.background="transparent"; }}>
       <span style={{ flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
         {value!==""&&value!==null&&value!==undefined ? String(value) : <span style={{ color:"#475569", fontStyle:"italic" }}>—</span>}
       </span>
-      <span style={{ color:"#f97316", fontSize:9, opacity:0.7, flexShrink:0 }}>✏</span>
+      <span className="edit-pencil" style={{ color:"#f97316", fontSize:9, opacity:0.7, flexShrink:0 }}>✏</span>
     </div>
   );
   return (
@@ -847,7 +999,7 @@ function OrderUnitSelect({ value, onSave }) {
       onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.background="#1a2540"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor="transparent"; e.currentTarget.style.background="transparent"; }}>
       <span style={{ flex:1 }}>{value||"—"}</span>
-      <span style={{ color:"#f97316", fontSize:9, opacity:0.7 }}>✏</span>
+      <span className="edit-pencil" style={{ color:"#f97316", fontSize:9, opacity:0.7 }}>✏</span>
     </div>
   );
   return (
@@ -859,12 +1011,17 @@ function OrderUnitSelect({ value, onSave }) {
 }
 
 // ─── EDITABLE SECTION HEADER ──────────────────────────────────────────────────
-function EditableSectionHeader({ label, onSave }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft]     = useState(label);
+function EditableSectionHeader({ label, onSave, onDelete }) {
+  const [editing, setEditing]   = useState(false);
+  const [confirm, setConfirm]   = useState(false);
+  const [draft, setDraft]       = useState(label);
   const open   = () => { setDraft(label); setEditing(true); };
   const commit = () => { setEditing(false); onSave(draft); };
   const cancel = () => { setEditing(false); setDraft(label); };
+  const handleDelete = () => {
+    if (confirm) { onDelete(); }
+    else { setConfirm(true); setTimeout(() => setConfirm(false), 2500); }
+  };
   return (
     <div style={{ background:"#0f172a", padding:"6px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none", display:"flex", alignItems:"center", gap:8 }}>
       {editing ? (
@@ -874,12 +1031,51 @@ function EditableSectionHeader({ label, onSave }) {
       ) : (
         <span style={{ color:"#f97316", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", flex:1 }}>{label}</span>
       )}
-      {!editing && (
-        <button onClick={open} title="Edit section name"
-          style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:11, padding:"2px 4px", borderRadius:4, lineHeight:1 }}
+      {!editing && (<>
+        <button onClick={open} title="Rename section"
+          style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:11, padding:"2px 6px", borderRadius:4, lineHeight:1, transition:"color 0.15s" }}
           onMouseEnter={e => e.currentTarget.style.color="#f97316"}
           onMouseLeave={e => e.currentTarget.style.color="#475569"}>✏ rename</button>
-      )}
+        <button onClick={handleDelete} title={confirm ? "Click again to confirm" : "Delete section"}
+          style={{ background: confirm ? "#7f1d1d" : "none", border:`1px solid ${confirm ? "#ef4444" : "transparent"}`, color: confirm ? "#fca5a5" : "#475569", cursor:"pointer", fontSize:11, padding:"2px 8px", borderRadius:4, lineHeight:1.4, transition:"all 0.15s" }}
+          onMouseEnter={e => { if(!confirm){ e.currentTarget.style.color="#ef4444"; e.currentTarget.style.borderColor="#ef4444"; }}}
+          onMouseLeave={e => { if(!confirm){ e.currentTarget.style.color="#475569"; e.currentTarget.style.borderColor="transparent"; }}}>
+          {confirm ? "confirm ✕" : "✕ delete"}
+        </button>
+      </>)}
+    </div>
+  );
+}
+
+// Add Section Button with inline input
+function AddSectionButton({ onAdd }) {
+  const [open, setOpen]   = useState(false);
+  const [name, setName]   = useState("");
+  const submit = () => {
+    if (name.trim()) { onAdd(name.trim()); setName(""); setOpen(false); }
+  };
+  if (!open) return (
+    <button onClick={() => setOpen(true)}
+      style={{ background:"none", border:"1px dashed #334155", borderRadius:8, color:"#475569", cursor:"pointer", fontSize:13, padding:"7px 16px", display:"flex", alignItems:"center", gap:6, transition:"all 0.15s" }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.color="#f97316"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#475569"; }}>
+      ＋ Add Section
+    </button>
+  );
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+      <input autoFocus value={name} onChange={e => setName(e.target.value)}
+        placeholder="Section name..."
+        onKeyDown={e => { if(e.key==="Enter")submit(); if(e.key==="Escape"){setOpen(false);setName("");} }}
+        style={{ background:"#1e293b", border:"1px solid #f97316", borderRadius:7, padding:"7px 12px", color:"#f1f5f9", fontSize:13, outline:"none", width:180 }} />
+      <button onClick={submit}
+        style={{ background:"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:7, padding:"7px 14px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+        Add
+      </button>
+      <button onClick={() => { setOpen(false); setName(""); }}
+        style={{ background:"transparent", border:"1px solid #334155", borderRadius:7, padding:"7px 10px", color:"#64748b", fontSize:13, cursor:"pointer" }}>
+        Cancel
+      </button>
     </div>
   );
 }
@@ -920,16 +1116,19 @@ function HoverRow({ children, bg, onRemove }) {
 }
 
 // ─── BACKEND VIEW ─────────────────────────────────────────────────────────────
-function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem, removeItem }) {
+function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem, removeItem, addSection, deleteSection }) {
   return (
     <div>
-      <div style={{ marginBottom:16 }}>
-        <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Backend — Edit Item Details</h2>
-        <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Click any orange cell to edit · Hover a row to remove it</p>
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
+        <div>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Backend — Edit Item Details</h2>
+          <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Click any orange cell to edit · Hover a row to remove it</p>
+        </div>
+        <AddSectionButton onAdd={addSection} />
       </div>
       {inventory.map(section => (
         <div key={section.section} style={{ marginBottom:12 }}>
-          <EditableSectionHeader label={section.section} onSave={newName => saveSectionName(section._original || section.section, newName)} />
+          <EditableSectionHeader label={section.section} onSave={newName => saveSectionName(section._original || section.section, newName)} onDelete={() => deleteSection(section.section)} />
           <div style={{ maxHeight:400, overflowY:"auto", overflowX:"auto" }}>
             <table style={{ width:"100%", tableLayout:"fixed", borderCollapse:"collapse", background:"#1e293b", border:"1px solid #334155", borderTop:"none", borderRadius:"0 0 12px 12px" }}>
               <thead>
@@ -947,7 +1146,7 @@ function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem
                     ["Status",        "#475569", "center",  90],
                   ].map(([h, color, align, w]) => (
                     <th key={h} style={{ position:"sticky", top:0, zIndex:2, background:"#0f172a", color, fontSize:10, fontWeight:600, padding:"8px 10px", textAlign:align, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase", whiteSpace:"nowrap", minWidth:w, width:w }}>
-                      {h}{color==="#f97316"?" ✏":""}
+                      <>{h}{color==="#f97316"?<span className="edit-pencil"> ✏</span>:""}</>
                     </th>
                   ))}
                 </tr>
@@ -1508,30 +1707,118 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion }) {
 
 // ─── SETTINGS VIEW ────────────────────────────────────────────────────────────
 function SettingsView({ settings, saveSettings }) {
-  const [orderDay, setOrderDay] = useState(settings.orderDay);
-  const handleSave = () => saveSettings({ ...settings, orderDay: parseInt(orderDay) });
+  const [vendors, setVendors] = useState(
+    settings.vendors && settings.vendors.length > 0
+      ? settings.vendors
+      : [{ id: Date.now(), name: "", orderDay: 3, deliveryDay: 4, autoReset: true }]
+  );
+
+  const updateVendor = (id, field, value) => {
+    setVendors(prev => prev.map(v => v.id === id ? { ...v, [field]: value } : v));
+  };
+
+  const addVendor = () => {
+    setVendors(prev => [...prev, { id: Date.now(), name: "", orderDay: 3, deliveryDay: 4, autoReset: true }]);
+  };
+
+  const removeVendor = (id) => {
+    setVendors(prev => prev.filter(v => v.id !== id));
+  };
+
+  const handleSave = () => {
+    saveSettings({ ...settings, orderDay: vendors[0]?.orderDay ?? 3, vendors });
+  };
+
+  const inputStyle = { background:"#0f172a", border:"1px solid #334155", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", width:"100%", boxSizing:"border-box" };
+  const selectStyle = { ...inputStyle, cursor:"pointer" };
+  const labelStyle = { display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" };
+
   return (
     <div>
-      <div style={{ marginBottom:24 }}>
+      <div style={{ marginBottom:20 }}>
         <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Settings</h2>
-        <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Configure order schedule and preferences</p>
+        <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Set order and delivery schedules per vendor</p>
       </div>
-      <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:24, maxWidth:480 }}>
-        <div style={{ marginBottom:20 }}>
-          <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:600, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Order Day</label>
-          <p style={{ color:"#475569", fontSize:12, margin:"0 0 10px" }}>New order lists generate on this day each week. The receive date is set to the following day.</p>
-          <select value={orderDay} onChange={e => setOrderDay(e.target.value)}
-            style={{ background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"9px 14px", color:"#f1f5f9", fontSize:14, outline:"none", width:"100%", cursor:"pointer" }}
-            onFocus={e => e.target.style.borderColor="#f97316"}
-            onBlur={e => e.target.style.borderColor="#334155"}>
-            {DAYS.map((d,i) => <option key={d} value={i}>{d}</option>)}
-          </select>
-        </div>
-        <div style={{ background:"#0f172a", borderRadius:8, padding:"12px 16px", marginBottom:20, fontSize:12, color:"#64748b" }}>
-          <div style={{ marginBottom:4 }}>📅 <span style={{ color:"#94a3b8" }}>Next order date:</span> {fmtDate(getWeekdayDate(new Date(), parseInt(orderDay)))}</div>
-          <div>📦 <span style={{ color:"#94a3b8" }}>Expected receive:</span> {fmtDate(getWeekdayDate(new Date(), parseInt(orderDay)+1))}</div>
-        </div>
-        <button onClick={handleSave} style={{ background:"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:8, padding:"10px 24px", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+
+      <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:16 }}>
+        {vendors.map((vendor, idx) => (
+          <div key={vendor.id} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:18 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+              <span style={{ color:"#f97316", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", letterSpacing:"1px", textTransform:"uppercase" }}>
+                Vendor {idx + 1}
+              </span>
+              {vendors.length > 1 && (
+                <button onClick={() => removeVendor(vendor.id)}
+                  style={{ background:"transparent", border:"1px solid #334155", borderRadius:6, color:"#64748b", cursor:"pointer", fontSize:11, padding:"3px 8px" }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#64748b"; }}>
+                  Remove
+                </button>
+              )}
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
+              <div style={{ gridColumn:"1 / -1" }}>
+                <label style={labelStyle}>Vendor Name</label>
+                <input value={vendor.name} onChange={e => updateVendor(vendor.id, "name", e.target.value)}
+                  placeholder="e.g. Anacapri, Pepsi, Market..."
+                  style={inputStyle}
+                  onFocus={e => e.target.style.borderColor="#f97316"}
+                  onBlur={e => e.target.style.borderColor="#334155"} />
+              </div>
+              <div>
+                <label style={labelStyle}>Order Day</label>
+                <select value={vendor.orderDay} onChange={e => updateVendor(vendor.id, "orderDay", parseInt(e.target.value))}
+                  style={selectStyle}
+                  onFocus={e => e.target.style.borderColor="#f97316"}
+                  onBlur={e => e.target.style.borderColor="#334155"}>
+                  {DAYS.map((d,i) => <option key={d} value={i}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Delivery Day</label>
+                <select value={vendor.deliveryDay} onChange={e => updateVendor(vendor.id, "deliveryDay", parseInt(e.target.value))}
+                  style={selectStyle}
+                  onFocus={e => e.target.style.borderColor="#f97316"}
+                  onBlur={e => e.target.style.borderColor="#334155"}>
+                  {DAYS.map((d,i) => <option key={d} value={i}>{d}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ background:"#0f172a", borderRadius:8, padding:"10px 14px", marginBottom:12, fontSize:12, color:"#64748b" }}>
+              <div style={{ marginBottom:3 }}>📅 <span style={{ color:"#94a3b8" }}>Next order:</span> {fmtDate(getWeekdayDate(new Date(), vendor.orderDay))}</div>
+              <div>📦 <span style={{ color:"#94a3b8" }}>Next delivery:</span> {fmtDate(getWeekdayDate(new Date(), vendor.deliveryDay))}</div>
+            </div>
+
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <div style={{ position:"relative", width:40, height:22, flexShrink:0 }}>
+                <input type="checkbox" checked={vendor.autoReset} onChange={e => updateVendor(vendor.id, "autoReset", e.target.checked)}
+                  style={{ opacity:0, width:"100%", height:"100%", position:"absolute", cursor:"pointer", zIndex:1, margin:0 }} />
+                <div style={{ position:"absolute", inset:0, borderRadius:11, background: vendor.autoReset ? "#f97316" : "#334155", transition:"background 0.2s" }}>
+                  <div style={{ position:"absolute", top:2, left: vendor.autoReset ? 20 : 2, width:18, height:18, borderRadius:"50%", background:"#fff", transition:"left 0.2s" }} />
+                </div>
+              </div>
+              <div>
+                <div style={{ color:"#f1f5f9", fontSize:12, fontWeight:500 }}>Auto-reset stock at end of order day</div>
+                <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>Only this vendor's items will reset to 0</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+        {vendors.length < 8 && (
+          <button onClick={addVendor}
+            style={{ background:"none", border:"1px dashed #334155", borderRadius:8, color:"#475569", cursor:"pointer", fontSize:13, padding:"10px 20px", display:"flex", alignItems:"center", gap:6, transition:"all 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.color="#f97316"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#475569"; }}>
+            ＋ Add Vendor
+          </button>
+        )}
+        <button onClick={handleSave}
+          style={{ background:"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:8, padding:"10px 24px", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>
           Save Settings
         </button>
       </div>
