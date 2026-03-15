@@ -785,7 +785,7 @@ function MoeLogo({ size = "md" }) {
   return (
     <svg width={w} height={h} viewBox="0 0 120 44" xmlns="http://www.w3.org/2000/svg" style={{ display:"block", flexShrink:0 }}>
       {/* ── AI face head ── */}
-      <rect x="2" y="6" width="36" height="36" rx="9" fill="#1e293b" stroke="#f97316" stroke-width="1.5"/>
+      <rect x="2" y="6" width="36" height="36" rx="9" fill="#1e293b" stroke="#f97316" strokeWidth="1.5"/>
       {/* Circuit line top */}
       <line x1="20" y1="6" x2="20" y2="2" stroke="#f97316" strokeWidth="1.5"/>
       <circle cx="20" cy="1" r="2" fill="#f97316"/>
