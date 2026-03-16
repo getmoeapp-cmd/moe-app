@@ -861,7 +861,23 @@ function LoginScreen({ onLogin, error, setError }) {
 
 // ─── EMPLOYEE VIEW ────────────────────────────────────────────────────────────
 function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
-  const urgentItems = inventory.flatMap(s => s.items).filter(item => (stock[item.id] ?? 0) < item.reorder);
+  const allItems = inventory.flatMap(s => s.items.map(i => ({ ...i, sectionLabel: s.section })));
+  const urgentItems = allItems.filter(item => (stock[item.id] ?? 0) < item.reorder);
+
+  // Group by vendor → then by section within vendor
+  const vendorMap = {};
+  allItems.forEach(item => {
+    const vendor = (item.supplier || "").trim() || "No Vendor";
+    if (!vendorMap[vendor]) vendorMap[vendor] = {};
+    if (!vendorMap[vendor][item.sectionLabel]) vendorMap[vendor][item.sectionLabel] = [];
+    vendorMap[vendor][item.sectionLabel].push(item);
+  });
+  const vendorOrder = Object.keys(vendorMap).sort((a,b) => {
+    if (a === "No Vendor") return 1;
+    if (b === "No Vendor") return -1;
+    return a.localeCompare(b);
+  });
+  const [activeVendor, setActiveVendor] = React.useState("ALL");
   return (
     <div>
       {urgentItems.length > 0 && (
@@ -873,49 +889,91 @@ function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
           </div>
         </div>
       )}
+      {/* Vendor tab bar */}
+      <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch", marginBottom:16, paddingBottom:4 }}>
+        <div style={{ display:"flex", gap:8, minWidth:"max-content" }}>
+          {["ALL", ...vendorOrder].map(v => {
+            const isActive = activeVendor === v;
+            const isNoVendor = v === "No Vendor";
+            const urgentCount = v === "ALL" ? urgentItems.length : Object.values(vendorMap[v]||{}).flat().filter(i => (stock[i.id]??0) < i.reorder).length;
+            const activeBg = isNoVendor ? "#334155" : "#f97316";
+            const activeBorder = isNoVendor ? "#64748b" : "#f97316";
+            return (
+              <button key={v} onClick={() => setActiveVendor(v)}
+                style={{ padding:"9px 18px", borderRadius:10, border:"1px solid " + (isActive ? activeBorder : "#334155"), background:isActive ? activeBg : "#1e293b", color:isActive?"#fff":"#94a3b8", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap", transition:"all 0.15s", flexShrink:0 }}>
+                {v === "ALL" ? "All Vendors" : v}
+                {urgentCount > 0 && <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:10, padding:"1px 6px", fontSize:10 }}>{urgentCount}</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Stock count header */}
       <div style={{ marginBottom:16, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
         <div>
-          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Stock Count</h2>
-          <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Enter current stock for each item</p>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>
+            {activeVendor === "ALL" ? "All Stock" : activeVendor}
+          </h2>
+          <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>
+            {activeVendor === "ALL" ? `${allItems.length} items across ${vendorOrder.length} vendor${vendorOrder.length!==1?"s":""}` : `${Object.values(vendorMap[activeVendor]||{}).flat().length} items`}
+          </p>
         </div>
         <DateWeekBadge orderDay={orderDay} />
       </div>
-      {inventory.map(section => (
-        <div key={section.section} style={{ marginBottom:12 }}>
-          <SectionHeader label={section.section} />
-          <div style={{ background:"#1e293b", borderRadius:"0 0 12px 12px", border:"1px solid #334155", borderTop:"none", overflow:"hidden" }}>
-            {section.items.map((item, idx) => {
-              const s = stock[item.id] ?? 0;
-              const status = getStatus(item, s);
-              return (
-                <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 120px 80px 100px", alignItems:"center", padding:"10px 16px", borderBottom:idx<section.items.length-1?"1px solid #0f172a":"none", background:idx%2===0?"#1e293b":"#172033" }}>
-                  <div>
-                    <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:500 }}>{item.name}</div>
-                    <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:1 }}>{item.order_unit} · Max: {item.max_stock}</div>
+
+      {(activeVendor === "ALL" ? vendorOrder : [activeVendor]).map(vendor => {
+        const sections = vendorMap[vendor];
+        const isNoVendor = vendor === "No Vendor";
+        const vendorItemCount = Object.values(sections).flat().length;
+        const vendorUrgent = Object.values(sections).flat().filter(i => (stock[i.id] ?? 0) < i.reorder).length;
+        return (
+          <div key={vendor} style={{ marginBottom:20 }}>
+            {/* Vendor header */}
+            <div style={{ background:"#0f172a", border:`1px solid ${isNoVendor?"#334155":"#f97316"}`, borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:15 }}>{isNoVendor?"📋":"📦"}</span>
+                <span style={{ color:isNoVendor?"#64748b":"#f97316", fontSize:12, fontWeight:700, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{vendor}</span>
+                <span style={{ color:"#334155", fontSize:11 }}>· {vendorItemCount} items</span>
+              </div>
+              {vendorUrgent > 0 && <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"2px 8px", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{vendorUrgent} to order</span>}
+            </div>
+            {/* Sections inside vendor */}
+            <div style={{ border:`1px solid ${isNoVendor?"#334155":"#f97316"}`, borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
+              {Object.entries(sections).map(([secName, items], secIdx) => (
+                <div key={secName}>
+                  <div style={{ background:"#162032", padding:"5px 16px", borderTop: secIdx>0?"1px solid #0f172a":"none" }}>
+                    <span style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"1px", textTransform:"uppercase" }}>{secName.replace(/[^\w\s\-&]/g,"").trim()}</span>
                   </div>
-                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                    <button onClick={() => updateStock(item.id, Math.max(0,s-1))}
-                      style={{ width:26, height:26, background:"#334155", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
-                    <input type="number" value={s} min={0} onChange={e => updateStock(item.id, e.target.value)}
-                      onFocus={e => e.target.select()}
-                      style={{ width:48, background:"#0f172a", border:"1px solid #22c55e", borderRadius:6, padding:"4px 6px", color:"#4ade80", fontSize:13, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
-                    <button onClick={() => updateStock(item.id, s+1)}
-                      style={{ width:26, height:26, background:"#334155", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
-                  </div>
-                  <div style={{ textAlign:"center" }}>
-                    {calcOrderQty(item,s) > 0
-                      ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"3px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>Order {calcOrderQty(item,s)}</span>
-                      : <span style={{ color:"#334155", fontSize:12 }}>—</span>}
-                  </div>
-                  <div style={{ textAlign:"right" }}>
-                    <span style={{ background:status.bg, color:status.color, borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>{status.label}</span>
-                  </div>
+                  {items.map((item, idx) => {
+                    const s = stock[item.id] ?? 0;
+                    const status = getStatus(item, s);
+                    return (
+                      <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 120px 80px 100px", alignItems:"center", padding:"10px 16px", borderBottom:idx<items.length-1?"1px solid #0f172a":"none", background:idx%2===0?"#1e293b":"#172033" }}>
+                        <div>
+                          <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:500 }}>{item.name}</div>
+                          <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:1 }}>{item.order_unit} · Max: {item.max_stock}</div>
+                        </div>
+                        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                          <button onClick={() => updateStock(item.id, Math.max(0,s-1))} style={{ width:26, height:26, background:"#334155", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+                          <input type="number" value={s} min={0} onChange={e => updateStock(item.id, e.target.value)} onFocus={e => e.target.select()} style={{ width:48, background:"#0f172a", border:"1px solid #22c55e", borderRadius:6, padding:"4px 6px", color:"#4ade80", fontSize:13, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
+                          <button onClick={() => updateStock(item.id, s+1)} style={{ width:26, height:26, background:"#334155", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+                        </div>
+                        <div style={{ textAlign:"center" }}>
+                          {calcOrderQty(item,s) > 0 ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"3px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>Order {calcOrderQty(item,s)}</span> : <span style={{ color:"#334155", fontSize:12 }}>—</span>}
+                        </div>
+                        <div style={{ textAlign:"right" }}>
+                          <span style={{ background:status.bg, color:status.color, borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>{status.label}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
