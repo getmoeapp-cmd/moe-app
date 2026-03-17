@@ -407,6 +407,15 @@ export default function App() {
       const inv = applyOverridesAndAdded(baseInv, ov, sv, ai);
       setInventory(inv);
       autoGenerateOrder(getWeekKey(), ord, inv, st, sett);
+      // Push everything to Supabase on load so all keys exist
+      // This ensures new devices always get full data
+      sbSet(group, "stock",    st);
+      sbSet(group, "itemdata", ov);
+      sbSet(group, "sections", sv);
+      sbSet(group, "added",    ai);
+      sbSet(group, "orders",   ord);
+      sbSet(group, "settings", sett);
+      sbSet(group, "usage",    usage);
 
       // Auto-reset stock for vendors whose order day was yesterday (end of day reset)
       if (sett.vendors && sett.vendors.length > 0) {
@@ -445,6 +454,19 @@ export default function App() {
   const dualSet = useCallback((sbKey, localKeyFn, value) => {
     try { localStorage.setItem(localKeyFn(group), JSON.stringify(value)); } catch(e) {}
     sbSet(group, sbKey, value);
+  }, [group]);
+
+  // Force push all current state to Supabase — called on login and on demand
+  const syncAllToSupabase = useCallback((st, ov, sv, ai, ord, sett, usage) => {
+    if (!SUPABASE_READY) return;
+    const g = group;
+    sbSet(g, "stock",    st    || {});
+    sbSet(g, "itemdata", ov    || {});
+    sbSet(g, "sections", sv    || {});
+    sbSet(g, "added",    ai    || {});
+    sbSet(g, "orders",   ord   || {});
+    sbSet(g, "settings", sett  || {});
+    sbSet(g, "usage",    usage || {});
   }, [group]);
 
   const saveStock = useCallback(async (newStock) => {
