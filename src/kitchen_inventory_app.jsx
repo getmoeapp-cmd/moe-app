@@ -449,70 +449,47 @@ export default function App() {
     load();
   }, [group]);
 
-  // ── Real-time sync: poll Supabase every 5s and apply any changes ────────────
+  // ── Real-time sync: poll Supabase every 8s but pause for 15s after any local edit ──
+  const lastLocalEdit = React.useRef(0);
+  const markLocalEdit = () => { lastLocalEdit.current = Date.now(); };
+
   useEffect(() => {
     if (!group || !SUPABASE_READY) return;
 
-    const applyRemoteData = (key, value) => {
-      if (value === null) return;
-      const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
-      switch(key) {
-        case "stock":
-          setStock(prev => JSON.stringify(prev)!==JSON.stringify(value) ? value : prev);
-          break;
-        case "itemdata":
-          setOverrides(prev => {
-            if (JSON.stringify(prev)===JSON.stringify(value)) return prev;
-            return value;
-          });
-          break;
-        case "sections":
-          setSectionOverrides(prev => JSON.stringify(prev)!==JSON.stringify(value) ? value : prev);
-          break;
-        case "added":
-          setAddedItems(prev => JSON.stringify(prev)!==JSON.stringify(value) ? value : prev);
-          break;
-        case "settings":
-          setSettings(prev => JSON.stringify(prev)!==JSON.stringify(value) ? value : prev);
-          break;
-        case "orders":
-          setOrders(prev => JSON.stringify(prev)!==JSON.stringify(value) ? value : prev);
-          break;
-        default: break;
-      }
-    };
-
     const pollSupabase = async () => {
+      // Skip polling for 15 seconds after any local edit to avoid overwriting in-progress changes
+      if (Date.now() - lastLocalEdit.current < 15000) return;
+
       try {
         const res = await sbFetch(`/moe_data?group_id=eq.${encodeURIComponent(group)}&select=data_key,data_value`);
         const rows = await res.json();
         if (!Array.isArray(rows)) return;
         const remoteData = {};
         rows.forEach(r => { try { remoteData[r.data_key] = JSON.parse(r.data_value); } catch {} });
-        ["stock","itemdata","sections","added","settings","orders"].forEach(key => {
-          if (remoteData[key] !== undefined) applyRemoteData(key, remoteData[key]);
-        });
-        // Rebuild inventory from latest state
-        setOverrides(ov => {
-          setAddedItems(ai => {
-            setSectionOverrides(sv => {
-              const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
-              setInventory(applyOverridesAndAdded(baseInv, ov, sv, ai));
-              return sv;
-            });
-            return ai;
-          });
-          return ov;
-        });
+
+        const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
+
+        if (remoteData.stock    !== undefined) setStock(remoteData.stock);
+        if (remoteData.itemdata !== undefined) setOverrides(remoteData.itemdata);
+        if (remoteData.sections !== undefined) setSectionOverrides(remoteData.sections);
+        if (remoteData.added    !== undefined) setAddedItems(remoteData.added);
+        if (remoteData.settings !== undefined) setSettings(remoteData.settings);
+        if (remoteData.orders   !== undefined) setOrders(remoteData.orders);
+
+        const ov = remoteData.itemdata || {};
+        const sv = remoteData.sections || {};
+        const ai = remoteData.added    || {};
+        setInventory(applyOverridesAndAdded(baseInv, ov, sv, ai));
       } catch {}
     };
 
-    const interval = setInterval(pollSupabase, 5000);
+    const interval = setInterval(pollSupabase, 8000);
     return () => clearInterval(interval);
   }, [group]);
 
   // Write to both local storage and Supabase
   const dualSet = useCallback((sbKey, localKeyFn, value) => {
+    markLocalEdit();
     try { localStorage.setItem(localKeyFn(group), JSON.stringify(value)); } catch(e) {}
     sbSet(group, sbKey, value);
   }, [group]);
