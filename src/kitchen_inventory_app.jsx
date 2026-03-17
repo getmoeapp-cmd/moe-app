@@ -742,7 +742,7 @@ export default function App() {
         {(view==="inventory" || user.role==="employee") &&
           <EmployeeView inventory={inventory} stock={stock} updateStock={updateStock} orderDay={settings.orderDay} />}
         {view==="backend" && user.role==="owner" &&
-          <BackendView inventory={inventory} stock={stock} saveItemField={saveItemField} saveSectionName={saveSectionName} addItem={addItem} removeItem={removeItem} addSection={addSection} deleteSection={deleteSection} />}
+          <BackendView inventory={inventory} stock={stock} saveItemField={saveItemField} saveSectionName={saveSectionName} addItem={addItem} removeItem={removeItem} addSection={addSection} deleteSection={deleteSection} onPublish={() => { sbSet(group,"stock",stock); sbSet(group,"itemdata",overrides); sbSet(group,"sections",sectionOverrides); sbSet(group,"added",addedItems); sbSet(group,"orders",orders); sbSet(group,"settings",settings); sbSet(group,"usage",usageLog); flash(); }} />}
         {view==="order" && user.role==="owner" &&
           <OrderView inventory={inventory} stock={stock} orders={orders} currentWeekKey={getWeekKey()} saveOrder={saveOrder} settings={settings} />}
         {view==="history" && user.role==="owner" &&
@@ -1153,7 +1153,7 @@ function HoverRow({ children, bg, onRemove }) {
 }
 
 // ─── BACKEND VIEW ─────────────────────────────────────────────────────────────
-function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem, removeItem, addSection, deleteSection }) {
+function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem, removeItem, addSection, deleteSection, onPublish }) {
   return (
     <div>
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
@@ -1161,28 +1161,36 @@ function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem
           <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Backend — Edit Item Details</h2>
           <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Click any orange cell to edit · Hover a row to remove it</p>
         </div>
-        <AddSectionButton onAdd={addSection} />
+        <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
+          <AddSectionButton onAdd={addSection} />
+          <button onClick={onPublish}
+            style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:"8px 20px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}
+            onMouseEnter={e => e.currentTarget.style.opacity="0.85"}
+            onMouseLeave={e => e.currentTarget.style.opacity="1"}>
+            ☁ Publish Changes
+          </button>
+        </div>
       </div>
       {inventory.map(section => (
         <div key={section.section} style={{ marginBottom:12 }}>
           <EditableSectionHeader label={section.section} onSave={newName => saveSectionName(section._original || section.section, newName)} onDelete={() => deleteSection(section.section)} />
-          <div style={{ maxHeight:400, overflowY:"auto", overflowX:"auto" }}>
+          <div style={{ maxHeight:400, overflowY:"auto", overflowX:"auto", position:"relative" }}>
             <table style={{ width:"100%", tableLayout:"fixed", borderCollapse:"collapse", background:"#1e293b", border:"1px solid #334155", borderTop:"none", borderRadius:"0 0 12px 12px" }}>
               <thead>
                 <tr style={{ background:"#0f172a" }}>
                   {[
-                    ["Item Name",     "#f97316", "left",   170],
-                    ["Order Unit",    "#f97316", "left",    90],
-                    ["Units/Pkg",     "#f97316", "center",  60],
-                    ["Supplier",      "#f97316", "left",   110],
-                    ["Max Stock",     "#f97316", "center",  75],
-                    ["Reorder Pt",    "#f97316", "center",  75],
-                    ["Current Stock", "#475569", "center",  85],
-                    ["Units Needed",  "#475569", "center",  85],
-                    ["Order Qty",     "#475569", "center",  80],
-                    ["Status",        "#475569", "center",  90],
-                  ].map(([h, color, align, w]) => (
-                    <th key={h} style={{ position:"sticky", top:0, zIndex:2, background:"#0f172a", color, fontSize:10, fontWeight:600, padding:"8px 10px", textAlign:align, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase", whiteSpace:"nowrap", minWidth:w, width:w }}>
+                    ["Item Name",     "#f97316", "left",   170, true],
+                    ["Order Unit",    "#f97316", "left",    90, false],
+                    ["Units/Pkg",     "#f97316", "center",  60, false],
+                    ["Supplier",      "#f97316", "left",   110, false],
+                    ["Max Stock",     "#f97316", "center",  75, false],
+                    ["Reorder Pt",    "#f97316", "center",  75, false],
+                    ["Current Stock", "#475569", "center",  85, false],
+                    ["Units Needed",  "#475569", "center",  85, false],
+                    ["Order Qty",     "#475569", "center",  80, false],
+                    ["Status",        "#475569", "center",  90, false],
+                  ].map(([h, color, align, w, stickyLeft]) => (
+                    <th key={h} style={{ position:"sticky", top:0, left:stickyLeft?0:undefined, zIndex:stickyLeft?4:2, background:"#0f172a", color, fontSize:10, fontWeight:600, padding:"8px 10px", textAlign:align, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase", whiteSpace:"nowrap", minWidth:w, width:w, boxShadow:stickyLeft?"2px 0 8px rgba(0,0,0,0.4)":undefined }}>
                       <>{h}{color==="#f97316"?<span className="edit-pencil"> ✏</span>:""}</>
                     </th>
                   ))}
@@ -1197,7 +1205,7 @@ function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem
                   const rowBg    = idx%2===0 ? "#1e293b" : "#172033";
                   return (
                     <HoverRow key={item.id} bg={rowBg} onRemove={() => removeItem(item.id, section.section)}>
-                      <td style={{ padding:"5px 8px" }}>
+                      <td style={{ padding:"5px 8px", position:"sticky", left:0, zIndex:1, background:rowBg, boxShadow:"2px 0 8px rgba(0,0,0,0.4)" }}>
                         <EditableCell value={item.name}      onSave={v => saveItemField(item.id,"name",v)} width={155} />
                       </td>
                       <td style={{ padding:"5px 8px" }}>
