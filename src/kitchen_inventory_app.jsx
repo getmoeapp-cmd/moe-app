@@ -457,7 +457,7 @@ export default function App() {
   const lastLocalEdit = React.useRef(0);
   const markLocalEdit = () => { lastLocalEdit.current = Date.now(); };
 
-  const pullFromSupabase = React.useCallback(async () => {
+  const pullFromSupabase = React.useCallback(async (forceStock = false) => {
     if (!SUPABASE_READY) return;
     try {
       const res = await sbFetch(`/moe_data?group_id=eq.${encodeURIComponent(group)}&select=data_key,data_value`);
@@ -466,12 +466,18 @@ export default function App() {
       const rd = {};
       rows.forEach(r => { try { rd[r.data_key] = JSON.parse(r.data_value); } catch {} });
       const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
-      if (rd.stock    !== undefined) setStock(rd.stock);
+
+      // Always sync inventory structure (items, sections, vendors, settings)
       if (rd.itemdata !== undefined) setOverrides(rd.itemdata);
       if (rd.sections !== undefined) setSectionOverrides(rd.sections);
       if (rd.added    !== undefined) setAddedItems(rd.added);
       if (rd.settings !== undefined) setSettings(rd.settings);
       if (rd.orders   !== undefined) setOrders(rd.orders);
+
+      // Only sync stock if explicitly requested (manual sync button)
+      // Automatic polling never overwrites stock to avoid wiping active counts
+      if (forceStock && rd.stock !== undefined) setStock(rd.stock);
+
       const ov = rd.itemdata || {};
       const sv = rd.sections || {};
       const ai = rd.added    || {};
@@ -729,7 +735,7 @@ export default function App() {
               {syncError ? "SYNC ERR" : lastSync ? `SYNCED ${lastSync.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}` : "SYNCING"}
             </span>
           )}
-          <button onClick={pullFromSupabase}
+          <button onClick={() => pullFromSupabase(true)}
             style={{ background:"none", border:"1px solid #334155", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:11, padding:"3px 8px", fontFamily:"'DM Mono',monospace" }}
             onMouseEnter={e=>{e.currentTarget.style.borderColor="#f97316";e.currentTarget.style.color="#f97316";}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor="#334155";e.currentTarget.style.color="#475569";}}>
