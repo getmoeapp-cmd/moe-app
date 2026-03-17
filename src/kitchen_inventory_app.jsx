@@ -449,6 +449,67 @@ export default function App() {
     load();
   }, [group]);
 
+  // ── Real-time sync: poll Supabase every 5s and apply any changes ────────────
+  useEffect(() => {
+    if (!group || !SUPABASE_READY) return;
+
+    const applyRemoteData = (key, value) => {
+      if (value === null) return;
+      const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
+      switch(key) {
+        case "stock":
+          setStock(prev => JSON.stringify(prev)!==JSON.stringify(value) ? value : prev);
+          break;
+        case "itemdata":
+          setOverrides(prev => {
+            if (JSON.stringify(prev)===JSON.stringify(value)) return prev;
+            return value;
+          });
+          break;
+        case "sections":
+          setSectionOverrides(prev => JSON.stringify(prev)!==JSON.stringify(value) ? value : prev);
+          break;
+        case "added":
+          setAddedItems(prev => JSON.stringify(prev)!==JSON.stringify(value) ? value : prev);
+          break;
+        case "settings":
+          setSettings(prev => JSON.stringify(prev)!==JSON.stringify(value) ? value : prev);
+          break;
+        case "orders":
+          setOrders(prev => JSON.stringify(prev)!==JSON.stringify(value) ? value : prev);
+          break;
+        default: break;
+      }
+    };
+
+    const pollSupabase = async () => {
+      try {
+        const res = await sbFetch(`/moe_data?group_id=eq.${encodeURIComponent(group)}&select=data_key,data_value`);
+        const rows = await res.json();
+        if (!Array.isArray(rows)) return;
+        const remoteData = {};
+        rows.forEach(r => { try { remoteData[r.data_key] = JSON.parse(r.data_value); } catch {} });
+        ["stock","itemdata","sections","added","settings","orders"].forEach(key => {
+          if (remoteData[key] !== undefined) applyRemoteData(key, remoteData[key]);
+        });
+        // Rebuild inventory from latest state
+        setOverrides(ov => {
+          setAddedItems(ai => {
+            setSectionOverrides(sv => {
+              const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
+              setInventory(applyOverridesAndAdded(baseInv, ov, sv, ai));
+              return sv;
+            });
+            return ai;
+          });
+          return ov;
+        });
+      } catch {}
+    };
+
+    const interval = setInterval(pollSupabase, 5000);
+    return () => clearInterval(interval);
+  }, [group]);
 
   // Write to both local storage and Supabase
   const dualSet = useCallback((sbKey, localKeyFn, value) => {
