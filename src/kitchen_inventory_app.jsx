@@ -451,49 +451,45 @@ export default function App() {
     load();
   }, [group]);
 
-  // ── Real-time sync: poll Supabase every 8s but pause for 15s after any local edit ──
+  // ── Real-time sync ──────────────────────────────────────────────────────────
+  // Employees poll every 8 seconds. Owners never auto-poll (they push, not pull).
+  // Manual ↻ Sync button works for everyone.
   const lastLocalEdit = React.useRef(0);
   const markLocalEdit = () => { lastLocalEdit.current = Date.now(); };
 
+  const pullFromSupabase = React.useCallback(async () => {
+    if (!SUPABASE_READY) return;
+    try {
+      const res = await sbFetch(`/moe_data?group_id=eq.${encodeURIComponent(group)}&select=data_key,data_value`);
+      const rows = await res.json();
+      if (!Array.isArray(rows)) { setSyncError(true); return; }
+      const rd = {};
+      rows.forEach(r => { try { rd[r.data_key] = JSON.parse(r.data_value); } catch {} });
+      const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
+      if (rd.stock    !== undefined) setStock(rd.stock);
+      if (rd.itemdata !== undefined) setOverrides(rd.itemdata);
+      if (rd.sections !== undefined) setSectionOverrides(rd.sections);
+      if (rd.added    !== undefined) setAddedItems(rd.added);
+      if (rd.settings !== undefined) setSettings(rd.settings);
+      if (rd.orders   !== undefined) setOrders(rd.orders);
+      const ov = rd.itemdata || {};
+      const sv = rd.sections || {};
+      const ai = rd.added    || {};
+      setInventory(applyOverridesAndAdded(baseInv, ov, sv, ai));
+      setLastSync(new Date());
+      setSyncError(false);
+    } catch { setSyncError(true); }
+  }, [group]);
+
   useEffect(() => {
     if (!group || !SUPABASE_READY) return;
-
-    const pollSupabase = async () => {
-      // Skip polling for 15 seconds after any local edit to avoid overwriting in-progress changes
-      if (Date.now() - lastLocalEdit.current < 15000) return;
-
-      try {
-        const res = await sbFetch(`/moe_data?group_id=eq.${encodeURIComponent(group)}&select=data_key,data_value,updated_at`);
-        const rows = await res.json();
-        if (!Array.isArray(rows)) { setSyncError(true); return; }
-        const remoteData = {};
-        rows.forEach(r => { try { remoteData[r.data_key] = JSON.parse(r.data_value); } catch {} });
-
-        const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
-
-        if (remoteData.stock    !== undefined) setStock(remoteData.stock);
-        if (remoteData.itemdata !== undefined) setOverrides(remoteData.itemdata);
-        if (remoteData.sections !== undefined) setSectionOverrides(remoteData.sections);
-        if (remoteData.added    !== undefined) setAddedItems(remoteData.added);
-        if (remoteData.settings !== undefined) setSettings(remoteData.settings);
-        if (remoteData.orders   !== undefined) setOrders(remoteData.orders);
-
-        const ov = remoteData.itemdata || {};
-        const sv = remoteData.sections || {};
-        const ai = remoteData.added    || {};
-        setInventory(applyOverridesAndAdded(baseInv, ov, sv, ai));
-        setLastSync(new Date());
-        setSyncError(false);
-      } catch { setSyncError(true); }
-    };
-
-    const interval = setInterval(pollSupabase, 8000);
+    if (!user || user.role !== "employee") return; // owners never auto-poll
+    const interval = setInterval(pullFromSupabase, 8000);
     return () => clearInterval(interval);
-  }, [group]);
+  }, [group, user, pullFromSupabase]);
 
   // Write to both local storage and Supabase
   const dualSet = useCallback((sbKey, localKeyFn, value) => {
-    markLocalEdit();
     try { localStorage.setItem(localKeyFn(group), JSON.stringify(value)); } catch(e) {}
     sbSet(group, sbKey, value);
   }, [group]);
@@ -733,23 +729,8 @@ export default function App() {
               {syncError ? "SYNC ERR" : lastSync ? `SYNCED ${lastSync.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}` : "SYNCING"}
             </span>
           )}
-          <button onClick={async () => {
-            lastLocalEdit.current = 0;
-            const res = await sbFetch(`/moe_data?group_id=eq.${encodeURIComponent(group)}&select=data_key,data_value`);
-            const rows = await res.json();
-            if (!Array.isArray(rows)) return;
-            const rd = {};
-            rows.forEach(r => { try { rd[r.data_key] = JSON.parse(r.data_value); } catch {} });
-            const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
-            if (rd.stock)    setStock(rd.stock);
-            if (rd.itemdata) setOverrides(rd.itemdata);
-            if (rd.sections) setSectionOverrides(rd.sections);
-            if (rd.added)    setAddedItems(rd.added);
-            if (rd.settings) setSettings(rd.settings);
-            if (rd.orders)   setOrders(rd.orders);
-            setInventory(applyOverridesAndAdded(baseInv, rd.itemdata||{}, rd.sections||{}, rd.added||{}));
-            setLastSync(new Date());
-          }} style={{ background:"none", border:"1px solid #334155", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:11, padding:"3px 8px", fontFamily:"'DM Mono',monospace" }}
+          <button onClick={pullFromSupabase}
+            style={{ background:"none", border:"1px solid #334155", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:11, padding:"3px 8px", fontFamily:"'DM Mono',monospace" }}
             onMouseEnter={e=>{e.currentTarget.style.borderColor="#f97316";e.currentTarget.style.color="#f97316";}}
             onMouseLeave={e=>{e.currentTarget.style.borderColor="#334155";e.currentTarget.style.color="#475569";}}>
             ↻ Sync
