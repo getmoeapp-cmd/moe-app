@@ -389,11 +389,21 @@ export default function App() {
       const loadKey = async (sbKey, localKeyFn, fallback) => {
         const sbVal = await sbGet(group, sbKey);
         if (sbVal !== null) {
-          // Cache to local storage so offline works
+          // Supabase has data — cache locally and use it
           try { localStorage.setItem(localKeyFn(group), JSON.stringify(sbVal)); } catch(e) {}
           return sbVal;
         }
-        try { const raw = localStorage.getItem(localKeyFn(group)); if (raw) return JSON.parse(raw); } catch {}
+        // Supabase is empty for this key — check local storage
+        try {
+          const raw = localStorage.getItem(localKeyFn(group));
+          if (raw) {
+            const localVal = JSON.parse(raw);
+            // Push local data up to Supabase so other devices can see it
+            const isEmpty = !localVal || (typeof localVal === "object" && Object.keys(localVal).length === 0);
+            if (!isEmpty) sbSet(group, sbKey, localVal);
+            return localVal;
+          }
+        } catch {}
         return fallback;
       };
 
@@ -411,15 +421,10 @@ export default function App() {
       const inv = applyOverridesAndAdded(baseInv, ov, sv, ai);
       setInventory(inv);
       autoGenerateOrder(getWeekKey(), ord, inv, st, sett);
-      // Push everything to Supabase on load so all keys exist
-      // This ensures new devices always get full data
-      sbSet(group, "stock",    st);
-      sbSet(group, "itemdata", ov);
-      sbSet(group, "sections", sv);
-      sbSet(group, "added",    ai);
-      sbSet(group, "orders",   ord);
-      sbSet(group, "settings", sett);
-      sbSet(group, "usage",    usage);
+      // Only push to Supabase if the value came from localStorage (not Supabase)
+      // This prevents a fresh device from overwriting real data with empty defaults
+      // sbGet returns null if Supabase had nothing — that's when we push local data up
+      // We never overwrite existing Supabase data on load
 
       // Auto-reset stock for vendors whose order day was yesterday (end of day reset)
       if (sett.vendors && sett.vendors.length > 0) {
@@ -447,6 +452,40 @@ export default function App() {
             }
             localStorage.setItem(lastResetKey, todayStr);
           }
+        }
+      }
+      // Auto-archive vendor orders the day after their order day
+      // e.g. Anacapri orders Tuesday → Wednesday morning it moves to history
+      if (sett.vendors && sett.vendors.length > 0) {
+        const now = new Date();
+        const todayDay = now.getDay(); // 0=Sun, 1=Mon...
+        let ordersChanged = false;
+        const newOrd = { ...ord };
+        sett.vendors.forEach(vendor => {
+          if (!vendor.name || !vendor.orderDay === undefined) return;
+          // The day AFTER the order day is when we archive
+          const archiveDay = (vendor.orderDay + 1) % 7;
+          if (todayDay !== archiveDay) return;
+          const archiveKey = `archived_${vendor.name}_${now.toISOString().split("T")[0]}`;
+          if (localStorage.getItem(archiveKey)) return; // already archived today
+          // Find the most recent unsaved/saved order for this vendor's items
+          Object.keys(newOrd).forEach(wk => {
+            const o = newOrd[wk];
+            if (!o || o._archived) return;
+            // Check if this order contains this vendor's items
+            const hasVendorItems = (o.lines || []).some(l =>
+              (l.supplier || "").toLowerCase().trim() === vendor.name.toLowerCase().trim()
+            );
+            if (!hasVendorItems) return;
+            // Archive it
+            newOrd[wk] = { ...o, _archived: true, _archivedAt: now.toISOString(), _archivedVendor: vendor.name };
+            ordersChanged = true;
+          });
+          localStorage.setItem(archiveKey, "1");
+        });
+        if (ordersChanged) {
+          setOrders(newOrd);
+          dualSet("orders", ORDERS_KEY, newOrd);
         }
       }
     };
@@ -1387,17 +1426,30 @@ function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem
 
 // ─── ORDER VIEW ───────────────────────────────────────────────────────────────
 function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settings }) {
+  // Per-vendor order view — show vendor tabs with their own order/delivery dates
+  const vendors = (settings.vendors || []).filter(v => v.name);
+  const [activeVendor, setActiveVendor] = useState(vendors[0]?.name || "ALL");
   const order       = orders[currentWeekKey];
-  const orderDate   = order ? fmtDate(order.orderDate)   : fmtDate(getWeekdayDate(new Date(), settings.orderDay));
-  const receiveDate = order ? fmtDate(order.receiveDate) : fmtDate(getWeekdayDate(new Date(), settings.orderDay+1));
   const wk = getWeekNumber();
 
-  const lines = order
+  // Get order/delivery date for the active vendor
+  const activeVendorData = vendors.find(v => v.name === activeVendor);
+  const orderDay    = activeVendorData?.orderDay    ?? settings.orderDay ?? 3;
+  const deliveryDay = activeVendorData?.deliveryDay ?? (orderDay + 1);
+  const orderDate   = order ? fmtDate(order.orderDate) : fmtDate(getWeekdayDate(new Date(), orderDay));
+  const receiveDate = order ? fmtDate(order.receiveDate) : fmtDate(getWeekdayDate(new Date(), deliveryDay));
+
+  const allLines = order
     ? order.lines
     : inventory.flatMap(s => s.items.map(item => ({
         id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
         section: s.section, qty: calcOrderQty(item, stock[item.id] ?? 0),
       })));
+
+  // Filter by active vendor tab
+  const lines = activeVendor === "ALL"
+    ? allLines
+    : allLines.filter(l => (l.supplier||"").toLowerCase().trim() === activeVendor.toLowerCase().trim());
 
   const activeLines = lines.filter(l => l.qty > 0);
   const bySupplier  = {};
@@ -1419,9 +1471,28 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
 
   return (
     <div>
+      {/* Vendor tabs */}
+      {vendors.length > 0 && (
+        <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch", marginBottom:16 }}>
+          <div style={{ display:"flex", gap:8, minWidth:"max-content" }}>
+            {["ALL", ...vendors.map(v => v.name)].map(v => {
+              const isActive = activeVendor === v;
+              const vd = vendors.find(x => x.name === v);
+              const nextOrder = vd ? fmtDate(getWeekdayDate(new Date(), vd.orderDay)) : null;
+              return (
+                <button key={v} onClick={() => setActiveVendor(v)}
+                  style={{ padding:"8px 16px", borderRadius:10, border:`1px solid ${isActive?"#f97316":"#334155"}`, background:isActive?"#f97316":"#1e293b", color:isActive?"#fff":"#94a3b8", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap", flexShrink:0 }}>
+                  {v === "ALL" ? "All Vendors" : v}
+                  {nextOrder && !isActive && <span style={{ display:"block", fontSize:9, color:"#475569", marginTop:1 }}>orders {nextOrder}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:12 }}>
         <div>
-          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Order List</h2>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Order List{activeVendor !== "ALL" ? ` — ${activeVendor}` : ""}</h2>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:4, flexWrap:"wrap" }}>
             <span style={{ background:"#1e3a5f", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#93c5fd", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>WK {wk}</span>
             <span style={{ color:"#64748b", fontSize:12 }}>Order: <span style={{ color:"#94a3b8" }}>{orderDate}</span></span>
@@ -1488,8 +1559,8 @@ function HistoryView({ orders }) {
   const [search, setSearch]     = useState("");
   const [selected, setSelected] = useState(null);
 
-  const sorted = Object.values(orders).filter(o => o.saved).sort((a,b) => b.weekKey.localeCompare(a.weekKey));
-  const filtered = sorted.filter(o => !search || o.weekKey.includes(search) || fmtDate(o.orderDate).toLowerCase().includes(search.toLowerCase()));
+  const sorted = Object.values(orders).filter(o => o.saved || o._archived).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const filtered = sorted.filter(o => !search || (o.weekKey||"").includes(search) || fmtDate(o.orderDate||new Date().toISOString().split("T")[0]).toLowerCase().includes(search.toLowerCase()));
   const view = selected ? orders[selected] : null;
 
   if (view) {
