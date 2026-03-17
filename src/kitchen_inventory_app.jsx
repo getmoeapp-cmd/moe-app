@@ -224,43 +224,45 @@ const SETTINGS_KEY = (g) => storageKey(g, "settings");
 const USAGE_KEY    = (g) => storageKey(g, "usage");
 
 // ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
-// Replace these two values with your own from supabase.com → Project Settings → API
 const SUPABASE_URL   = "https://fsvlxosbbevzyvegbqry.supabase.co";
 const SUPABASE_ANON  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdmx4b3NiYmV2enl2ZWdicXJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0NzQ2MjgsImV4cCI6MjA4OTA1MDYyOH0.AcnnB4QecNHEu3-N_VS6aPHrpt9kq464arjNc2DNugU";
-const SUPABASE_READY = SUPABASE_URL !== "YOUR_SUPABASE_URL";
+const SUPABASE_READY = true;
 
-// Lightweight REST helper — no SDK needed
-const sbFetch = (path, opts = {}) =>
-  fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    ...opts,
-    headers: {
-      "apikey":        SUPABASE_ANON,
-      "Authorization": `Bearer ${SUPABASE_ANON}`,
-      "Content-Type":  "application/json",
-      ...(opts.headers || {}),
-    },
-  });
-
-// Read a value (returns parsed JS object or null)
-const sbGet = async (group, key) => {
-  if (!SUPABASE_READY) return null;
-  try {
-    const res  = await sbFetch(`/moe_data?group_id=eq.${encodeURIComponent(group)}&data_key=eq.${encodeURIComponent(key)}&select=data_value`);
-    const rows = await res.json();
-    if (Array.isArray(rows) && rows.length > 0) return JSON.parse(rows[0].data_value);
-  } catch {}
-  return null;
+// Supabase JS client loaded from CDN
+let _sb = null;
+const getSB = () => {
+  if (_sb) return _sb;
+  if (window.supabase) {
+    _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  }
+  return _sb;
 };
 
-// Write a value (upsert by group_id + data_key)
-const sbSet = async (group, key, value) => {
-  if (!SUPABASE_READY) return;
+// Read a value (returns parsed JS object or null)
+const sbGet = async (grp, key) => {
+  const sb = getSB();
+  if (!sb) return null;
   try {
-    await sbFetch("/moe_data", {
-      method:  "POST",
-      headers: { "Prefer": "resolution=merge-duplicates" },
-      body:    JSON.stringify({ group_id: group, data_key: key, data_value: JSON.stringify(value) }),
-    });
+    const { data, error } = await sb
+      .from("moe_data")
+      .select("data_value")
+      .eq("group_id", grp)
+      .eq("data_key", key)
+      .single();
+    if (error || !data) return null;
+    return JSON.parse(data.data_value);
+  } catch { return null; }
+};
+
+// Write a value (upsert)
+const sbSet = async (grp, key, value) => {
+  const sb = getSB();
+  if (!sb) return;
+  try {
+    await sb.from("moe_data").upsert(
+      { group_id: grp, data_key: key, data_value: JSON.stringify(value) },
+      { onConflict: "group_id,data_key" }
+    );
   } catch {}
 };
 
@@ -457,42 +459,108 @@ export default function App() {
   const lastLocalEdit = React.useRef(0);
   const markLocalEdit = () => { lastLocalEdit.current = Date.now(); };
 
-  const pullFromSupabase = React.useCallback(async (forceStock = false) => {
-    if (!SUPABASE_READY) return;
+  // ── Manual sync — fetch all keys from Supabase right now ──────────────────
+  const pullFromSupabase = React.useCallback(async () => {
+    const sb = getSB();
+    if (!sb) return;
     try {
-      const res = await sbFetch(`/moe_data?group_id=eq.${encodeURIComponent(group)}&select=data_key,data_value`);
-      const rows = await res.json();
-      if (!Array.isArray(rows)) { setSyncError(true); return; }
+      const { data, error } = await sb
+        .from("moe_data")
+        .select("data_key,data_value")
+        .eq("group_id", group);
+      if (error || !Array.isArray(data)) { setSyncError(true); return; }
       const rd = {};
-      rows.forEach(r => { try { rd[r.data_key] = JSON.parse(r.data_value); } catch {} });
-      const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
-
-      // Always sync inventory structure (items, sections, vendors, settings)
+      data.forEach(r => { try { rd[r.data_key] = JSON.parse(r.data_value); } catch {} });
+      const baseInv = (group==="tommys"||group==="demo") ? DEFAULT_INVENTORY : BLANK_INVENTORY;
+      if (rd.stock    !== undefined) setStock(rd.stock);
       if (rd.itemdata !== undefined) setOverrides(rd.itemdata);
       if (rd.sections !== undefined) setSectionOverrides(rd.sections);
       if (rd.added    !== undefined) setAddedItems(rd.added);
       if (rd.settings !== undefined) setSettings(rd.settings);
       if (rd.orders   !== undefined) setOrders(rd.orders);
-
-      // Only sync stock if explicitly requested (manual sync button)
-      // Automatic polling never overwrites stock to avoid wiping active counts
-      if (forceStock && rd.stock !== undefined) setStock(rd.stock);
-
-      const ov = rd.itemdata || {};
-      const sv = rd.sections || {};
-      const ai = rd.added    || {};
-      setInventory(applyOverridesAndAdded(baseInv, ov, sv, ai));
+      setInventory(applyOverridesAndAdded(baseInv, rd.itemdata||{}, rd.sections||{}, rd.added||{}));
       setLastSync(new Date());
       setSyncError(false);
     } catch { setSyncError(true); }
   }, [group]);
 
+  // ── Supabase Real-Time subscription ────────────────────────────────────────
+  // Listens for INSERT/UPDATE on moe_data for this group
+  // When owner saves → Supabase fires → all other devices update instantly
   useEffect(() => {
-    if (!group || !SUPABASE_READY) return;
-    if (!user || user.role !== "employee") return; // owners never auto-poll
-    const interval = setInterval(pullFromSupabase, 8000);
-    return () => clearInterval(interval);
-  }, [group, user, pullFromSupabase]);
+    if (!group) return;
+    const sb = getSB();
+    if (!sb) return;
+
+    const channel = sb
+      .channel(`moe_${group}`)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "moe_data",
+        filter: `group_id=eq.${group}`,
+      }, (payload) => {
+        // A row changed — apply just that key to local state
+        try {
+          const { data_key, data_value } = payload.new;
+          const value = JSON.parse(data_value);
+          const baseInv = (group==="tommys"||group==="demo") ? DEFAULT_INVENTORY : BLANK_INVENTORY;
+          switch(data_key) {
+            case "stock":
+              // Only apply stock from real-time if this device didn't just save it
+              // Check if the incoming value is different before applying
+              setStock(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(value)) return prev;
+                return value;
+              });
+              break;
+            case "itemdata":
+              setOverrides(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(value)) return prev;
+                setInventory(inv => applyOverridesAndAdded(baseInv, value, inv.__sv||{}, inv.__ai||{}));
+                return value;
+              });
+              break;
+            case "sections":
+              setSectionOverrides(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(value)) return prev;
+                return value;
+              });
+              break;
+            case "added":
+              setAddedItems(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(value)) return prev;
+                return value;
+              });
+              break;
+            case "settings": setSettings(value); break;
+            case "orders":   setOrders(value);   break;
+            default: break;
+          }
+          // Rebuild inventory after any structural change
+          if (["itemdata","sections","added"].includes(data_key)) {
+            setOverrides(ov => {
+              setAddedItems(ai => {
+                setSectionOverrides(sv => {
+                  setInventory(applyOverridesAndAdded(baseInv, ov, sv, ai));
+                  return sv;
+                });
+                return ai;
+              });
+              return ov;
+            });
+          }
+          setLastSync(new Date());
+          setSyncError(false);
+        } catch {}
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") setSyncError(false);
+        if (status === "CLOSED" || status === "CHANNEL_ERROR") setSyncError(true);
+      });
+
+    return () => { sb.removeChannel(channel); };
+  }, [group]);
 
   // Write to both local storage and Supabase
   const dualSet = useCallback((sbKey, localKeyFn, value) => {
