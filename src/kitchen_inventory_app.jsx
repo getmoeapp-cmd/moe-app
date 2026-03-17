@@ -386,10 +386,10 @@ export default function App() {
         const sbVal = await sbGet(group, sbKey);
         if (sbVal !== null) {
           // Cache to local storage so offline works
-          window.storage.set(localKeyFn(group), JSON.stringify(sbVal)).catch(() => {});
+          try { localStorage.setItem(localKeyFn(group), JSON.stringify(sbVal)); } catch(e) {}
           return sbVal;
         }
-        try { const r = await window.storage.get(localKeyFn(group)); if (r) return JSON.parse(r.value); } catch {}
+        try { const raw = localStorage.getItem(localKeyFn(group)); if (raw) return JSON.parse(raw); } catch {}
         return fallback;
       };
 
@@ -429,7 +429,7 @@ export default function App() {
             });
             if (JSON.stringify(newSt) !== JSON.stringify(st)) {
               setStock(newSt);
-              window.storage.set(STOCK_KEY(group), JSON.stringify(newSt)).catch(() => {});
+              try { localStorage.setItem(STOCK_KEY(group), JSON.stringify(newSt)); } catch(e) {}
               sbSet(group, "stock", newSt);
             }
             localStorage.setItem(lastResetKey, todayStr);
@@ -443,7 +443,7 @@ export default function App() {
 
   // Write to both local storage and Supabase
   const dualSet = useCallback((sbKey, localKeyFn, value) => {
-    window.storage.set(localKeyFn(group), JSON.stringify(value)).catch(() => {});
+    try { localStorage.setItem(localKeyFn(group), JSON.stringify(value)); } catch(e) {}
     sbSet(group, sbKey, value);
   }, [group]);
 
@@ -586,7 +586,7 @@ export default function App() {
     };
     const newOrders = { ...existingOrders, [weekKey]: newOrder };
     setOrders(newOrders);
-    sbSet(group, "orders", newOrders); window.storage.set(ORDERS_KEY(group), JSON.stringify(newOrders)).catch(() => {});
+    sbSet(group, "orders", newOrders); try { localStorage.setItem(ORDERS_KEY(group), JSON.stringify(newOrders)); } catch(e) {}
   }, []);
 
   const saveOrder = useCallback((weekKey, updatedOrder) => {
@@ -1849,4 +1849,3 @@ function SectionHeader({ label }) {
     </div>
   );
 }
-
