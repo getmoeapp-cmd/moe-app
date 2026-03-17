@@ -375,6 +375,8 @@ export default function App() {
   const [saveFlash, setSaveFlash]                 = useState("");
   const [loginError, setLoginError]               = useState("");
   const [group, setGroup]                         = useState("demo");
+  const [lastSync, setLastSync]                   = useState(null);
+  const [syncError, setSyncError]                 = useState(false);
 
   const flash = () => { setSaveFlash("✓ Saved"); setTimeout(() => setSaveFlash(""), 2000); };
 
@@ -461,9 +463,9 @@ export default function App() {
       if (Date.now() - lastLocalEdit.current < 15000) return;
 
       try {
-        const res = await sbFetch(`/moe_data?group_id=eq.${encodeURIComponent(group)}&select=data_key,data_value`);
+        const res = await sbFetch(`/moe_data?group_id=eq.${encodeURIComponent(group)}&select=data_key,data_value,updated_at`);
         const rows = await res.json();
-        if (!Array.isArray(rows)) return;
+        if (!Array.isArray(rows)) { setSyncError(true); return; }
         const remoteData = {};
         rows.forEach(r => { try { remoteData[r.data_key] = JSON.parse(r.data_value); } catch {} });
 
@@ -480,7 +482,9 @@ export default function App() {
         const sv = remoteData.sections || {};
         const ai = remoteData.added    || {};
         setInventory(applyOverridesAndAdded(baseInv, ov, sv, ai));
-      } catch {}
+        setLastSync(new Date());
+        setSyncError(false);
+      } catch { setSyncError(true); }
     };
 
     const interval = setInterval(pollSupabase, 8000);
@@ -723,6 +727,33 @@ export default function App() {
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <DateWeekBadge orderDay={settings.orderDay} />
           {saveFlash && <span style={{ color:"#22c55e", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{saveFlash}</span>}
+          {SUPABASE_READY && (
+            <span style={{ fontSize:10, fontFamily:"'DM Mono',monospace", color: syncError ? "#ef4444" : "#334155", display:"flex", alignItems:"center", gap:4 }}>
+              <span style={{ width:6, height:6, borderRadius:"50%", background: syncError ? "#ef4444" : "#22c55e", display:"inline-block" }}/>
+              {syncError ? "SYNC ERR" : lastSync ? `SYNCED ${lastSync.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}` : "SYNCING"}
+            </span>
+          )}
+          <button onClick={async () => {
+            lastLocalEdit.current = 0;
+            const res = await sbFetch(\`/moe_data?group_id=eq.\${encodeURIComponent(group)}&select=data_key,data_value\`);
+            const rows = await res.json();
+            if (!Array.isArray(rows)) return;
+            const rd = {};
+            rows.forEach(r => { try { rd[r.data_key] = JSON.parse(r.data_value); } catch {} });
+            const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
+            if (rd.stock)    setStock(rd.stock);
+            if (rd.itemdata) setOverrides(rd.itemdata);
+            if (rd.sections) setSectionOverrides(rd.sections);
+            if (rd.added)    setAddedItems(rd.added);
+            if (rd.settings) setSettings(rd.settings);
+            if (rd.orders)   setOrders(rd.orders);
+            setInventory(applyOverridesAndAdded(baseInv, rd.itemdata||{}, rd.sections||{}, rd.added||{}));
+            setLastSync(new Date());
+          }} style={{ background:"none", border:"1px solid #334155", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:11, padding:"3px 8px", fontFamily:"'DM Mono',monospace" }}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor="#f97316";e.currentTarget.style.color="#f97316";}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor="#334155";e.currentTarget.style.color="#475569";}}>
+            ↻ Sync
+          </button>
           <div style={{ width:1, height:20, background:"#334155" }} />
           <span style={{ color:"#64748b", fontSize:13 }}>{user.name}</span>
           <button onClick={() => setUser(null)} style={{ background:"transparent", border:"1px solid #1e293b", color:"#475569", padding:"4px 10px", borderRadius:6, cursor:"pointer", fontSize:12, transition:"all 0.15s" }}
