@@ -735,7 +735,7 @@ export default function App() {
           )}
           <button onClick={async () => {
             lastLocalEdit.current = 0;
-            const res = await sbFetch(\`/moe_data?group_id=eq.\${encodeURIComponent(group)}&select=data_key,data_value\`);
+            const res = await sbFetch(`/moe_data?group_id=eq.${encodeURIComponent(group)}&select=data_key,data_value`);
             const rows = await res.json();
             if (!Array.isArray(rows)) return;
             const rd = {};
