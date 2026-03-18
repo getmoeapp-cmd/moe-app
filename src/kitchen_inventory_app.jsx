@@ -379,6 +379,7 @@ export default function App() {
   const [group, setGroup]                         = useState("demo");
   const [lastSync, setLastSync]                   = useState(null);
   const [syncError, setSyncError]                 = useState(false);
+  const [sidebarOpen, setSidebarOpen]             = useState(false);
 
   const flash = () => { setSaveFlash("✓ Saved"); setTimeout(() => setSaveFlash(""), 2000); };
 
@@ -624,6 +625,12 @@ export default function App() {
     setStock(newStock);
     dualSet("stock", STOCK_KEY, newStock);
     flash();
+    // Regenerate unsaved order with updated stock
+    setOrders(prev => {
+      const wk = getWeekKey();
+      if (prev[wk]?.saved) return prev; // don't touch saved orders
+      return prev; // OrderView recalculates live from stock — no need to update stored lines
+    });
   }, [dualSet]);
 
   const saveItemField = useCallback(async (id, field, rawVal) => {
@@ -743,7 +750,8 @@ export default function App() {
 
   // Add a brand new custom section
   const autoGenerateOrder = useCallback((weekKey, existingOrders, inv, currentStock, sett) => {
-    if (existingOrders[weekKey]) return;
+    // Only skip if already saved — unsaved orders always regenerate
+    if (existingOrders[weekKey]?.saved) return;
     const today = new Date();
     const orderDate   = getWeekdayDate(today, sett.orderDay);
     const receiveDate = new Date(orderDate);
@@ -827,80 +835,121 @@ export default function App() {
     <div style={{ minHeight:"100vh", background:"#0f172a", fontFamily:"'DM Sans',sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <style>{`@media (max-width: 768px) { .edit-pencil { display: none !important; } } .edit-cell:hover .edit-pencil { display: inline !important; }`}</style>
-      {/* ── Top header: logo + user ── */}
-      <header style={{ background:"#1e293b", borderBottom:"1px solid #1e293b", padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:60, position:"sticky", top:0, zIndex:101 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <MoeLogo size="md" />
-          <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px" }}>{user.role === "owner" ? "OWNER VIEW" : "EMPLOYEE VIEW"}</div>
-        </div>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <DateWeekBadge orderDay={settings.orderDay} />
-          {saveFlash && <span style={{ color:"#22c55e", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{saveFlash}</span>}
-          {SUPABASE_READY && (
-            <span style={{ fontSize:10, fontFamily:"'DM Mono',monospace", color: syncError ? "#ef4444" : "#334155", display:"flex", alignItems:"center", gap:4 }}>
-              <span style={{ width:6, height:6, borderRadius:"50%", background: syncError ? "#ef4444" : "#22c55e", display:"inline-block" }}/>
-              {syncError ? "SYNC ERR" : lastSync ? `SYNCED ${lastSync.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}` : "SYNCING"}
-            </span>
-          )}
-          <button onClick={() => pullFromSupabase(true)}
-            style={{ background:"none", border:"1px solid #334155", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:11, padding:"3px 8px", fontFamily:"'DM Mono',monospace" }}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor="#f97316";e.currentTarget.style.color="#f97316";}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor="#334155";e.currentTarget.style.color="#475569";}}>
-            ↻ Sync
-          </button>
-          <div style={{ width:1, height:20, background:"#334155" }} />
-          <span style={{ color:"#64748b", fontSize:13 }}>{user.name}</span>
-          <button onClick={() => setUser(null)} style={{ background:"transparent", border:"1px solid #1e293b", color:"#475569", padding:"4px 10px", borderRadius:6, cursor:"pointer", fontSize:12, transition:"all 0.15s" }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#94a3b8"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor="#1e293b"; e.currentTarget.style.color="#475569"; }}>
-            Sign out
-          </button>
-        </div>
-      </header>
+      {/* ── Sidebar overlay ── */}
+      {sidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200 }} />
+      )}
 
-      {/* ── Tab bar (owner only) ── */}
-      {user.role === "owner" && (
-        <div style={{ background:"#1e293b", borderBottom:"1px solid #334155", position:"sticky", top:60, zIndex:100, padding:"0 24px" }}>
-          <div style={{ display:"flex", alignItems:"flex-end", gap:0, maxWidth:1200, margin:"0 auto" }}>
+      {/* ── Sidebar panel ── */}
+      <div style={{
+        position:"fixed", top:0, left:0, height:"100vh", width:260,
+        background:"#1e293b", borderRight:"1px solid #334155",
+        transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
+        transition:"transform 0.25s ease", zIndex:201,
+        display:"flex", flexDirection:"column",
+      }}>
+        {/* Sidebar header */}
+        <div style={{ padding:"20px 20px 16px", borderBottom:"1px solid #334155", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <MoeLogo size="md" />
+          <button onClick={() => setSidebarOpen(false)}
+            style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:20, lineHeight:1, padding:4 }}
+            onMouseEnter={e => e.currentTarget.style.color="#f1f5f9"}
+            onMouseLeave={e => e.currentTarget.style.color="#475569"}>
+            ✕
+          </button>
+        </div>
+
+        {/* User info */}
+        <div style={{ padding:"14px 20px", borderBottom:"1px solid #334155" }}>
+          <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{user.name}</div>
+          <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · {group.toUpperCase()}</div>
+        </div>
+
+        {/* Nav items — owner only */}
+        {user.role === "owner" && (
+          <div style={{ flex:1, padding:"12px 12px", overflowY:"auto" }}>
             {[
-              { key:"inventory", label:"Inventory",   icon:"📋" },
-              { key:"backend",   label:"Backend",     icon:"⚙" },
-              { key:"order",     label:"Order List",  icon:"📦" },
-              { key:"history",   label:"History",     icon:"📚" },
-              { key:"usage",     label:"Usage",       icon:"📈" },
-              { key:"settings",  label:"Settings",    icon:"🔧" },
-            ].map(tab => {
-              const isActive = view === tab.key;
-              const isOrder  = tab.key === "order";
+              { key:"inventory", label:"Inventory",  icon:"📋", desc:"Stock count" },
+              { key:"backend",   label:"Backend",    icon:"⚙️",  desc:"Edit items & sections" },
+              { key:"order",     label:"Order List", icon:"📦", desc:"Weekly orders" },
+              { key:"history",   label:"History",    icon:"📚", desc:"Past orders" },
+              { key:"usage",     label:"Usage",      icon:"📈", desc:"Trends & par suggestions" },
+              { key:"settings",  label:"Settings",   icon:"🔧", desc:"Vendors & schedule" },
+            ].map(item => {
+              const isActive = view === item.key;
               return (
-                <button key={tab.key} onClick={() => setView(tab.key)} style={{
-                  background: "transparent",
-                  border: "none",
-                  borderBottom: isActive ? `2px solid ${isOrder ? "#f97316" : "#f97316"}` : "2px solid transparent",
-                  color: isActive ? (isOrder ? "#f97316" : "#f1f5f9") : "#64748b",
-                  padding: "0 18px",
-                  height: 44,
-                  cursor: "pointer",
-                  fontSize: 13,
-                  fontWeight: isActive ? 600 : 400,
-                  fontFamily: "'DM Sans', sans-serif",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  transition: "all 0.15s",
-                  letterSpacing: "-0.1px",
-                  marginBottom: -1,
-                }}
-                onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = "#94a3b8"; }}
-                onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = "#64748b"; }}>
-                  <span style={{ fontSize: 13 }}>{tab.icon}</span>
-                  {tab.label}
+                <button key={item.key} onClick={() => { setView(item.key); setSidebarOpen(false); }}
+                  style={{
+                    width:"100%", display:"flex", alignItems:"center", gap:12,
+                    background: isActive ? "#0f172a" : "transparent",
+                    border:"none", borderRadius:10,
+                    padding:"11px 14px", cursor:"pointer",
+                    marginBottom:4, transition:"all 0.15s",
+                    borderLeft: isActive ? "3px solid #f97316" : "3px solid transparent",
+                  }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background="#0f172a"; }}
+                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background="transparent"; }}>
+                  <span style={{ fontSize:18, flexShrink:0 }}>{item.icon}</span>
+                  <div style={{ textAlign:"left" }}>
+                    <div style={{ color: isActive ? "#f97316" : "#f1f5f9", fontSize:14, fontWeight: isActive ? 600 : 400 }}>{item.label}</div>
+                    <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>
+                  </div>
                 </button>
               );
             })}
           </div>
+        )}
+
+        {/* Bottom actions */}
+        <div style={{ padding:"12px 12px", borderTop:"1px solid #334155" }}>
+          {SUPABASE_READY && (
+            <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px", marginBottom:8 }}>
+              <span style={{ width:7, height:7, borderRadius:"50%", background: syncError ? "#ef4444" : "#22c55e", display:"inline-block", flexShrink:0 }}/>
+              <span style={{ color: syncError ? "#ef4444" : "#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>
+                {syncError ? "SYNC ERROR" : lastSync ? `SYNCED ${lastSync.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}` : "SYNCING..."}
+              </span>
+              <button onClick={() => pullFromSupabase(true)}
+                style={{ marginLeft:"auto", background:"none", border:"1px solid #334155", borderRadius:5, color:"#475569", cursor:"pointer", fontSize:11, padding:"2px 7px", fontFamily:"'DM Mono',monospace" }}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor="#f97316";e.currentTarget.style.color="#f97316";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor="#334155";e.currentTarget.style.color="#475569";}}>
+                ↻
+              </button>
+            </div>
+          )}
+          <button onClick={() => setUser(null)}
+            style={{ width:"100%", background:"transparent", border:"1px solid #334155", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13, transition:"all 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#64748b"; }}>
+            Sign Out
+          </button>
         </div>
-      )}
+      </div>
+
+      {/* ── Top header ── */}
+      <header style={{ background:"#1e293b", borderBottom:"1px solid #334155", padding:"0 16px", display:"flex", alignItems:"center", justifyContent:"space-between", height:60, position:"sticky", top:0, zIndex:101 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          {/* Hamburger button */}
+          <button onClick={() => setSidebarOpen(true)}
+            style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4.5, justifyContent:"center" }}
+            onMouseEnter={e => e.currentTarget.style.background="#334155"}
+            onMouseLeave={e => e.currentTarget.style.background="none"}>
+            <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
+            <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
+            <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
+          </button>
+          <MoeLogo size="md" />
+          {/* Current view label on mobile */}
+          <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px" }}>
+            {user.role === "owner" ? view.toUpperCase().replace("ORDER","ORDER LIST") : "EMPLOYEE VIEW"}
+          </div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <DateWeekBadge orderDay={settings.orderDay} />
+          {saveFlash && <span style={{ color:"#22c55e", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{saveFlash}</span>}
+          <span style={{ color:"#64748b", fontSize:13 }}>{user.name}</span>
+        </div>
+      </header>
       <main style={{ maxWidth:1200, margin:"0 auto", padding:"24px 16px" }}>
         {(view==="inventory" || user.role==="employee") &&
           <EmployeeView inventory={inventory} stock={stock} updateStock={updateStock} orderDay={settings.orderDay} />}
@@ -913,7 +962,7 @@ export default function App() {
         {view==="usage" && user.role==="owner" &&
           <UsageView inventory={inventory} usageLog={usageLog} computeUsage={computeUsage} applyParSuggestion={applyParSuggestion} />}
         {view==="settings" && user.role==="owner" &&
-          <SettingsView settings={settings} saveSettings={saveSettings} />}
+          <SettingsView settings={settings} saveSettings={saveSettings} inventory={inventory} />}
       </main>
     </div>
   );
@@ -1439,12 +1488,12 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
   const orderDate   = order ? fmtDate(order.orderDate) : fmtDate(getWeekdayDate(new Date(), orderDay));
   const receiveDate = order ? fmtDate(order.receiveDate) : fmtDate(getWeekdayDate(new Date(), deliveryDay));
 
-  const allLines = order
-    ? order.lines
-    : inventory.flatMap(s => s.items.map(item => ({
-        id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
-        section: s.section, qty: calcOrderQty(item, stock[item.id] ?? 0),
-      })));
+  // Always recalculate from current stock — never use stale saved lines
+  // Saved order in history preserves the snapshot, but live order list stays fresh
+  const allLines = inventory.flatMap(s => s.items.map(item => ({
+    id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
+    section: s.section, qty: calcOrderQty(item, stock[item.id] ?? 0),
+  })));
 
   // Filter by active vendor tab
   const lines = activeVendor === "ALL"
@@ -1946,12 +1995,22 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion }) {
 }
 
 // ─── SETTINGS VIEW ────────────────────────────────────────────────────────────
-function SettingsView({ settings, saveSettings }) {
+function SettingsView({ settings, saveSettings, inventory = [] }) {
   const [vendors, setVendors] = useState(
     settings.vendors && settings.vendors.length > 0
       ? settings.vendors
       : [{ id: Date.now(), name: "", orderDay: 3, deliveryDay: 4, autoReset: true }]
   );
+
+  // Extract unique supplier names from inventory
+  const supplierOptions = React.useMemo(() => {
+    const names = new Set();
+    inventory.forEach(sec => sec.items.forEach(item => {
+      const s = (item.supplier || "").trim();
+      if (s) names.add(s);
+    }));
+    return Array.from(names).sort();
+  }, [inventory]);
 
   const updateVendor = (id, field, value) => {
     setVendors(prev => prev.map(v => v.id === id ? { ...v, [field]: value } : v));
@@ -2000,35 +2059,101 @@ function SettingsView({ settings, saveSettings }) {
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
               <div style={{ gridColumn:"1 / -1" }}>
                 <label style={labelStyle}>Vendor Name</label>
-                <input value={vendor.name} onChange={e => updateVendor(vendor.id, "name", e.target.value)}
-                  placeholder="e.g. Anacapri, Pepsi, Market..."
-                  style={inputStyle}
-                  onFocus={e => e.target.style.borderColor="#f97316"}
-                  onBlur={e => e.target.style.borderColor="#334155"} />
-              </div>
-              <div>
-                <label style={labelStyle}>Order Day</label>
-                <select value={vendor.orderDay} onChange={e => updateVendor(vendor.id, "orderDay", parseInt(e.target.value))}
-                  style={selectStyle}
-                  onFocus={e => e.target.style.borderColor="#f97316"}
-                  onBlur={e => e.target.style.borderColor="#334155"}>
-                  {DAYS.map((d,i) => <option key={d} value={i}>{d}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Delivery Day</label>
-                <select value={vendor.deliveryDay} onChange={e => updateVendor(vendor.id, "deliveryDay", parseInt(e.target.value))}
-                  style={selectStyle}
-                  onFocus={e => e.target.style.borderColor="#f97316"}
-                  onBlur={e => e.target.style.borderColor="#334155"}>
-                  {DAYS.map((d,i) => <option key={d} value={i}>{d}</option>)}
-                </select>
+                {supplierOptions.length > 0 ? (
+                  <div style={{ display:"flex", gap:8 }}>
+                    <select value={vendor.name} onChange={e => updateVendor(vendor.id, "name", e.target.value)}
+                      style={{ ...selectStyle, flex:1 }}
+                      onFocus={e => e.target.style.borderColor="#f97316"}
+                      onBlur={e => e.target.style.borderColor="#334155"}>
+                      <option value="">— Select supplier —</option>
+                      {supplierOptions.map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                      <option value="__custom__">+ Type manually...</option>
+                    </select>
+                    {vendor.name === "__custom__" && (
+                      <input autoFocus placeholder="Type vendor name..."
+                        onChange={e => updateVendor(vendor.id, "name", e.target.value)}
+                        style={{ ...inputStyle, flex:1 }}
+                        onFocus={e => e.target.style.borderColor="#f97316"}
+                        onBlur={e => e.target.style.borderColor="#334155"} />
+                    )}
+                  </div>
+                ) : (
+                  <input value={vendor.name} onChange={e => updateVendor(vendor.id, "name", e.target.value)}
+                    placeholder="e.g. Anacapri, Pepsi, Market..."
+                    style={inputStyle}
+                    onFocus={e => e.target.style.borderColor="#f97316"}
+                    onBlur={e => e.target.style.borderColor="#334155"} />
+                )}
               </div>
             </div>
 
-            <div style={{ background:"#0f172a", borderRadius:8, padding:"10px 14px", marginBottom:12, fontSize:12, color:"#64748b" }}>
-              <div style={{ marginBottom:3 }}>📅 <span style={{ color:"#94a3b8" }}>Next order:</span> {fmtDate(getWeekdayDate(new Date(), vendor.orderDay))}</div>
-              <div>📦 <span style={{ color:"#94a3b8" }}>Next delivery:</span> {fmtDate(getWeekdayDate(new Date(), vendor.deliveryDay))}</div>
+            {/* ── Schedules (multiple order/delivery day pairs) ── */}
+            <div style={{ marginBottom:12 }}>
+              <label style={{ ...labelStyle, marginBottom:8 }}>Order & Delivery Schedule</label>
+              {(vendor.schedules || [{ orderDay: vendor.orderDay ?? 3, deliveryDay: vendor.deliveryDay ?? 4 }]).map((sched, si) => (
+                <div key={si} style={{ display:"grid", gridTemplateColumns:"1fr 1fr auto", gap:8, marginBottom:8, alignItems:"end" }}>
+                  <div>
+                    <label style={{ ...labelStyle, fontSize:9, marginBottom:3 }}>Order Day</label>
+                    <select value={sched.orderDay}
+                      onChange={e => {
+                        const newScheds = [...(vendor.schedules || [{ orderDay: vendor.orderDay ?? 3, deliveryDay: vendor.deliveryDay ?? 4 }])];
+                        newScheds[si] = { ...newScheds[si], orderDay: parseInt(e.target.value) };
+                        updateVendor(vendor.id, "schedules", newScheds);
+                        if (si === 0) updateVendor(vendor.id, "orderDay", parseInt(e.target.value));
+                      }}
+                      style={selectStyle}
+                      onFocus={e => e.target.style.borderColor="#f97316"}
+                      onBlur={e => e.target.style.borderColor="#334155"}>
+                      {DAYS.map((d,i) => <option key={d} value={i}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ ...labelStyle, fontSize:9, marginBottom:3 }}>Delivery Day</label>
+                    <select value={sched.deliveryDay}
+                      onChange={e => {
+                        const newScheds = [...(vendor.schedules || [{ orderDay: vendor.orderDay ?? 3, deliveryDay: vendor.deliveryDay ?? 4 }])];
+                        newScheds[si] = { ...newScheds[si], deliveryDay: parseInt(e.target.value) };
+                        updateVendor(vendor.id, "schedules", newScheds);
+                        if (si === 0) updateVendor(vendor.id, "deliveryDay", parseInt(e.target.value));
+                      }}
+                      style={selectStyle}
+                      onFocus={e => e.target.style.borderColor="#f97316"}
+                      onBlur={e => e.target.style.borderColor="#334155"}>
+                      {DAYS.map((d,i) => <option key={d} value={i}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display:"flex", gap:6, paddingBottom:1 }}>
+                    <div style={{ background:"#0f172a", borderRadius:6, padding:"6px 8px", fontSize:10, color:"#475569", whiteSpace:"nowrap" }}>
+                      📅 {DAYS[sched.orderDay]?.slice(0,3)} → 📦 {DAYS[sched.deliveryDay]?.slice(0,3)}
+                    </div>
+                    {(vendor.schedules || []).length > 1 && (
+                      <button onClick={() => {
+                        const newScheds = (vendor.schedules || []).filter((_,i) => i !== si);
+                        updateVendor(vendor.id, "schedules", newScheds);
+                      }}
+                        style={{ background:"none", border:"1px solid #334155", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:12, padding:"0 8px", height:32 }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#475569"; }}>
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {/* Add schedule button */}
+              {(vendor.schedules || [{ orderDay: vendor.orderDay ?? 3, deliveryDay: vendor.deliveryDay ?? 4 }]).length < 5 && (
+                <button onClick={() => {
+                  const current = vendor.schedules || [{ orderDay: vendor.orderDay ?? 3, deliveryDay: vendor.deliveryDay ?? 4 }];
+                  updateVendor(vendor.id, "schedules", [...current, { orderDay: 1, deliveryDay: 2 }]);
+                }}
+                  style={{ background:"none", border:"1px dashed #334155", borderRadius:7, color:"#475569", cursor:"pointer", fontSize:12, padding:"6px 14px", display:"flex", alignItems:"center", gap:5, transition:"all 0.15s" }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.color="#f97316"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#475569"; }}>
+                  ＋ Add another order day
+                </button>
+              )}
             </div>
 
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
