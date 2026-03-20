@@ -932,10 +932,10 @@ export default function App() {
           <div style={{ flex:1, padding:"12px 12px", overflowY:"auto" }}>
             {[
               { key:"inventory", label:"Inventory",  icon:"📋", desc:"Stock count" },
-              { key:"backend",   label:"Backend",    icon:"⚙️",  desc:"Edit items & sections" },
               { key:"order",     label:"Order List", icon:"📦", desc:"Weekly orders" },
-              { key:"history",   label:"History",    icon:"📚", desc:"Past orders" },
               { key:"usage",     label:"Usage",      icon:"📈", desc:"Trends & par suggestions" },
+              { key:"history",   label:"History",    icon:"📚", desc:"Past orders" },
+              { key:"backend",   label:"Backend",    icon:"⚙️",  desc:"Edit items & sections" },
               { key:"settings",  label:"Settings",   icon:"🔧", desc:"Vendors & schedule" },
             ].map(item => {
               const isActive = view === item.key;
@@ -1021,7 +1021,7 @@ export default function App() {
         {view==="history" && user.role==="owner" &&
           <HistoryView orders={orders} />}
         {view==="usage" && user.role==="owner" &&
-          <UsageView inventory={inventory} usageLog={usageLog} computeUsage={computeUsage} applyParSuggestion={applyParSuggestion} />}
+          <UsageView inventory={inventory} usageLog={usageLog} computeUsage={computeUsage} applyParSuggestion={applyParSuggestion} orders={orders} />}
         {view==="settings" && user.role==="owner" &&
           <SettingsView settings={settings} saveSettings={saveSettings} inventory={inventory} />}
       </main>
@@ -1807,7 +1807,7 @@ function HistoryView({ orders }) {
 
 
 // ─── USAGE VIEW ───────────────────────────────────────────────────────────────
-function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion }) {
+function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orders = {} }) {
   const [activeTab, setActiveTab]     = React.useState("usage");
   const [search, setSearch]           = React.useState("");
   const [sortBy, setSortBy]           = React.useState("usage");
@@ -1821,15 +1821,24 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion }) {
   const itemMap = {};
   inventory.forEach(sec => sec.items.forEach(item => { itemMap[item.id] = { ...item, section: sec.section }; }));
 
+  // Build total ordered per item from all saved orders
+  const totalOrdered = {};
+  Object.values(orders).filter(o => o.saved).forEach(o => {
+    (o.lines || []).forEach(l => {
+      if (l.qty > 0) totalOrdered[l.id] = (totalOrdered[l.id] || 0) + l.qty;
+    });
+  });
+
   const rows = Object.entries(consumption).map(([id, vals]) => {
     const item = itemMap[id];
     if (!item) return null;
     const avg  = Math.round(vals.reduce((a,b) => a+b, 0) / vals.length);
     const peak = Math.max(...vals);
     const min  = Math.min(...vals);
+    const ordered = totalOrdered[id] || 0;
     return { id: Number(id), name: item.name, section: item.section, supplier: item.supplier,
              avg, peak, min, weeks: vals.length, current_reorder: item.reorder, current_max: item.max_stock,
-             order_unit: item.order_unit };
+             order_unit: item.order_unit, ordered };
   }).filter(Boolean);
 
   const sittingIds = new Set(Object.keys(itemMap).filter(id => !consumption[id]));
@@ -1949,21 +1958,22 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion }) {
             <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:10, padding:32, textAlign:"center", color:"#475569" }}>No items match</div>
           ) : (
             <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, overflow:"hidden" }}>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 80px 80px 80px 120px", background:"#0f172a", padding:"8px 16px", gap:8 }}>
-                {["Item","Avg/wk","Peak","Min","Trend"].map(h => (
-                  <span key={h} style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 70px 70px 70px 80px 110px", background:"#0f172a", padding:"8px 16px", gap:8 }}>
+                {[["Item","#475569"],["Avg/wk","#475569"],["Peak","#475569"],["Ordered","#f97316"],["Min","#475569"],["Trend","#475569"]].map(([h,c]) => (
+                  <span key={h} style={{ color:c, fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
                 ))}
               </div>
               {filtered.map((row, idx) => {
                 const pct = row.peak > 0 ? Math.round((row.avg / row.peak) * 100) : 0;
                 return (
-                  <div key={row.id} style={{ display:"grid", gridTemplateColumns:"1fr 80px 80px 80px 120px", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#1e293b":"#172033", borderTop:"1px solid #0f172a" }}>
+                  <div key={row.id} style={{ display:"grid", gridTemplateColumns:"1fr 70px 70px 70px 80px 110px", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#1e293b":"#172033", borderTop:"1px solid #0f172a" }}>
                     <div>
                       <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:500 }}>{row.name}</div>
                       <Sub>{String(row.section||"").replace(/[^\w\s]/g,"").trim()} · {row.weeks}wk</Sub>
                     </div>
                     <span style={{ color:"#f1f5f9", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{row.avg}</span>
                     <span style={{ color:"#fbbf24", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{row.peak}</span>
+                    <span style={{ color:"#22c55e", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{row.ordered > 0 ? row.ordered : "—"}</span>
                     <span style={{ color:"#94a3b8", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{row.min}</span>
                     <div>
                       <div style={{ background:"#0f172a", borderRadius:4, height:6, overflow:"hidden" }}>
