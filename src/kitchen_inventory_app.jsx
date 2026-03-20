@@ -422,6 +422,19 @@ export default function App() {
       const inv = applyOverridesAndAdded(baseInv, ov, sv, ai);
       setInventory(inv);
       autoGenerateOrder(getWeekKey(), ord, inv, st, sett);
+      // Check if previous week's order needs to be finalized
+      // Any unsaved order from a past week gets auto-archived
+      const currentWk = getWeekKey();
+      const pastUnsaved = Object.entries(ord).filter(([wk, o]) => wk !== currentWk && !o.saved);
+      if (pastUnsaved.length > 0) {
+        const archived = { ...ord };
+        pastUnsaved.forEach(([wk, o]) => {
+          archived[wk] = { ...o, saved: true, autoArchived: true };
+        });
+        setOrders(archived);
+        sbSet(group, "orders", archived);
+        try { localStorage.setItem(ORDERS_KEY(group), JSON.stringify(archived)); } catch(e) {}
+      }
       // Only push to Supabase if the value came from localStorage (not Supabase)
       // This prevents a fresh device from overwriting real data with empty defaults
       // sbGet returns null if Supabase had nothing — that's when we push local data up
@@ -601,6 +614,54 @@ export default function App() {
 
     return () => { sb.removeChannel(channel); };
   }, [group]);
+
+  // Watch for week change while app is open — start fresh order for new week
+  useEffect(() => {
+    if (!group || !inventory.length) return;
+    const checkWeek = () => {
+      const currentWk = getWeekKey();
+      setOrders(prev => {
+        // Auto-archive any past unsaved orders
+        let changed = false;
+        const updated = { ...prev };
+        Object.entries(prev).forEach(([wk, o]) => {
+          if (wk !== currentWk && !o.saved) {
+            updated[wk] = { ...o, saved: true, autoArchived: true };
+            changed = true;
+          }
+        });
+        // Generate new order for current week if missing
+        if (!prev[currentWk]) {
+          const today = new Date();
+          const orderDate = getWeekdayDate(today, settings.orderDay);
+          const receiveDate = new Date(orderDate);
+          receiveDate.setDate(orderDate.getDate() + 1);
+          const lines = inventory.flatMap(s => s.items.map(item => ({
+            id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
+            section: s.section, qty: calcOrderQty(item, stock[item.id] ?? 0),
+          })));
+          updated[currentWk] = {
+            weekKey: currentWk,
+            orderDate: orderDate.toISOString().split("T")[0],
+            receiveDate: receiveDate.toISOString().split("T")[0],
+            createdAt: new Date().toISOString(),
+            lines, saved: false,
+          };
+          changed = true;
+        }
+        if (changed) {
+          sbSet(group, "orders", updated);
+          try { localStorage.setItem(ORDERS_KEY(group), JSON.stringify(updated)); } catch(e) {}
+          return updated;
+        }
+        return prev;
+      });
+    };
+    checkWeek();
+    // Check every hour in case the app is left open across midnight
+    const interval = setInterval(checkWeek, 3600000);
+    return () => clearInterval(interval);
+  }, [group, inventory.length, settings.orderDay]);
 
   // Write to both local storage and Supabase
   const dualSet = useCallback((sbKey, localKeyFn, value) => {
@@ -1509,11 +1570,19 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
   });
 
   const handleSave = () => {
-    const toSave = order || {
+    // Snapshot ALL lines (not just active) so history is complete
+    const allLinesSnapshot = inventory.flatMap(s => s.items.map(item => ({
+      id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
+      section: s.section, qty: calcOrderQty(item, stock[item.id] ?? 0),
+    })));
+    const toSave = {
       weekKey: currentWeekKey,
-      orderDate: getWeekdayDate(new Date(), settings.orderDay).toISOString().split("T")[0],
-      receiveDate: getWeekdayDate(new Date(), settings.orderDay+1).toISOString().split("T")[0],
-      createdAt: new Date().toISOString(), lines,
+      orderDate: order?.orderDate || getWeekdayDate(new Date(), settings.orderDay).toISOString().split("T")[0],
+      receiveDate: order?.receiveDate || getWeekdayDate(new Date(), (settings.vendors?.[0]?.deliveryDay ?? settings.orderDay+1)).toISOString().split("T")[0],
+      createdAt: order?.createdAt || new Date().toISOString(),
+      savedAt: new Date().toISOString(),
+      lines: allLinesSnapshot,
+      saved: true,
     };
     saveOrder(currentWeekKey, toSave);
   };
