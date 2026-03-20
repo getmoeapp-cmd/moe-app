@@ -1189,16 +1189,10 @@ function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
         <div style={{ position:"relative", flex:1, maxWidth:320 }}>
           <select value={activeVendor} onChange={e => setActiveVendor(e.target.value)}
             style={{ width:"100%", background:"#1e293b", border:"1px solid #f97316", borderRadius:10, padding:"10px 40px 10px 14px", color:"#f1f5f9", fontSize:14, fontWeight:600, fontFamily:"'DM Sans',sans-serif", outline:"none", cursor:"pointer", appearance:"none", WebkitAppearance:"none" }}>
-            <option value="ALL">All Vendors ({allItems.length} items)</option>
-            {vendorOrder.map(v => {
-              const count = Object.values(vendorMap[v]||{}).flat().length;
-              const urgent = Object.values(vendorMap[v]||{}).flat().filter(i => (stock[i.id]??0) < i.reorder).length;
-              return (
-                <option key={v} value={v}>
-                  {v === "No Vendor" ? "📋 " : "📦 "}{v} ({count} items{urgent > 0 ? ` · ${urgent} to order` : ""})
-                </option>
-              );
-            })}
+            <option value="ALL">All Vendors</option>
+            {vendorOrder.map(v => (
+              <option key={v} value={v}>{v}</option>
+            ))}
           </select>
           {/* Dropdown arrow */}
           <div style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", pointerEvents:"none", color:"#f97316", fontSize:12 }}>▼</div>
