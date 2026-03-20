@@ -1184,24 +1184,39 @@ function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
           </div>
         </div>
       )}
-      {/* Vendor tab bar */}
-      <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch", marginBottom:16, paddingBottom:4 }}>
-        <div style={{ display:"flex", gap:8, minWidth:"max-content" }}>
-          {["ALL", ...vendorOrder].map(v => {
-            const isActive = activeVendor === v;
-            const isNoVendor = v === "No Vendor";
-            const urgentCount = v === "ALL" ? urgentItems.length : Object.values(vendorMap[v]||{}).flat().filter(i => (stock[i.id]??0) < i.reorder).length;
-            const activeBg = isNoVendor ? "#334155" : "#f97316";
-            const activeBorder = isNoVendor ? "#64748b" : "#f97316";
-            return (
-              <button key={v} onClick={() => setActiveVendor(v)}
-                style={{ padding:"9px 18px", borderRadius:10, border:"1px solid " + (isActive ? activeBorder : "#334155"), background:isActive ? activeBg : "#1e293b", color:isActive?"#fff":"#94a3b8", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap", transition:"all 0.15s", flexShrink:0 }}>
-                {v === "ALL" ? "All Vendors" : v}
-                {urgentCount > 0 && <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:10, padding:"1px 6px", fontSize:10 }}>{urgentCount}</span>}
-              </button>
-            );
-          })}
+      {/* Vendor dropdown */}
+      <div style={{ marginBottom:16, display:"flex", alignItems:"center", gap:10 }}>
+        <div style={{ position:"relative", flex:1, maxWidth:320 }}>
+          <select value={activeVendor} onChange={e => setActiveVendor(e.target.value)}
+            style={{ width:"100%", background:"#1e293b", border:"1px solid #f97316", borderRadius:10, padding:"10px 40px 10px 14px", color:"#f1f5f9", fontSize:14, fontWeight:600, fontFamily:"'DM Sans',sans-serif", outline:"none", cursor:"pointer", appearance:"none", WebkitAppearance:"none" }}>
+            <option value="ALL">All Vendors ({allItems.length} items)</option>
+            {vendorOrder.map(v => {
+              const count = Object.values(vendorMap[v]||{}).flat().length;
+              const urgent = Object.values(vendorMap[v]||{}).flat().filter(i => (stock[i.id]??0) < i.reorder).length;
+              return (
+                <option key={v} value={v}>
+                  {v === "No Vendor" ? "📋 " : "📦 "}{v} ({count} items{urgent > 0 ? ` · ${urgent} to order` : ""})
+                </option>
+              );
+            })}
+          </select>
+          {/* Dropdown arrow */}
+          <div style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", pointerEvents:"none", color:"#f97316", fontSize:12 }}>▼</div>
         </div>
+        {/* Urgent badge */}
+        {urgentItems.length > 0 && activeVendor === "ALL" && (
+          <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:8, padding:"6px 12px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600, whiteSpace:"nowrap" }}>
+            🔴 {urgentItems.length} to order
+          </span>
+        )}
+        {urgentItems.length > 0 && activeVendor !== "ALL" && (() => {
+          const urgent = Object.values(vendorMap[activeVendor]||{}).flat().filter(i => (stock[i.id]??0) < i.reorder).length;
+          return urgent > 0 ? (
+            <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:8, padding:"6px 12px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600, whiteSpace:"nowrap" }}>
+              🔴 {urgent} to order
+            </span>
+          ) : null;
+        })()}
       </div>
 
       {/* Stock count header */}
