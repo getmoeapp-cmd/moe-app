@@ -200,13 +200,11 @@ const DEFAULT_INVENTORY = [
   ]},
 ];
 
-const LEGACY_USERS = {
+const USERS = {
   "owner@kitchen.com":    { password: "owner123",    role: "owner",    name: "Owner",    group: "demo" },
   "employee@kitchen.com": { password: "employee123", role: "employee", name: "Employee", group: "demo" },
   "ronnie@kitchen.com":   { password: "ronnie123",   role: "owner",    name: "Ronnie",   group: "tommys" },
   "roberto@kitchen.com":  { password: "roberto123",  role: "employee", name: "Roberto",  group: "tommys" },
-  "vendor@anacapri.com":  { password: "vendor123",   role: "vendor",   name: "Anacapri Foods", group: "vendor_anacapri", businessName: "Anacapri Foods" },
-  "vendor@market.com":    { password: "vendor123",   role: "vendor",   name: "Market Supply",  group: "vendor_market",   businessName: "Market Supply" },
 };
 
 // Blank starter inventory for new groups (one section, one example item)
@@ -364,477 +362,56 @@ const printSupplierPDF = ({ supplier, items, weekKey, orderDate, receiveDate }) 
   win.document.close();
 };
 
-// ─── GLOBAL DATA KEYS (platform-wide, not group-scoped) ─────────────────────
-const GLOBAL_GRP = "__moe_global__";
-const globalGet = (key) => sbGet(GLOBAL_GRP, key);
-const globalSet = (key, val) => sbSet(GLOBAL_GRP, key, val);
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// MAIN APP — Routes between Login, Merchant App, and Vendor Dashboard
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [appUser, setAppUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const checkSession = async () => {
-      const sb = getSB();
-      if (!sb) { setLoading(false); return; }
-      try {
-        const { data: { session } } = await sb.auth.getSession();
-        if (session?.user) {
-          const profiles = await globalGet("profiles") || {};
-          const profile = profiles[session.user.id];
-          if (profile) {
-            setAppUser({ ...profile, email: session.user.email, authId: session.user.id });
-          }
-        }
-      } catch {}
-      setLoading(false);
-    };
-    checkSession();
-  }, []);
-
-  const handleLogout = async () => {
-    const sb = getSB();
-    if (sb) { try { await sb.auth.signOut(); } catch {} }
-    setAppUser(null);
-  };
-
-  if (loading) return (
-    <div style={{ minHeight:"100vh", background:"#0f172a", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',sans-serif" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      <div style={{ textAlign:"center" }}><MoeLogo size="lg" /><div style={{ color:"#475569", fontSize:12, fontFamily:"'DM Mono',monospace", marginTop:16 }}>LOADING...</div></div>
-    </div>
-  );
-
-  if (!appUser) return <UnifiedLoginScreen onLogin={setAppUser} />;
-  if (appUser.role === "vendor") return <VendorDashboardApp user={appUser} onLogout={handleLogout} />;
-  return <MerchantApp user={appUser} onLogout={handleLogout} />;
-}
-
-// ─── MOE LOGO ─────────────────────────────────────────────────────────────────
-function MoeLogo({ size = "md" }) {
-  const scale = size === "lg" ? 1.8 : size === "sm" ? 0.7 : 1;
-  const w = Math.round(120 * scale);
-  const h = Math.round(44 * scale);
-  return (
-    <svg width={w} height={h} viewBox="0 0 120 44" xmlns="http://www.w3.org/2000/svg" style={{ display:"block", flexShrink:0 }}>
-      <rect x="2" y="6" width="36" height="36" rx="9" fill="#1e293b" stroke="#f97316" strokeWidth="1.5"/>
-      <line x1="20" y1="6" x2="20" y2="2" stroke="#f97316" strokeWidth="1.5"/>
-      <circle cx="20" cy="1" r="2" fill="#f97316"/>
-      <line x1="2" y1="18" x2="-1" y2="18" stroke="#475569" strokeWidth="1"/>
-      <circle cx="-2" cy="18" r="1.5" fill="#475569"/>
-      <line x1="38" y1="18" x2="41" y2="18" stroke="#f97316" strokeWidth="1.5"/>
-      <circle cx="42" cy="18" r="1.5" fill="#f97316"/>
-      <line x1="38" y1="26" x2="41" y2="26" stroke="#475569" strokeWidth="1"/>
-      <circle cx="42" cy="26" r="1.5" fill="#475569"/>
-      <rect x="0" y="15" width="4" height="12" rx="2" fill="#334155"/>
-      <rect x="36" y="15" width="4" height="12" rx="2" fill="#334155"/>
-      <circle cx="13" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
-      <circle cx="13" cy="21" r="3.5" fill="#f97316"/>
-      <circle cx="14.5" cy="19.5" r="1.2" fill="#fef3c7"/>
-      <circle cx="27" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
-      <circle cx="27" cy="21" r="3.5" fill="#f97316"/>
-      <circle cx="28.5" cy="19.5" r="1.2" fill="#fef3c7"/>
-      <path d="M13 33 Q20 38 27 33" fill="none" stroke="#f97316" strokeWidth="1.8" strokeLinecap="round"/>
-      <circle cx="13" cy="33" r="2" fill="#f97316"/>
-      <circle cx="27" cy="33" r="2" fill="#f97316"/>
-      <text x="50" y="32" fontFamily="'DM Sans',sans-serif" fontWeight="900" fontSize="26" letterSpacing="-1.5" fill="#f1f5f9">M<tspan fill="#f97316">OE</tspan></text>
-    </svg>
-  );
-}
-
-// ─── NAV BUTTON ──────────────────────────────────────────────────────────────
-function NavBtn({ children, active, onClick, accent }) {
-  return (
-    <button onClick={onClick} style={{
-      background: active ? (accent ? "#f97316" : "#334155") : "transparent",
-      color: active ? "#fff" : "#94a3b8",
-      border: `1px solid ${active ? (accent ? "#f97316" : "#475569") : "#334155"}`,
-      padding:"5px 14px", borderRadius:7, cursor:"pointer", fontSize:13, fontWeight:500,
-    }}>{children}</button>
-  );
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// UNIFIED LOGIN — Merchant / Vendor toggle with Sign In + Register
-// ═══════════════════════════════════════════════════════════════════════════════
-function UnifiedLoginScreen({ onLogin }) {
-  const [mode, setMode] = useState("merchant");
-  const [tab, setTab] = useState("signin");
-  const [email, setEmail] = useState("");
-  const [pass, setPass] = useState("");
-  const [name, setName] = useState("");
-  const [bizName, setBizName] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [show, setShow] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const handleSignIn = async () => {
-    setError(""); setBusy(true);
-    // Try legacy login first for backward compat
-    const u = LEGACY_USERS[email.toLowerCase().trim()];
-    if (u && u.password === pass) {
-      // Ensure role matches the selected mode
-      if (mode === "vendor" && u.role !== "vendor") { setError("This is a merchant account. Switch to Merchant tab."); setBusy(false); return; }
-      if (mode === "merchant" && u.role === "vendor") { setError("This is a vendor account. Switch to Vendor tab."); setBusy(false); return; }
-      onLogin({ ...u, email, businessName: u.businessName || u.name });
-      setBusy(false); return;
-    }
-    const sb = getSB();
-    if (!sb) { setError("Database unavailable."); setBusy(false); return; }
-    try {
-      const { data, error: authErr } = await sb.auth.signInWithPassword({ email: email.trim(), password: pass });
-      if (authErr) { setError(authErr.message); setBusy(false); return; }
-      const profiles = await globalGet("profiles") || {};
-      const profile = profiles[data.user.id];
-      if (!profile) { setError("No profile found. Please register."); setBusy(false); return; }
-      if (mode === "vendor" && profile.role !== "vendor") { setError("This is a merchant account."); setBusy(false); return; }
-      if (mode === "merchant" && profile.role === "vendor") { setError("This is a vendor account."); setBusy(false); return; }
-      onLogin({ ...profile, email: data.user.email, authId: data.user.id });
-    } catch { setError("Login failed."); }
-    setBusy(false);
-  };
-
-  const handleRegister = async () => {
-    setError(""); setSuccess(""); setBusy(true);
-    if (!email.trim() || !pass || !name.trim() || !bizName.trim()) { setError("All fields required."); setBusy(false); return; }
-    if (pass.length < 6) { setError("Password must be 6+ characters."); setBusy(false); return; }
-    const sb = getSB();
-    if (!sb) { setError("Database unavailable."); setBusy(false); return; }
-    try {
-      const { data, error: authErr } = await sb.auth.signUp({ email: email.trim(), password: pass });
-      if (authErr) { setError(authErr.message); setBusy(false); return; }
-      const userId = data.user?.id;
-      if (!userId) { setError("Registration failed."); setBusy(false); return; }
-      const profiles = await globalGet("profiles") || {};
-      const groupId = mode === "vendor" ? `vendor_${userId.slice(0,8)}` : `merch_${userId.slice(0,8)}`;
-      profiles[userId] = { role: mode === "vendor" ? "vendor" : "owner", name: name.trim(), businessName: bizName.trim(), group: groupId, createdAt: new Date().toISOString() };
-      await globalSet("profiles", profiles);
-      if (mode === "vendor") {
-        const reg = await globalGet("vendor_registry") || {};
-        reg[userId] = { businessName: bizName.trim(), contactName: name.trim(), email: email.trim(), createdAt: new Date().toISOString(), itemList: [] };
-        await globalSet("vendor_registry", reg);
-      }
-      setSuccess("Account created! Sign in now."); setTab("signin"); setPass("");
-    } catch { setError("Registration failed."); }
-    setBusy(false);
-  };
-
-  const inp = { width:"100%", background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box", fontFamily:"'DM Sans',sans-serif" };
-  const lbl = { display:"block", color:"#94a3b8", fontSize:12, fontWeight:500, marginBottom:6, letterSpacing:"0.5px", textTransform:"uppercase" };
-  const accent = mode==="vendor"?"#8b5cf6":"#f97316";
-
-  return (
-    <div style={{ minHeight:"100vh", background:"#0f172a", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',sans-serif" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      <div style={{ width:400 }}>
-        <div style={{ textAlign:"center", marginBottom:28 }}>
-          <div style={{ display:"flex", justifyContent:"center", marginBottom:12 }}><MoeLogo size="lg" /></div>
-          <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", letterSpacing:"2px" }}>MAKE ORDERING EASY</div>
-        </div>
-        <div style={{ display:"flex", marginBottom:20, background:"#1e293b", borderRadius:10, border:"1px solid #334155", overflow:"hidden" }}>
-          {[{k:"merchant",l:"Merchant",i:"🏪",d:"Restaurants & kitchens"},{k:"vendor",l:"Vendor",i:"📦",d:"Suppliers & distributors"}].map(m => (
-            <button key={m.k} onClick={() => { setMode(m.k); setError(""); setSuccess(""); setTab("signin"); }}
-              style={{ flex:1, padding:"12px 0", background:mode===m.k?(m.k==="merchant"?"#f97316":"#8b5cf6"):"transparent", border:"none", color:mode===m.k?"#fff":"#64748b", fontSize:13, fontWeight:600, cursor:"pointer" }}>
-              <div>{m.i} {m.l}</div><div style={{ fontSize:10, fontWeight:400, marginTop:2, opacity:0.8 }}>{m.d}</div>
-            </button>
-          ))}
-        </div>
-        <div style={{ display:"flex" }}>
-          {["signin","register"].map(t => (
-            <button key={t} onClick={() => { setTab(t); setError(""); setSuccess(""); }}
-              style={{ flex:1, padding:"10px 0", background:"transparent", border:"none", borderBottom:tab===t?`2px solid ${accent}`:"2px solid transparent", color:tab===t?"#f1f5f9":"#475569", fontSize:13, fontWeight:tab===t?600:400, cursor:"pointer" }}>
-              {t==="signin"?"Sign In":"Create Account"}
-            </button>
-          ))}
-        </div>
-        <div style={{ background:"#1e293b", borderRadius:"0 0 16px 16px", border:"1px solid #334155", borderTop:"none", padding:28 }}>
-          {tab==="register" && (<>
-            <div style={{ marginBottom:14 }}><label style={lbl}>Your Name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="John Smith" style={inp} /></div>
-            <div style={{ marginBottom:14 }}><label style={lbl}>Business Name</label><input value={bizName} onChange={e=>setBizName(e.target.value)} placeholder={mode==="vendor"?"Anacapri Foods":"Tommy's Pizzeria"} style={inp} /></div>
-          </>)}
-          <div style={{ marginBottom:14 }}><label style={lbl}>Email</label><input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="you@business.com" style={inp} onKeyDown={e=>e.key==="Enter"&&(tab==="signin"?handleSignIn():handleRegister())} /></div>
-          <div style={{ marginBottom:20 }}><label style={lbl}>Password</label><div style={{ position:"relative" }}><input value={pass} onChange={e=>setPass(e.target.value)} type={show?"text":"password"} placeholder="••••••••" style={{...inp,paddingRight:40}} onKeyDown={e=>e.key==="Enter"&&(tab==="signin"?handleSignIn():handleRegister())} /><button onClick={()=>setShow(!show)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:14 }}>{show?"🙈":"👁"}</button></div></div>
-          {error && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:16 }}>{error}</div>}
-          {success && <div style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:8, padding:"10px 14px", color:"#4ade80", fontSize:13, marginBottom:16 }}>{success}</div>}
-          <button onClick={tab==="signin"?handleSignIn:handleRegister} disabled={busy}
-            style={{ width:"100%", background:mode==="vendor"?"linear-gradient(135deg,#8b5cf6,#6d28d9)":"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:8, padding:12, color:"#fff", fontSize:15, fontWeight:600, cursor:busy?"wait":"pointer", opacity:busy?0.7:1 }}>
-            {busy?"Please wait...":tab==="signin"?"Sign In":"Create Account"}
-          </button>
-        </div>
-        {tab==="signin"&&(
-          <div style={{ marginTop:20, background:"#1e293b", borderRadius:12, border:"1px solid #334155", padding:"14px 18px" }}>
-            <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Demo Credentials</div>
-            {mode==="merchant"?(
-              <div style={{ color:"#94a3b8", fontSize:12, lineHeight:2 }}><span style={{ color:"#f97316" }}>Owner:</span> owner@kitchen.com / owner123<br /><span style={{ color:"#22c55e" }}>Employee:</span> employee@kitchen.com / employee123</div>
-            ):(
-              <div style={{ color:"#94a3b8", fontSize:12, lineHeight:2 }}><span style={{ color:"#8b5cf6" }}>Anacapri:</span> vendor@anacapri.com / vendor123<br /><span style={{ color:"#8b5cf6" }}>Market:</span> vendor@market.com / vendor123</div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// VENDOR DASHBOARD — Full vendor portal experience
-// ═══════════════════════════════════════════════════════════════════════════════
-function VendorDashboardApp({ user, onLogout }) {
-  const [view, setView] = useState("orders");
-  const [connections, setConnections] = useState([]);
-  const [vendorOrders, setVendorOrders] = useState([]);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteStatus, setInviteStatus] = useState("");
-  const [catalogItems, setCatalogItems] = useState([]);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const accent = "#8b5cf6";
-
-  useEffect(() => {
-    const load = async () => {
-      const allConns = await globalGet("connections") || {};
-      setConnections(Object.entries(allConns).filter(([,c]) => c.vendorId === user.authId && c.status === "active").map(([id,c]) => ({ id, ...c })));
-      setVendorOrders(await globalGet(`vendor_orders_${user.authId}`) || []);
-      const reg = await globalGet("vendor_registry") || {};
-      setCatalogItems((reg[user.authId] || {}).itemList || []);
-    };
-    load(); const iv = setInterval(load, 15000); return () => clearInterval(iv);
-  }, [user.authId]);
-
-  const sendInvite = async () => {
-    if (!inviteEmail.trim()) return; setInviteStatus("sending");
-    const invites = await globalGet("invites") || {};
-    invites[`inv_${Date.now()}_${Math.random().toString(36).slice(2,8)}`] = {
-      vendorId: user.authId, vendorName: user.businessName || user.name, vendorEmail: user.email,
-      merchantEmail: inviteEmail.trim().toLowerCase(), status: "pending", createdAt: new Date().toISOString(),
-    };
-    await globalSet("invites", invites);
-    setInviteStatus("sent"); setInviteEmail(""); setTimeout(() => setInviteStatus(""), 3000);
-  };
-
-  const updateOrderStatus = async (orderId, newStatus) => {
-    const updated = vendorOrders.map(o => o.id === orderId ? { ...o, status: newStatus, updatedAt: new Date().toISOString() } : o);
-    setVendorOrders(updated); await globalSet(`vendor_orders_${user.authId}`, updated);
-  };
-
-  const saveCatalog = async (items) => {
-    setCatalogItems(items);
-    const reg = await globalGet("vendor_registry") || {};
-    if (!reg[user.authId]) reg[user.authId] = {};
-    reg[user.authId].itemList = items;
-    await globalSet("vendor_registry", reg);
-  };
-
-  const pendingOrders = vendorOrders.filter(o => o.status === "pending");
-  const activeOrders = vendorOrders.filter(o => o.status === "accepted");
-  const pastOrders = vendorOrders.filter(o => o.status === "fulfilled" || o.status === "rejected");
-
-  const navItems = [
-    { key:"orders", label:"Incoming Orders", icon:"📦", desc:"From merchants" },
-    { key:"merchants", label:"My Merchants", icon:"🏪", desc:"Connected businesses" },
-    { key:"catalog", label:"Item Catalog", icon:"📋", desc:"Products & pricing" },
-    { key:"history", label:"Order History", icon:"📚", desc:"Past orders" },
-  ];
-
-  return (
-    <div style={{ minHeight:"100vh", background:"#0f172a", fontFamily:"'DM Sans',sans-serif" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200 }} />}
-      <div style={{ position:"fixed", top:0, left:0, height:"100vh", width:260, background:"#1e293b", borderRight:"1px solid #334155", transform:sidebarOpen?"translateX(0)":"translateX(-100%)", transition:"transform 0.25s ease", zIndex:201, display:"flex", flexDirection:"column" }}>
-        <div style={{ padding:"20px 20px 16px", borderBottom:"1px solid #334155", display:"flex", alignItems:"center", justifyContent:"space-between" }}><MoeLogo size="md" /><button onClick={()=>setSidebarOpen(false)} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:20, padding:4 }}>✕</button></div>
-        <div style={{ padding:"14px 20px", borderBottom:"1px solid #334155" }}>
-          <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{user.businessName||user.name}</div>
-          <div style={{ color:accent, fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>VENDOR PORTAL</div>
-        </div>
-        <div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
-          {navItems.map(item => { const isActive = view===item.key; return (
-            <button key={item.key} onClick={() => { setView(item.key); setSidebarOpen(false); }}
-              style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#0f172a":"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft:isActive?`3px solid ${accent}`:"3px solid transparent" }}
-              onMouseEnter={e=>{if(!isActive)e.currentTarget.style.background="#0f172a";}} onMouseLeave={e=>{if(!isActive)e.currentTarget.style.background="transparent";}}>
-              <span style={{ fontSize:18 }}>{item.icon}</span>
-              <div style={{ textAlign:"left", flex:1 }}><div style={{ color:isActive?accent:"#f1f5f9", fontSize:14, fontWeight:isActive?600:400 }}>{item.label}</div><div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div></div>
-              {item.key==="orders"&&pendingOrders.length>0&&<span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:10, padding:"2px 7px", fontSize:10, fontWeight:600 }}>{pendingOrders.length}</span>}
-            </button>); })}
-        </div>
-        <div style={{ padding:"12px", borderTop:"1px solid #334155" }}><button onClick={onLogout} style={{ width:"100%", background:"transparent", border:"1px solid #334155", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13 }}>Sign Out</button></div>
-      </div>
-      <header style={{ background:"#1e293b", borderBottom:"1px solid #334155", padding:"0 16px", display:"flex", alignItems:"center", justifyContent:"space-between", height:60, position:"sticky", top:0, zIndex:101 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-          <button onClick={()=>setSidebarOpen(true)} style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4.5 }}><span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }}/><span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }}/><span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }}/></button>
-          <MoeLogo size="md" />
-          <span style={{ background:"#2e1065", border:`1px solid ${accent}`, borderRadius:6, padding:"3px 10px", color:accent, fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>VENDOR</span>
-        </div>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          {pendingOrders.length>0&&<span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:8, padding:"4px 10px", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{pendingOrders.length} pending</span>}
-          <span style={{ color:"#64748b", fontSize:13 }}>{user.businessName||user.name}</span>
-        </div>
-      </header>
-      <main style={{ maxWidth:1200, margin:"0 auto", padding:"24px 16px" }}>
-
-        {view==="orders"&&(<div>
-          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 6px" }}>Incoming Orders</h2>
-          <p style={{ color:"#64748b", fontSize:13, margin:"0 0 20px" }}>{pendingOrders.length} pending · {activeOrders.length} accepted</p>
-          {vendorOrders.filter(o=>o.status==="pending"||o.status==="accepted").length===0?(
-            <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}><div style={{ fontSize:40, marginBottom:12 }}>📭</div><div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No incoming orders</div><div style={{ color:"#475569", fontSize:13, marginTop:6 }}>When connected merchants submit orders, they appear here.</div></div>
-          ):(
-            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-              {vendorOrders.filter(o=>o.status==="pending"||o.status==="accepted").map(order => (
-                <div key={order.id} style={{ background:"#1e293b", border:`1px solid ${order.status==="pending"?"#d97706":"#16a34a"}`, borderRadius:12, overflow:"hidden" }}>
-                  <div style={{ padding:"14px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10, borderBottom:"1px solid #0f172a" }}>
-                    <div>
-                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                        <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:600 }}>🏪 {order.merchantName}</span>
-                        <span style={{ background:order.status==="pending"?"#422006":"#14532d", border:`1px solid ${order.status==="pending"?"#d97706":"#16a34a"}`, borderRadius:6, padding:"2px 8px", color:order.status==="pending"?"#fbbf24":"#4ade80", fontSize:10, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{order.status.toUpperCase()}</span>
-                      </div>
-                      <div style={{ color:"#64748b", fontSize:12 }}>{order.weekKey} · {new Date(order.submittedAt).toLocaleDateString()} · {order.lines.length} items</div>
-                    </div>
-                    <div style={{ display:"flex", gap:8 }}>
-                      {order.status==="pending"&&<><button onClick={()=>updateOrderStatus(order.id,"accepted")} style={{ background:"linear-gradient(135deg,#16a34a,#15803d)", border:"none", borderRadius:7, padding:"8px 16px", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>✓ Accept</button><button onClick={()=>updateOrderStatus(order.id,"rejected")} style={{ background:"transparent", border:"1px solid #7f1d1d", borderRadius:7, padding:"8px 14px", color:"#fca5a5", fontSize:12, cursor:"pointer" }}>✕ Reject</button></>}
-                      {order.status==="accepted"&&<button onClick={()=>updateOrderStatus(order.id,"fulfilled")} style={{ background:`linear-gradient(135deg,${accent},#6d28d9)`, border:"none", borderRadius:7, padding:"8px 16px", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>📦 Mark Fulfilled</button>}
-                    </div>
-                  </div>
-                  {order.lines.map((line,idx) => (<div key={idx} style={{ display:"grid", gridTemplateColumns:"1fr 80px 80px", padding:"8px 18px", background:idx%2===0?"#1e293b":"#172033", borderTop:idx>0?"1px solid #0f172a":"none" }}><span style={{ color:"#e2e8f0", fontSize:13 }}>{line.name}</span><span style={{ color:"#fca5a5", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{line.qty}</span><span style={{ color:"#475569", fontSize:11 }}>{line.order_unit}</span></div>))}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>)}
-
-        {view==="merchants"&&(<div>
-          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 6px" }}>My Merchants</h2>
-          <p style={{ color:"#64748b", fontSize:13, margin:"0 0 20px" }}>{connections.length} connected</p>
-          <div style={{ background:"#1e293b", border:`1px solid ${accent}`, borderRadius:12, padding:20, marginBottom:24 }}>
-            <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600, marginBottom:12 }}>📧 Invite a Merchant</div>
-            <div style={{ display:"flex", gap:10 }}>
-              <input value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} placeholder="merchant@business.com" type="email"
-                style={{ flex:1, background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:13, outline:"none" }}
-                onKeyDown={e=>e.key==="Enter"&&sendInvite()} />
-              <button onClick={sendInvite} disabled={inviteStatus==="sending"}
-                style={{ background:`linear-gradient(135deg,${accent},#6d28d9)`, border:"none", borderRadius:8, padding:"10px 20px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer", whiteSpace:"nowrap" }}>
-                {inviteStatus==="sending"?"Sending...":"Send Invite"}
-              </button>
-            </div>
-            {inviteStatus==="sent"&&<div style={{ marginTop:10, background:"#052e16", border:"1px solid #16a34a", borderRadius:8, padding:"8px 12px", color:"#4ade80", fontSize:12 }}>✓ Invite sent! The merchant will see it when they log into MOE.</div>}
-          </div>
-          {connections.length===0?(
-            <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}><div style={{ fontSize:36, marginBottom:12 }}>🔗</div><div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No merchants connected yet</div></div>
-          ):(
-            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>{connections.map(c => (
-              <div key={c.id} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:10, padding:"14px 18px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                <div><div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>🏪 {c.merchantName}</div><div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>Since {new Date(c.connectedAt).toLocaleDateString()}</div></div>
-                <span style={{ background:"#14532d", border:"1px solid #16a34a", borderRadius:6, padding:"3px 10px", color:"#4ade80", fontSize:11, fontFamily:"'DM Mono',monospace" }}>ACTIVE</span>
-              </div>
-            ))}</div>
-          )}
-        </div>)}
-
-        {view==="catalog"&&(<div>
-          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:12 }}>
-            <div><h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Item Catalog</h2><p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Shared with connected merchants</p></div>
-            <button onClick={()=>saveCatalog([...catalogItems,{id:Date.now(),name:"",order_unit:"Case",price:"",available:true}])} style={{ background:`linear-gradient(135deg,${accent},#6d28d9)`, border:"none", borderRadius:8, padding:"8px 18px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer" }}>＋ Add Item</button>
-          </div>
-          {catalogItems.length===0?(
-            <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}><div style={{ fontSize:36, marginBottom:12 }}>📋</div><div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No items yet</div></div>
-          ):(
-            <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, overflow:"hidden" }}>
-              {catalogItems.map((item,idx) => (
-                <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 90px 90px 90px 50px", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#1e293b":"#172033", borderTop:idx>0?"1px solid #0f172a":"none" }}>
-                  <input value={item.name} onChange={e=>{const up=[...catalogItems];up[idx]={...up[idx],name:e.target.value};saveCatalog(up);}} placeholder="Item name..." style={{ background:"#0f172a", border:"1px solid #334155", borderRadius:6, padding:"6px 10px", color:"#f1f5f9", fontSize:13, outline:"none" }} />
-                  <select value={item.order_unit} onChange={e=>{const up=[...catalogItems];up[idx]={...up[idx],order_unit:e.target.value};saveCatalog(up);}} style={{ background:"#0f172a", border:"1px solid #334155", borderRadius:6, padding:"6px 8px", color:"#f1f5f9", fontSize:12, outline:"none" }}>
-                    {["Case","Each","Piece","Unit","Bag","Bundle","Gallon","Roll","Lbs"].map(u=><option key={u} value={u}>{u}</option>)}
-                  </select>
-                  <input value={item.price||""} onChange={e=>{const up=[...catalogItems];up[idx]={...up[idx],price:e.target.value};saveCatalog(up);}} placeholder="$0.00" type="number" step="0.01" style={{ background:"#0f172a", border:"1px solid #334155", borderRadius:6, padding:"6px 8px", color:"#4ade80", fontSize:12, fontFamily:"'DM Mono',monospace", outline:"none", textAlign:"right" }} />
-                  <button onClick={()=>{const up=[...catalogItems];up[idx]={...up[idx],available:!up[idx].available};saveCatalog(up);}} style={{ background:item.available?"#14532d":"#7f1d1d", border:`1px solid ${item.available?"#16a34a":"#ef4444"}`, borderRadius:6, padding:"4px 8px", color:item.available?"#4ade80":"#fca5a5", fontSize:10, fontWeight:600, cursor:"pointer", fontFamily:"'DM Mono',monospace" }}>{item.available?"AVAIL":"OUT"}</button>
-                  <button onClick={()=>saveCatalog(catalogItems.filter(i=>i.id!==item.id))} style={{ background:"none", border:"1px solid #334155", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:14, padding:"2px 8px" }}>✕</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>)}
-
-        {view==="history"&&(<div>
-          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 20px" }}>Order History</h2>
-          {pastOrders.length===0?(
-            <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}><div style={{ fontSize:36, marginBottom:12 }}>📚</div><div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No order history yet</div></div>
-          ):(
-            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>{pastOrders.map(order => (
-              <div key={order.id} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:10, overflow:"hidden" }}>
-                <div style={{ padding:"12px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", borderBottom:"1px solid #0f172a" }}>
-                  <div><span style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>🏪 {order.merchantName}</span><span style={{ color:"#475569", fontSize:12, marginLeft:10 }}>{order.weekKey} · {order.lines.length} items</span></div>
-                  <span style={{ background:order.status==="fulfilled"?"#14532d":"#7f1d1d", color:order.status==="fulfilled"?"#4ade80":"#fca5a5", borderRadius:6, padding:"3px 10px", fontSize:10, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{order.status.toUpperCase()}</span>
-                </div>
-                {order.lines.map((line,idx) => (<div key={idx} style={{ display:"grid", gridTemplateColumns:"1fr 80px 80px", padding:"6px 18px", background:idx%2===0?"#1e293b":"#172033" }}><span style={{ color:"#e2e8f0", fontSize:12 }}>{line.name}</span><span style={{ color:"#fca5a5", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{line.qty}</span><span style={{ color:"#475569", fontSize:11 }}>{line.order_unit}</span></div>))}
-              </div>
-            ))}</div>
-          )}
-        </div>)}
-      </main>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// MERCHANT APP WRAPPER — The existing kitchen app, now with vendor connections
-// ═══════════════════════════════════════════════════════════════════════════════
-function MerchantApp({ user: initialUser, onLogout }) {
-  const user = { ...initialUser, role: initialUser.role === "merchant_owner" ? "owner" : initialUser.role };
-
-  const [stock, setStock] = useState({});
-  const [overrides, setOverrides] = useState({});
-  const [sectionOverrides, setSectionOverrides] = useState({});
-  const [addedItems, setAddedItems] = useState({});
-  const [orders, setOrders] = useState({});
-  const [settings, setSettings] = useState({ orderDay: 3, vendors: [] });
-  const [usageLog, setUsageLog] = useState({});
-  const [inventory, setInventory] = useState(DEFAULT_INVENTORY);
-  const [view, setView] = useState("inventory");
-  const [saveFlash, setSaveFlash] = useState("");
-  const [group] = useState(user.group || "demo");
-  const [lastSync, setLastSync] = useState(null);
-  const [syncError, setSyncError] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [pendingInvites, setPendingInvites] = useState([]);
+  const [user, setUser]                           = useState(null);
+  const [stock, setStock]                         = useState({});
+  const [overrides, setOverrides]                 = useState({});
+  const [sectionOverrides, setSectionOverrides]   = useState({});
+  const [addedItems, setAddedItems]               = useState({});
+  const [orders, setOrders]                       = useState({});
+  const [settings, setSettings]                   = useState({ orderDay: 3, vendors: [] });
+  const [usageLog, setUsageLog]                   = useState({});
+  const [inventory, setInventory]                 = useState(DEFAULT_INVENTORY);
+  const [view, setView]                           = useState("inventory");
+  const [saveFlash, setSaveFlash]                 = useState("");
+  const [loginError, setLoginError]               = useState("");
+  const [group, setGroup]                         = useState("demo");
+  const [lastSync, setLastSync]                   = useState(null);
+  const [syncError, setSyncError]                 = useState(false);
+  const [sidebarOpen, setSidebarOpen]             = useState(false);
+  const [connections, setConnections]             = useState([]);
 
   const flash = () => { setSaveFlash("✓ Saved"); setTimeout(() => setSaveFlash(""), 2000); };
 
-  // Check for vendor invites
+  // Load connected vendors for this merchant
   useEffect(() => {
-    const check = async () => {
-      const invites = await globalGet("invites") || {};
-      setPendingInvites(Object.entries(invites).filter(([,inv]) => inv.merchantEmail === user.email && inv.status === "pending").map(([id,inv]) => ({ id, ...inv })));
+    const loadConnections = async () => {
+      const all = await globalGet("connections") || {};
+      setConnections(
+        Object.entries(all)
+          .filter(([, c]) => c.merchantEmail === user.email && c.status === "active")
+          .map(([id, c]) => ({ id, ...c }))
+      );
     };
-    check(); const iv = setInterval(check, 30000); return () => clearInterval(iv);
+    loadConnections();
+    const iv = setInterval(loadConnections, 30000);
+    return () => clearInterval(iv);
   }, [user.email]);
 
-  const acceptInvite = async (inviteId) => {
-    const invites = await globalGet("invites") || {};
-    if (!invites[inviteId]) return;
-    const inv = invites[inviteId];
-    invites[inviteId] = { ...inv, status: "accepted", acceptedAt: new Date().toISOString() };
-    await globalSet("invites", invites);
-    const conns = await globalGet("connections") || {};
-    conns[`conn_${Date.now()}`] = { vendorId: inv.vendorId, vendorName: inv.vendorName, merchantId: user.authId || user.email, merchantName: user.businessName || user.name || group, merchantEmail: user.email, status: "active", connectedAt: new Date().toISOString() };
-    await globalSet("connections", conns);
-    setPendingInvites(prev => prev.filter(i => i.id !== inviteId));
-    flash();
-  };
-
-  const declineInvite = async (inviteId) => {
-    const invites = await globalGet("invites") || {};
-    if (invites[inviteId]) { invites[inviteId].status = "declined"; await globalSet("invites", invites); }
-    setPendingInvites(prev => prev.filter(i => i.id !== inviteId));
-  };
-
+  // Submit order lines to a connected vendor portal
   const submitOrderToVendor = async (vendorId, vendorName, orderLines, weekKey) => {
     const vOrders = await globalGet(`vendor_orders_${vendorId}`) || [];
-    vOrders.push({ id: `vord_${Date.now()}`, merchantId: user.authId||user.email, merchantName: user.businessName||user.name||group, vendorId, vendorName, weekKey, lines: orderLines, status: "pending", submittedAt: new Date().toISOString() });
+    vOrders.push({
+      id: `vord_${Date.now()}`,
+      merchantId: user.authId || user.email,
+      merchantName: user.businessName || user.name || group,
+      vendorId, vendorName, weekKey,
+      lines: orderLines,
+      status: "pending",
+      submittedAt: new Date().toISOString(),
+    });
     await globalSet(`vendor_orders_${vendorId}`, vOrders);
-    flash();
   };
 
   useEffect(() => {
@@ -844,13 +421,16 @@ function MerchantApp({ user: initialUser, onLogout }) {
       const loadKey = async (sbKey, localKeyFn, fallback) => {
         const sbVal = await sbGet(group, sbKey);
         if (sbVal !== null) {
+          // Supabase has data — cache locally and use it
           try { localStorage.setItem(localKeyFn(group), JSON.stringify(sbVal)); } catch(e) {}
           return sbVal;
         }
+        // Supabase is empty for this key — check local storage
         try {
           const raw = localStorage.getItem(localKeyFn(group));
           if (raw) {
             const localVal = JSON.parse(raw);
+            // Push local data up to Supabase so other devices can see it
             const isEmpty = !localVal || (typeof localVal === "object" && Object.keys(localVal).length === 0);
             if (!isEmpty) sbSet(group, sbKey, localVal);
             return localVal;
@@ -873,6 +453,8 @@ function MerchantApp({ user: initialUser, onLogout }) {
       const inv = applyOverridesAndAdded(baseInv, ov, sv, ai);
       setInventory(inv);
       autoGenerateOrder(getWeekKey(), ord, inv, st, sett);
+      // Check if previous week's order needs to be finalized
+      // Any unsaved order from a past week gets auto-archived
       const currentWk = getWeekKey();
       const pastUnsaved = Object.entries(ord).filter(([wk, o]) => wk !== currentWk && !o.saved);
       if (pastUnsaved.length > 0) {
@@ -884,7 +466,12 @@ function MerchantApp({ user: initialUser, onLogout }) {
         sbSet(group, "orders", archived);
         try { localStorage.setItem(ORDERS_KEY(group), JSON.stringify(archived)); } catch(e) {}
       }
+      // Only push to Supabase if the value came from localStorage (not Supabase)
+      // This prevents a fresh device from overwriting real data with empty defaults
+      // sbGet returns null if Supabase had nothing — that's when we push local data up
+      // We never overwrite existing Supabase data on load
 
+      // Auto-reset stock for vendors whose order day was yesterday (end of day reset)
       if (sett.vendors && sett.vendors.length > 0) {
         const today = new Date();
         const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
@@ -896,6 +483,7 @@ function MerchantApp({ user: initialUser, onLogout }) {
           const vendorsToReset = sett.vendors.filter(v => v.autoReset && v.orderDay === yesterdayDay);
           if (vendorsToReset.length > 0) {
             const resetNames = new Set(vendorsToReset.map(v => v.name.toLowerCase().trim()));
+            // Build new stock with only those vendor's items zeroed out
             const allItems = DEFAULT_INVENTORY.flatMap(s => s.items);
             const newSt = { ...st };
             allItems.forEach(item => {
@@ -911,24 +499,30 @@ function MerchantApp({ user: initialUser, onLogout }) {
           }
         }
       }
+      // Auto-archive vendor orders the day after their order day
+      // e.g. Anacapri orders Tuesday → Wednesday morning it moves to history
       if (sett.vendors && sett.vendors.length > 0) {
         const now = new Date();
-        const todayDay = now.getDay();
+        const todayDay = now.getDay(); // 0=Sun, 1=Mon...
         let ordersChanged = false;
         const newOrd = { ...ord };
         sett.vendors.forEach(vendor => {
           if (!vendor.name || !vendor.orderDay === undefined) return;
+          // The day AFTER the order day is when we archive
           const archiveDay = (vendor.orderDay + 1) % 7;
           if (todayDay !== archiveDay) return;
           const archiveKey = `archived_${vendor.name}_${now.toISOString().split("T")[0]}`;
-          if (localStorage.getItem(archiveKey)) return;
+          if (localStorage.getItem(archiveKey)) return; // already archived today
+          // Find the most recent unsaved/saved order for this vendor's items
           Object.keys(newOrd).forEach(wk => {
             const o = newOrd[wk];
             if (!o || o._archived) return;
+            // Check if this order contains this vendor's items
             const hasVendorItems = (o.lines || []).some(l =>
               (l.supplier || "").toLowerCase().trim() === vendor.name.toLowerCase().trim()
             );
             if (!hasVendorItems) return;
+            // Archive it
             newOrd[wk] = { ...o, _archived: true, _archivedAt: now.toISOString(), _archivedVendor: vendor.name };
             ordersChanged = true;
           });
@@ -943,9 +537,13 @@ function MerchantApp({ user: initialUser, onLogout }) {
     load();
   }, [group]);
 
+  // ── Real-time sync ──────────────────────────────────────────────────────────
+  // Employees poll every 8 seconds. Owners never auto-poll (they push, not pull).
+  // Manual ↻ Sync button works for everyone.
   const lastLocalEdit = React.useRef(0);
   const markLocalEdit = () => { lastLocalEdit.current = Date.now(); };
 
+  // ── Manual sync — fetch all keys from Supabase right now ──────────────────
   const pullFromSupabase = React.useCallback(async () => {
     const sb = getSB();
     if (!sb) return;
@@ -970,6 +568,9 @@ function MerchantApp({ user: initialUser, onLogout }) {
     } catch { setSyncError(true); }
   }, [group]);
 
+  // ── Supabase Real-Time subscription ────────────────────────────────────────
+  // Listens for INSERT/UPDATE on moe_data for this group
+  // When owner saves → Supabase fires → all other devices update instantly
   useEffect(() => {
     if (!group) return;
     const sb = getSB();
@@ -983,12 +584,15 @@ function MerchantApp({ user: initialUser, onLogout }) {
         table: "moe_data",
         filter: `group_id=eq.${group}`,
       }, (payload) => {
+        // A row changed — apply just that key to local state
         try {
           const { data_key, data_value } = payload.new;
           const value = JSON.parse(data_value);
           const baseInv = (group==="tommys"||group==="demo") ? DEFAULT_INVENTORY : BLANK_INVENTORY;
           switch(data_key) {
             case "stock":
+              // Only apply stock from real-time if this device didn't just save it
+              // Check if the incoming value is different before applying
               setStock(prev => {
                 if (JSON.stringify(prev) === JSON.stringify(value)) return prev;
                 return value;
@@ -1013,10 +617,11 @@ function MerchantApp({ user: initialUser, onLogout }) {
                 return value;
               });
               break;
-            case "settings":       setSettings(value); break;
-            case "orders":         setOrders(value);   break;
+            case "settings": setSettings(value); break;
+            case "orders":   setOrders(value);   break;
             default: break;
           }
+          // Rebuild inventory after any structural change
           if (["itemdata","sections","added"].includes(data_key)) {
             setOverrides(ov => {
               setAddedItems(ai => {
@@ -1041,11 +646,13 @@ function MerchantApp({ user: initialUser, onLogout }) {
     return () => { sb.removeChannel(channel); };
   }, [group]);
 
+  // Watch for week change while app is open — start fresh order for new week
   useEffect(() => {
     if (!group || !inventory.length) return;
     const checkWeek = () => {
       const currentWk = getWeekKey();
       setOrders(prev => {
+        // Auto-archive any past unsaved orders
         let changed = false;
         const updated = { ...prev };
         Object.entries(prev).forEach(([wk, o]) => {
@@ -1054,6 +661,7 @@ function MerchantApp({ user: initialUser, onLogout }) {
             changed = true;
           }
         });
+        // Generate new order for current week if missing
         if (!prev[currentWk]) {
           const today = new Date();
           const orderDate = getWeekdayDate(today, settings.orderDay);
@@ -1081,15 +689,18 @@ function MerchantApp({ user: initialUser, onLogout }) {
       });
     };
     checkWeek();
+    // Check every hour in case the app is left open across midnight
     const interval = setInterval(checkWeek, 3600000);
     return () => clearInterval(interval);
   }, [group, inventory.length, settings.orderDay]);
 
+  // Write to both local storage and Supabase
   const dualSet = useCallback((sbKey, localKeyFn, value) => {
     try { localStorage.setItem(localKeyFn(group), JSON.stringify(value)); } catch(e) {}
     sbSet(group, sbKey, value);
   }, [group]);
 
+  // Force push all current state to Supabase — called on login and on demand
   const syncAllToSupabase = useCallback((st, ov, sv, ai, ord, sett, usage) => {
     if (!SUPABASE_READY) return;
     const g = group;
@@ -1106,10 +717,11 @@ function MerchantApp({ user: initialUser, onLogout }) {
     setStock(newStock);
     dualSet("stock", STOCK_KEY, newStock);
     flash();
+    // Regenerate unsaved order with updated stock
     setOrders(prev => {
       const wk = getWeekKey();
-      if (prev[wk]?.saved) return prev;
-      return prev;
+      if (prev[wk]?.saved) return prev; // don't touch saved orders
+      return prev; // OrderView recalculates live from stock — no need to update stored lines
     });
   }, [dualSet]);
 
@@ -1139,9 +751,11 @@ function MerchantApp({ user: initialUser, onLogout }) {
     flash();
   }, [addedItems, overrides, sectionOverrides, group, dualSet]);
 
+  // Add a brand new custom section
   const addSection = useCallback((sectionName) => {
     const key = sectionName.trim();
     if (!key) return;
+    // Add an empty placeholder item so section is visible
     const newId = Date.now();
     const newItem = { id: newId, name: "New Item", order_unit: "Case", upu: 1, supplier: "", max_stock: 1, reorder: 1, _added: true };
     setAddedItems(prev => {
@@ -1154,11 +768,14 @@ function MerchantApp({ user: initialUser, onLogout }) {
     flash();
   }, [overrides, sectionOverrides, group, dualSet]);
 
+  // Delete an entire section (hides default sections, removes added sections)
   const deleteSection = useCallback((sectionKey) => {
+    // Remove all added items in this section
     setAddedItems(prev => {
       const newAi = { ...prev };
       delete newAi[sectionKey];
       dualSet("added", ADDED_KEY, newAi);
+      // Also hide all default items in this section via overrides
       setOverrides(prevOv => {
         const baseInv = (group==='tommys'||group==='demo') ? DEFAULT_INVENTORY : BLANK_INVENTORY;
         const sec = baseInv.find(s => s.section === sectionKey || (sectionOverrides[s.section] === sectionKey));
@@ -1223,7 +840,9 @@ function MerchantApp({ user: initialUser, onLogout }) {
     flash();
   }, [addedItems, overrides, sectionOverrides, group, dualSet]);
 
+  // Add a brand new custom section
   const autoGenerateOrder = useCallback((weekKey, existingOrders, inv, currentStock, sett) => {
+    // Only skip if already saved — unsaved orders always regenerate
     if (existingOrders[weekKey]?.saved) return;
     const today = new Date();
     const orderDate   = getWeekdayDate(today, sett.orderDay);
@@ -1246,11 +865,21 @@ function MerchantApp({ user: initialUser, onLogout }) {
   const saveOrder = useCallback((weekKey, updatedOrder) => {
     setOrders(prev => {
       const newOrders = { ...prev, [weekKey]: { ...updatedOrder, saved: true } };
+      // If submitted, pre-create a blank slot for NEXT week so the list resets automatically
+      if (updatedOrder.submitted) {
+        const nextWeekDate = new Date();
+        nextWeekDate.setDate(nextWeekDate.getDate() + 7);
+        const nextWk = getWeekKey(nextWeekDate);
+        if (!newOrders[nextWk]) {
+          // Just reserve the slot — autoGenerateOrder will fill it when the week arrives
+          newOrders[nextWk] = null;
+        }
+      }
       dualSet("orders", ORDERS_KEY, newOrders);
       return newOrders;
     });
     flash();
-  }, []);
+  }, [dualSet]);
 
   const saveSettings = useCallback((newSettings) => {
     setSettings(newSettings);
@@ -1258,6 +887,7 @@ function MerchantApp({ user: initialUser, onLogout }) {
     flash();
   }, []);
 
+  // Snapshot current stock into this week's usage log entry
   const snapshotStock = useCallback((newStock) => {
     const wk = getWeekKey();
     setUsageLog(prev => {
@@ -1268,13 +898,14 @@ function MerchantApp({ user: initialUser, onLogout }) {
     });
   }, [dualSet]);
 
+  // Compute weekly consumption for each item across all logged weeks
   const computeUsage = useCallback((log) => {
     const weeks = Object.keys(log).sort();
     if (weeks.length < 2) return {};
-    const consumption = {};
+    const consumption = {}; // itemId -> [weeklyUsed, ...]
     for (let i = 1; i < weeks.length; i++) {
       const prev = log[weeks[i-1]]?.snapshot || {};
-      const curr = log[weeks[i]]?.snapshot || {};
+      const curr = log[weeks[i]]?.snapshot   || {};
       const allIds = new Set([...Object.keys(prev), ...Object.keys(curr)]);
       allIds.forEach(id => {
         const used = (prev[id] ?? 0) - (curr[id] ?? 0);
@@ -1287,104 +918,289 @@ function MerchantApp({ user: initialUser, onLogout }) {
     return consumption;
   }, []);
 
+  // Accept a par suggestion: apply new reorder + max_stock
   const applyParSuggestion = useCallback((itemId, newReorder, newMaxStock) => {
-    saveItemField(itemId, "reorder", newReorder);
+    saveItemField(itemId, "reorder",   newReorder);
     setTimeout(() => saveItemField(itemId, "max_stock", newMaxStock), 50);
   }, [saveItemField]);
 
-  const updateStock = (id, val) => { const n = parseInt(val); const newStock = { ...stock, [id]: isNaN(n) ? 0 : Math.max(0, n) }; saveStock(newStock); snapshotStock(newStock); };
+  const updateStock = (id, val) => {
+    const n = parseInt(val);
+    const newStock = { ...stock, [id]: isNaN(n) ? 0 : Math.max(0, n) };
+    saveStock(newStock);
+    snapshotStock(newStock);
+  };
 
-  const navItems = [
-    { key:"inventory", label:"Inventory", icon:"📋", desc:"Stock count" },
-    { key:"order", label:"Order List", icon:"📦", desc:"Weekly orders" },
-    { key:"usage", label:"Usage", icon:"📈", desc:"Trends & par" },
-    { key:"history", label:"History", icon:"📚", desc:"Past orders" },
-    { key:"vendors", label:"Vendors", icon:"🔗", desc:"Connected vendors", badge: pendingInvites.length },
-    { key:"backend", label:"Backend", icon:"⚙️", desc:"Edit items" },
-    { key:"settings", label:"Settings", icon:"🔧", desc:"Schedule" },
-  ];
+  if (!user) return <LoginScreen onLogin={u => { setUser(u); setGroup(u.group || "demo"); setLoginError(""); }} error={loginError} setError={setLoginError} />;
 
   return (
     <div style={{ minHeight:"100vh", background:"#0f172a", fontFamily:"'DM Sans',sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <style>{`@media (max-width: 768px) { .edit-pencil { display: none !important; } } .edit-cell:hover .edit-pencil { display: inline !important; }`}</style>
-      {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200 }} />}
-      <div style={{ position:"fixed", top:0, left:0, height:"100vh", width:260, background:"#1e293b", borderRight:"1px solid #334155", transform:sidebarOpen?"translateX(0)":"translateX(-100%)", transition:"transform 0.25s ease", zIndex:201, display:"flex", flexDirection:"column" }}>
-        <div style={{ padding:"20px 20px 16px", borderBottom:"1px solid #334155", display:"flex", alignItems:"center", justifyContent:"space-between" }}><MoeLogo size="md" /><button onClick={()=>setSidebarOpen(false)} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:20, padding:4 }}>✕</button></div>
-        <div style={{ padding:"14px 20px", borderBottom:"1px solid #334155" }}><div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{user.businessName||user.name}</div><div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · {group.toUpperCase()}</div></div>
-        {user.role==="owner"&&(<div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
-          {navItems.map(item => { const isActive = view===item.key; return (
-            <button key={item.key} onClick={()=>{setView(item.key);setSidebarOpen(false);}} style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#0f172a":"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #f97316":"3px solid transparent" }} onMouseEnter={e=>{if(!isActive)e.currentTarget.style.background="#0f172a";}} onMouseLeave={e=>{if(!isActive)e.currentTarget.style.background="transparent";}}>
-              <span style={{ fontSize:18 }}>{item.icon}</span><div style={{ textAlign:"left", flex:1 }}><div style={{ color:isActive?"#f97316":"#f1f5f9", fontSize:14, fontWeight:isActive?600:400 }}>{item.label}</div><div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div></div>
-              {item.badge>0&&<span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:10, padding:"2px 7px", fontSize:10, fontWeight:600 }}>{item.badge}</span>}
-            </button>);})}
-        </div>)}
-        <div style={{ padding:"12px", borderTop:"1px solid #334155" }}>
-          <button onClick={onLogout} style={{ width:"100%", background:"transparent", border:"1px solid #334155", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13 }}>Sign Out</button>
+      {/* ── Sidebar overlay ── */}
+      {sidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200 }} />
+      )}
+
+      {/* ── Sidebar panel ── */}
+      <div style={{
+        position:"fixed", top:0, left:0, height:"100vh", width:260,
+        background:"#1e293b", borderRight:"1px solid #334155",
+        transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
+        transition:"transform 0.25s ease", zIndex:201,
+        display:"flex", flexDirection:"column",
+      }}>
+        {/* Sidebar header */}
+        <div style={{ padding:"20px 20px 16px", borderBottom:"1px solid #334155", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <MoeLogo size="md" />
+          <button onClick={() => setSidebarOpen(false)}
+            style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:20, lineHeight:1, padding:4 }}
+            onMouseEnter={e => e.currentTarget.style.color="#f1f5f9"}
+            onMouseLeave={e => e.currentTarget.style.color="#475569"}>
+            ✕
+          </button>
+        </div>
+
+        {/* User info */}
+        <div style={{ padding:"14px 20px", borderBottom:"1px solid #334155" }}>
+          <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{user.name}</div>
+          <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · {group.toUpperCase()}</div>
+        </div>
+
+        {/* Nav items — owner only */}
+        {user.role === "owner" && (
+          <div style={{ flex:1, padding:"12px 12px", overflowY:"auto" }}>
+            {[
+              { key:"inventory", label:"Inventory",  icon:"📋", desc:"Stock count" },
+              { key:"order",     label:"Order List", icon:"📦", desc:"Weekly orders" },
+              { key:"usage",     label:"Usage",      icon:"📈", desc:"Trends & par suggestions" },
+              { key:"history",   label:"History",    icon:"📚", desc:"Past orders" },
+              { key:"backend",   label:"Backend",    icon:"⚙️",  desc:"Edit items & sections" },
+              { key:"settings",  label:"Settings",   icon:"🔧", desc:"Vendors & schedule" },
+            ].map(item => {
+              const isActive = view === item.key;
+              return (
+                <button key={item.key} onClick={() => { setView(item.key); setSidebarOpen(false); }}
+                  style={{
+                    width:"100%", display:"flex", alignItems:"center", gap:12,
+                    background: isActive ? "#0f172a" : "transparent",
+                    border:"none", borderRadius:10,
+                    padding:"11px 14px", cursor:"pointer",
+                    marginBottom:4, transition:"all 0.15s",
+                    borderLeft: isActive ? "3px solid #f97316" : "3px solid transparent",
+                  }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background="#0f172a"; }}
+                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background="transparent"; }}>
+                  <span style={{ fontSize:18, flexShrink:0 }}>{item.icon}</span>
+                  <div style={{ textAlign:"left" }}>
+                    <div style={{ color: isActive ? "#f97316" : "#f1f5f9", fontSize:14, fontWeight: isActive ? 600 : 400 }}>{item.label}</div>
+                    <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Bottom actions */}
+        <div style={{ padding:"12px 12px", borderTop:"1px solid #334155" }}>
+          {SUPABASE_READY && (
+            <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px", marginBottom:8 }}>
+              <span style={{ width:7, height:7, borderRadius:"50%", background: syncError ? "#ef4444" : "#22c55e", display:"inline-block", flexShrink:0 }}/>
+              <span style={{ color: syncError ? "#ef4444" : "#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>
+                {syncError ? "SYNC ERROR" : lastSync ? `SYNCED ${lastSync.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}` : "SYNCING..."}
+              </span>
+              <button onClick={() => pullFromSupabase(true)}
+                style={{ marginLeft:"auto", background:"none", border:"1px solid #334155", borderRadius:5, color:"#475569", cursor:"pointer", fontSize:11, padding:"2px 7px", fontFamily:"'DM Mono',monospace" }}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor="#f97316";e.currentTarget.style.color="#f97316";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor="#334155";e.currentTarget.style.color="#475569";}}>
+                ↻
+              </button>
+            </div>
+          )}
+          <button onClick={() => setUser(null)}
+            style={{ width:"100%", background:"transparent", border:"1px solid #334155", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13, transition:"all 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#64748b"; }}>
+            Sign Out
+          </button>
         </div>
       </div>
+
+      {/* ── Top header ── */}
       <header style={{ background:"#1e293b", borderBottom:"1px solid #334155", padding:"0 16px", display:"flex", alignItems:"center", justifyContent:"space-between", height:60, position:"sticky", top:0, zIndex:101 }}>
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-          <button onClick={()=>setSidebarOpen(true)} style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4.5 }}><span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }}/><span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }}/><span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }}/></button>
-          <MoeLogo size="md" /><div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{user.role==="owner"?view.toUpperCase():"EMPLOYEE"}</div>
+          {/* Hamburger button */}
+          <button onClick={() => setSidebarOpen(true)}
+            style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4.5, justifyContent:"center" }}
+            onMouseEnter={e => e.currentTarget.style.background="#334155"}
+            onMouseLeave={e => e.currentTarget.style.background="none"}>
+            <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
+            <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
+            <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
+          </button>
+          <MoeLogo size="md" />
+          {/* Current view label on mobile */}
+          <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px" }}>
+            {user.role === "owner" ? view.toUpperCase().replace("ORDER","ORDER LIST") : "EMPLOYEE VIEW"}
+          </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          {pendingInvites.length>0&&<span onClick={()=>setView("vendors")} style={{ background:"#422006", border:"1px solid #d97706", borderRadius:8, padding:"4px 10px", color:"#fbbf24", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600, cursor:"pointer" }}>{pendingInvites.length} invite{pendingInvites.length>1?"s":""}</span>}
           <DateWeekBadge orderDay={settings.orderDay} />
-          {saveFlash&&<span style={{ color:"#22c55e", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{saveFlash}</span>}
+          {saveFlash && <span style={{ color:"#22c55e", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{saveFlash}</span>}
           <span style={{ color:"#64748b", fontSize:13 }}>{user.name}</span>
         </div>
       </header>
       <main style={{ maxWidth:1200, margin:"0 auto", padding:"24px 16px" }}>
-        {(view==="inventory"||user.role==="employee")&&<EmployeeView inventory={inventory} stock={stock} updateStock={updateStock} orderDay={settings.orderDay} />}
-        {view==="backend"&&user.role==="owner"&&<BackendView inventory={inventory} stock={stock} saveItemField={saveItemField} saveSectionName={saveSectionName} addItem={addItem} removeItem={removeItem} addSection={addSection} deleteSection={deleteSection} onPublish={()=>{sbSet(group,"stock",stock);sbSet(group,"itemdata",overrides);sbSet(group,"sections",sectionOverrides);sbSet(group,"added",addedItems);sbSet(group,"orders",orders);sbSet(group,"settings",settings);sbSet(group,"usage",usageLog);flash();}} />}
-        {view==="order"&&user.role==="owner"&&<OrderView inventory={inventory} stock={stock} orders={orders} currentWeekKey={getWeekKey()} saveOrder={saveOrder} settings={settings} submitOrderToVendor={submitOrderToVendor} user={user} />}
-        {view==="history"&&user.role==="owner"&&<HistoryView orders={orders} />}
-        {view==="usage"&&user.role==="owner"&&<UsageView inventory={inventory} usageLog={usageLog} computeUsage={computeUsage} applyParSuggestion={applyParSuggestion} orders={orders} />}
-        {view==="vendors"&&user.role==="owner"&&<MerchantVendorsView pendingInvites={pendingInvites} acceptInvite={acceptInvite} declineInvite={declineInvite} user={user} />}
-        {view==="settings"&&user.role==="owner"&&<SettingsView settings={settings} saveSettings={saveSettings} inventory={inventory} />}
+        {(view==="inventory" || user.role==="employee") &&
+          <EmployeeView inventory={inventory} stock={stock} updateStock={updateStock} orderDay={settings.orderDay} />}
+        {view==="backend" && user.role==="owner" &&
+          <BackendView inventory={inventory} stock={stock} saveItemField={saveItemField} saveSectionName={saveSectionName} addItem={addItem} removeItem={removeItem} addSection={addSection} deleteSection={deleteSection} onPublish={() => { sbSet(group,"stock",stock); sbSet(group,"itemdata",overrides); sbSet(group,"sections",sectionOverrides); sbSet(group,"added",addedItems); sbSet(group,"orders",orders); sbSet(group,"settings",settings); sbSet(group,"usage",usageLog); flash(); }} />}
+        {view==="order" && user.role==="owner" &&
+          <OrderView inventory={inventory} stock={stock} orders={orders} currentWeekKey={getWeekKey()} saveOrder={saveOrder} settings={settings} submitOrderToVendor={submitOrderToVendor} connections={connections} />}
+        {view==="history" && user.role==="owner" &&
+          <HistoryView orders={orders} />}
+        {view==="usage" && user.role==="owner" &&
+          <UsageView inventory={inventory} usageLog={usageLog} computeUsage={computeUsage} applyParSuggestion={applyParSuggestion} orders={orders} />}
+        {view==="settings" && user.role==="owner" &&
+          <SettingsView settings={settings} saveSettings={saveSettings} inventory={inventory} />}
       </main>
     </div>
   );
 }
 
-// ─── MERCHANT VENDORS VIEW ────────────────────────────────────────────────────
-function MerchantVendorsView({ pendingInvites, acceptInvite, declineInvite, user }) {
-  const [connections, setConnections] = useState([]);
-  useEffect(() => { const load = async () => { const all = await globalGet("connections") || {}; setConnections(Object.entries(all).filter(([,c]) => c.merchantEmail === user.email && c.status === "active").map(([id,c]) => ({ id, ...c }))); }; load(); }, [user.email, pendingInvites]);
-  return (<div>
-    <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 6px" }}>Vendor Connections</h2>
-    <p style={{ color:"#64748b", fontSize:13, margin:"0 0 20px" }}>Accept invites and manage vendor connections</p>
-    {pendingInvites.length>0&&(<div style={{ marginBottom:24 }}>
-      <div style={{ color:"#fbbf24", fontSize:13, fontWeight:600, marginBottom:10 }}>📧 Pending Invites <span style={{ background:"#422006", border:"1px solid #d97706", borderRadius:10, padding:"1px 8px", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{pendingInvites.length}</span></div>
-      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>{pendingInvites.map(inv => (
-        <div key={inv.id} style={{ background:"#1e293b", border:"1px solid #d97706", borderRadius:12, padding:"16px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
-          <div><div style={{ color:"#f1f5f9", fontSize:15, fontWeight:600 }}>📦 {inv.vendorName}</div><div style={{ color:"#475569", fontSize:12, marginTop:2 }}>{inv.vendorEmail} · {new Date(inv.createdAt).toLocaleDateString()}</div></div>
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={()=>acceptInvite(inv.id)} style={{ background:"linear-gradient(135deg,#16a34a,#15803d)", border:"none", borderRadius:7, padding:"8px 18px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer" }}>✓ Accept</button>
-            <button onClick={()=>declineInvite(inv.id)} style={{ background:"transparent", border:"1px solid #7f1d1d", borderRadius:7, padding:"8px 14px", color:"#fca5a5", fontSize:13, cursor:"pointer" }}>Decline</button>
-          </div>
-        </div>))}</div>
-    </div>)}
-    <div style={{ color:"#f97316", fontSize:13, fontWeight:600, marginBottom:10 }}>🔗 Connected Vendors <span style={{ color:"#475569", fontSize:12, fontWeight:400 }}>{connections.length}</span></div>
-    {connections.length===0&&pendingInvites.length===0?(
-      <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}><div style={{ fontSize:36, marginBottom:12 }}>📦</div><div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No vendor connections yet</div><div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Vendors invite you to connect. You can also use MOE independently.</div></div>
-    ):(
-      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>{connections.map(c => (
-        <div key={c.id} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:10, padding:"14px 18px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div><div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>📦 {c.vendorName}</div><div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>Since {new Date(c.connectedAt).toLocaleDateString()}</div></div>
-          <span style={{ background:"#14532d", border:"1px solid #16a34a", borderRadius:6, padding:"3px 10px", color:"#4ade80", fontSize:11, fontFamily:"'DM Mono',monospace" }}>ACTIVE</span>
-        </div>))}</div>
-    )}
-  </div>);
+// ─── MOE LOGO ─────────────────────────────────────────────────────────────────
+function MoeLogo({ size = "md" }) {
+  const scale = size === "lg" ? 1.8 : size === "sm" ? 0.7 : 1;
+  const w = Math.round(120 * scale);
+  const h = Math.round(44 * scale);
+  return (
+    <svg width={w} height={h} viewBox="0 0 120 44" xmlns="http://www.w3.org/2000/svg" style={{ display:"block", flexShrink:0 }}>
+      {/* ── AI face head ── */}
+      <rect x="2" y="6" width="36" height="36" rx="9" fill="#1e293b" stroke="#f97316" strokeWidth="1.5"/>
+      {/* Circuit line top */}
+      <line x1="20" y1="6" x2="20" y2="2" stroke="#f97316" strokeWidth="1.5"/>
+      <circle cx="20" cy="1" r="2" fill="#f97316"/>
+      {/* Circuit lines sides */}
+      <line x1="2" y1="18" x2="-1" y2="18" stroke="#475569" strokeWidth="1"/>
+      <circle cx="-2" cy="18" r="1.5" fill="#475569"/>
+      <line x1="38" y1="18" x2="41" y2="18" stroke="#f97316" strokeWidth="1.5"/>
+      <circle cx="42" cy="18" r="1.5" fill="#f97316"/>
+      <line x1="38" y1="26" x2="41" y2="26" stroke="#475569" strokeWidth="1"/>
+      <circle cx="42" cy="26" r="1.5" fill="#475569"/>
+      {/* Left ear port */}
+      <rect x="0" y="15" width="4" height="12" rx="2" fill="#334155"/>
+      {/* Right ear port */}
+      <rect x="36" y="15" width="4" height="12" rx="2" fill="#334155"/>
+      {/* Ring eye left */}
+      <circle cx="13" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
+      <circle cx="13" cy="21" r="3.5" fill="#f97316"/>
+      <circle cx="14.5" cy="19.5" r="1.2" fill="#fef3c7"/>
+      {/* Ring eye right */}
+      <circle cx="27" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
+      <circle cx="27" cy="21" r="3.5" fill="#f97316"/>
+      <circle cx="28.5" cy="19.5" r="1.2" fill="#fef3c7"/>
+      {/* Smile with circuit end dots */}
+      <path d="M13 33 Q20 38 27 33" fill="none" stroke="#f97316" strokeWidth="1.8" strokeLinecap="round"/>
+      <circle cx="13" cy="33" r="2" fill="#f97316"/>
+      <circle cx="27" cy="33" r="2" fill="#f97316"/>
+      {/* ── MOE wordmark ── */}
+      <text x="50" y="32" fontFamily="'DM Sans',sans-serif" fontWeight="900" fontSize="26" letterSpacing="-1.5" fill="#f1f5f9">M<tspan fill="#f97316">OE</tspan></text>
+    </svg>
+  );
 }
 
+// ─── NAV BUTTON ──────────────────────────────────────────────────────────────
+function NavBtn({ children, active, onClick, accent }) {
+  return (
+    <button onClick={onClick} style={{
+      background: active ? (accent ? "#f97316" : "#334155") : "transparent",
+      color: active ? "#fff" : "#94a3b8",
+      border: `1px solid ${active ? (accent ? "#f97316" : "#475569") : "#334155"}`,
+      padding:"5px 14px", borderRadius:7, cursor:"pointer", fontSize:13, fontWeight:500,
+    }}>{children}</button>
+  );
+}
+
+// ─── LOGIN ────────────────────────────────────────────────────────────────────
+function LoginScreen({ onLogin, error, setError }) {
+  const [email, setEmail] = useState("");
+  const [pass, setPass]   = useState("");
+  const [show, setShow]   = useState(false);
+  const handleLogin = () => {
+    const u = USERS[email.toLowerCase().trim()];
+    if (u && u.password === pass) onLogin({ ...u, email });
+    else setError("Invalid email or password.");
+  };
+  return (
+    <div style={{ minHeight:"100vh", background:"#0f172a", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',sans-serif" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+      <div style={{ width:380 }}>
+        <div style={{ textAlign:"center", marginBottom:32 }}>
+          <div style={{ display:"flex", justifyContent:"center", alignItems:"center", marginBottom:12 }}>
+            <svg width="216" height="80" viewBox="0 0 120 44" xmlns="http://www.w3.org/2000/svg" style={{ display:"block" }}>
+              <rect x="2" y="6" width="36" height="36" rx="9" fill="#1e293b" stroke="#f97316" strokeWidth="1.5"/>
+              <line x1="20" y1="6" x2="20" y2="2" stroke="#f97316" strokeWidth="1.5"/>
+              <circle cx="20" cy="1" r="2" fill="#f97316"/>
+              <line x1="38" y1="18" x2="41" y2="18" stroke="#f97316" strokeWidth="1.5"/>
+              <circle cx="42" cy="18" r="1.5" fill="#f97316"/>
+              <line x1="38" y1="26" x2="41" y2="26" stroke="#475569" strokeWidth="1"/>
+              <circle cx="42" cy="26" r="1.5" fill="#475569"/>
+              <rect x="0" y="15" width="4" height="12" rx="2" fill="#334155"/>
+              <rect x="36" y="15" width="4" height="12" rx="2" fill="#334155"/>
+              <circle cx="13" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
+              <circle cx="13" cy="21" r="3.5" fill="#f97316"/>
+              <circle cx="14.5" cy="19.5" r="1.2" fill="#fef3c7"/>
+              <circle cx="27" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
+              <circle cx="27" cy="21" r="3.5" fill="#f97316"/>
+              <circle cx="28.5" cy="19.5" r="1.2" fill="#fef3c7"/>
+              <path d="M13 33 Q20 38 27 33" fill="none" stroke="#f97316" strokeWidth="1.8" strokeLinecap="round"/>
+              <circle cx="13" cy="33" r="2" fill="#f97316"/>
+              <circle cx="27" cy="33" r="2" fill="#f97316"/>
+              <text x="50" y="32" fontFamily="'DM Sans',sans-serif" fontWeight="900" fontSize="26" letterSpacing="-1.5" fill="#f1f5f9">M<tspan fill="#f97316">OE</tspan></text>
+            </svg>
+          </div>
+          <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", letterSpacing:"2px", textAlign:"center", marginBottom:4 }}>MAKE ORDERING EASY</div>
+          <p style={{ color:"#64748b", fontSize:14, margin:0 }}>Sign in to continue</p>
+        </div>
+        <div style={{ background:"#1e293b", borderRadius:16, border:"1px solid #334155", padding:28 }}>
+          <div style={{ marginBottom:16 }}>
+            <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:500, marginBottom:6, letterSpacing:"0.5px", textTransform:"uppercase" }}>Email</label>
+            <input value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key==="Enter" && handleLogin()}
+              placeholder="you@kitchen.com" type="email"
+              style={{ width:"100%", background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+          </div>
+          <div style={{ marginBottom:20 }}>
+            <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:500, marginBottom:6, letterSpacing:"0.5px", textTransform:"uppercase" }}>Password</label>
+            <div style={{ position:"relative" }}>
+              <input value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key==="Enter" && handleLogin()}
+                type={show ? "text" : "password"} placeholder="••••••••"
+                style={{ width:"100%", background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"10px 40px 10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+              <button onClick={() => setShow(!show)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:14 }}>{show ? "🙈" : "👁"}</button>
+            </div>
+          </div>
+          {error && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:16 }}>{error}</div>}
+          <button onClick={handleLogin} style={{ width:"100%", background:"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:8, padding:12, color:"#fff", fontSize:15, fontWeight:600, cursor:"pointer" }}>Sign In</button>
+        </div>
+        <div style={{ marginTop:20, background:"#1e293b", borderRadius:12, border:"1px solid #334155", padding:"14px 18px" }}>
+          <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Demo Credentials</div>
+          <div style={{ color:"#94a3b8", fontSize:12, lineHeight:2 }}>
+            <span style={{ color:"#f97316" }}>Owner:</span> owner@kitchen.com / owner123<br />
+            <span style={{ color:"#22c55e" }}>Employee:</span> employee@kitchen.com / employee123
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── EMPLOYEE VIEW ────────────────────────────────────────────────────────────
 function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
   const allItems = inventory.flatMap(s => s.items.map(i => ({ ...i, sectionLabel: s.section })));
   const urgentItems = allItems.filter(item => (stock[item.id] ?? 0) < item.reorder);
 
+  // Group by vendor → then by section within vendor
   const vendorMap = {};
   allItems.forEach(item => {
     const vendor = (item.supplier || "").trim() || "No Vendor";
@@ -1409,6 +1225,7 @@ function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
           </div>
         </div>
       )}
+      {/* Vendor dropdown */}
       <div style={{ marginBottom:16, display:"flex", alignItems:"center", gap:10 }}>
         <div style={{ position:"relative", flex:1, maxWidth:320 }}>
           <select value={activeVendor} onChange={e => setActiveVendor(e.target.value)}
@@ -1418,8 +1235,10 @@ function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
               <option key={v} value={v}>{v}</option>
             ))}
           </select>
+          {/* Dropdown arrow */}
           <div style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", pointerEvents:"none", color:"#f97316", fontSize:12 }}>▼</div>
         </div>
+        {/* Urgent badge */}
         {urgentItems.length > 0 && activeVendor === "ALL" && (
           <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:8, padding:"6px 12px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600, whiteSpace:"nowrap" }}>
             🔴 {urgentItems.length} to order
@@ -1435,6 +1254,7 @@ function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
         })()}
       </div>
 
+      {/* Stock count header */}
       <div style={{ marginBottom:16, display:"flex", alignItems:"flex-start", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
         <div>
           <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>
@@ -1454,6 +1274,7 @@ function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
         const vendorUrgent = Object.values(sections).flat().filter(i => (stock[i.id] ?? 0) < i.reorder).length;
         return (
           <div key={vendor} style={{ marginBottom:20 }}>
+            {/* Vendor header */}
             <div style={{ background:"#0f172a", border:`1px solid ${isNoVendor?"#334155":"#f97316"}`, borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
               <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                 <span style={{ fontSize:15 }}>{isNoVendor?"📋":"📦"}</span>
@@ -1462,6 +1283,7 @@ function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
               </div>
               {vendorUrgent > 0 && <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"2px 8px", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{vendorUrgent} to order</span>}
             </div>
+            {/* Sections inside vendor */}
             <div style={{ border:`1px solid ${isNoVendor?"#334155":"#f97316"}`, borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
               {Object.entries(sections).map(([secName, items], secIdx) => (
                 <div key={secName}>
@@ -1585,6 +1407,7 @@ function EditableSectionHeader({ label, onSave, onDelete }) {
   );
 }
 
+// Add Section Button with inline input
 function AddSectionButton({ onAdd }) {
   const [open, setOpen]   = useState(false);
   const [name, setName]   = useState("");
@@ -1617,7 +1440,7 @@ function AddSectionButton({ onAdd }) {
   );
 }
 
-// ─── HOVER ROW ──────────────────────────────────────────────────────────────
+// ─── HOVER ROW (with remove button) ──────────────────────────────────────────
 function HoverRow({ children, bg, onRemove }) {
   const [hovered, setHovered]   = useState(false);
   const [confirm, setConfirm]   = useState(false);
@@ -1762,23 +1585,28 @@ function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem
 }
 
 // ─── ORDER VIEW ───────────────────────────────────────────────────────────────
-function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settings }) {
+function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settings, submitOrderToVendor, connections = [] }) {
+  // Per-vendor order view — show vendor tabs with their own order/delivery dates
   const vendors = (settings.vendors || []).filter(v => v.name);
   const [activeVendor, setActiveVendor] = useState(vendors[0]?.name || "ALL");
   const order       = orders[currentWeekKey];
   const wk = getWeekNumber();
 
+  // Get order/delivery date for the active vendor
   const activeVendorData = vendors.find(v => v.name === activeVendor);
   const orderDay    = activeVendorData?.orderDay    ?? settings.orderDay ?? 3;
   const deliveryDay = activeVendorData?.deliveryDay ?? (orderDay + 1);
   const orderDate   = order ? fmtDate(order.orderDate) : fmtDate(getWeekdayDate(new Date(), orderDay));
   const receiveDate = order ? fmtDate(order.receiveDate) : fmtDate(getWeekdayDate(new Date(), deliveryDay));
 
+  // Always recalculate from current stock — never use stale saved lines
+  // Saved order in history preserves the snapshot, but live order list stays fresh
   const allLines = inventory.flatMap(s => s.items.map(item => ({
     id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
     section: s.section, qty: calcOrderQty(item, stock[item.id] ?? 0),
   })));
 
+  // Filter by active vendor tab
   const lines = activeVendor === "ALL"
     ? allLines
     : allLines.filter(l => (l.supplier||"").toLowerCase().trim() === activeVendor.toLowerCase().trim());
@@ -1791,25 +1619,59 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
     bySupplier[sup].push(item);
   });
 
-  const handleSave = () => {
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+
+    // Snapshot all lines at this moment
     const allLinesSnapshot = inventory.flatMap(s => s.items.map(item => ({
       id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
       section: s.section, qty: calcOrderQty(item, stock[item.id] ?? 0),
     })));
+
     const toSave = {
       weekKey: currentWeekKey,
       orderDate: order?.orderDate || getWeekdayDate(new Date(), settings.orderDay).toISOString().split("T")[0],
       receiveDate: order?.receiveDate || getWeekdayDate(new Date(), (settings.vendors?.[0]?.deliveryDay ?? settings.orderDay+1)).toISOString().split("T")[0],
       createdAt: order?.createdAt || new Date().toISOString(),
       savedAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
       lines: allLinesSnapshot,
       saved: true,
+      submitted: true,
     };
+
+    // 1. Save to history
     saveOrder(currentWeekKey, toSave);
+
+    // 2. Send to each connected vendor whose items are in this order
+    if (submitOrderToVendor && connections.length > 0) {
+      const activeOrderLines = allLinesSnapshot.filter(l => l.qty > 0);
+      for (const conn of connections) {
+        const vendorLines = activeOrderLines.filter(l =>
+          (l.supplier || "").toLowerCase().trim() === (conn.vendorName || "").toLowerCase().trim()
+        );
+        if (vendorLines.length > 0) {
+          await submitOrderToVendor(conn.vendorId, conn.vendorName, vendorLines, currentWeekKey);
+        }
+      }
+    }
+
+    setSubmitted(true);
+    setSubmitting(false);
   };
+
+  // When submitted, show a confirmation banner with connected vendor count
+  const connectedVendorCount = connections.filter(c =>
+    allLines.some(l => (l.supplier||"").toLowerCase().trim() === (c.vendorName||"").toLowerCase().trim() && l.qty > 0)
+  ).length;
 
   return (
     <div>
+      {/* Vendor tabs */}
       {vendors.length > 0 && (
         <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch", marginBottom:16 }}>
           <div style={{ display:"flex", gap:8, minWidth:"max-content" }}>
@@ -1836,25 +1698,46 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
             <span style={{ color:"#64748b", fontSize:12 }}>Order: <span style={{ color:"#94a3b8" }}>{orderDate}</span></span>
             <span style={{ color:"#64748b", fontSize:12 }}>Receive: <span style={{ color:"#94a3b8" }}>{receiveDate}</span></span>
             {order?.saved && <span style={{ background:"#14532d", border:"1px solid #16a34a", borderRadius:6, padding:"2px 8px", color:"#4ade80", fontSize:11, fontFamily:"'DM Mono',monospace" }}>✓ Saved</span>}
+            {order?.submitted && <span style={{ background:"#1e3a5f", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#93c5fd", fontSize:11, fontFamily:"'DM Mono',monospace" }}>🚀 Submitted</span>}
           </div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
           <div style={{ background:"#1e3a5f", border:"1px solid #1e40af", borderRadius:8, padding:"6px 14px", color:"#93c5fd", fontSize:13, fontWeight:600 }}>
             {activeLines.length} item{activeLines.length!==1?"s":""} to order
           </div>
-          <button onClick={handleSave} style={{ background:"#1e3a5f", border:"1px solid #1e40af", borderRadius:8, padding:"8px 16px", color:"#93c5fd", fontSize:13, fontWeight:600, cursor:"pointer" }}>
-            💾 Save Order
-          </button>
+          {!order?.submitted ? (
+            <button onClick={handleSubmit} disabled={submitting || activeLines.length === 0}
+              style={{ background: activeLines.length === 0 ? "#1e293b" : "linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:8, padding:"8px 20px", color: activeLines.length === 0 ? "#475569" : "#fff", fontSize:13, fontWeight:700, cursor: activeLines.length === 0 ? "not-allowed" : "pointer", opacity: submitting ? 0.7 : 1, display:"flex", alignItems:"center", gap:6 }}>
+              {submitting ? "Submitting..." : "🚀 Submit Order"}
+            </button>
+          ) : (
+            <span style={{ background:"#14532d", border:"1px solid #16a34a", borderRadius:8, padding:"8px 16px", color:"#4ade80", fontSize:13, fontWeight:600 }}>
+              ✓ Order Submitted
+            </span>
+          )}
         </div>
       </div>
 
-      {activeLines.length === 0 ? (
+      {order?.submitted && (
+        <div style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:12, padding:"16px 20px", marginBottom:20, display:"flex", alignItems:"center", gap:12 }}>
+          <span style={{ fontSize:24 }}>✅</span>
+          <div>
+            <div style={{ color:"#4ade80", fontSize:15, fontWeight:700 }}>Order submitted successfully!</div>
+            <div style={{ color:"#64748b", fontSize:13, marginTop:2 }}>
+              Saved to history{connectedVendorCount > 0 ? ` · Sent to ${connectedVendorCount} vendor${connectedVendorCount > 1 ? "s" : ""}` : " · No vendors connected yet"}.
+              {" "}Your next order list will generate automatically next week.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeLines.length === 0 && !order?.submitted ? (
         <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}>
           <div style={{ fontSize:40, marginBottom:12 }}>✅</div>
           <div style={{ color:"#4ade80", fontSize:18, fontWeight:700 }}>All stocked up!</div>
           <div style={{ color:"#64748b", fontSize:14, marginTop:6 }}>No items need to be ordered this week.</div>
         </div>
-      ) : (
+      ) : order?.submitted ? null : (
         Object.entries(bySupplier).map(([supplier, items]) => (
           <div key={supplier} style={{ marginBottom:16 }}>
             <div style={{ background:"#0f172a", padding:"8px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
@@ -2032,6 +1915,7 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orde
   const itemMap = {};
   inventory.forEach(sec => sec.items.forEach(item => { itemMap[item.id] = { ...item, section: sec.section }; }));
 
+  // Build total ordered per item from all saved orders
   const totalOrdered = {};
   Object.values(orders).filter(o => o.saved).forEach(o => {
     (o.lines || []).forEach(l => {
@@ -2300,6 +2184,7 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
       : [{ id: Date.now(), name: "", orderDay: 3, deliveryDay: 4, autoReset: true }]
   );
 
+  // Extract unique supplier names from inventory
   const supplierOptions = React.useMemo(() => {
     const names = new Set();
     inventory.forEach(sec => sec.items.forEach(item => {
@@ -2386,6 +2271,7 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
               </div>
             </div>
 
+            {/* ── Schedules (multiple order/delivery day pairs) ── */}
             <div style={{ marginBottom:12 }}>
               <label style={{ ...labelStyle, marginBottom:8 }}>Order & Delivery Schedule</label>
               {(vendor.schedules || [{ orderDay: vendor.orderDay ?? 3, deliveryDay: vendor.deliveryDay ?? 4 }]).map((sched, si) => (
@@ -2438,6 +2324,7 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
                   </div>
                 </div>
               ))}
+              {/* Add schedule button */}
               {(vendor.schedules || [{ orderDay: vendor.orderDay ?? 3, deliveryDay: vendor.deliveryDay ?? 4 }]).length < 5 && (
                 <button onClick={() => {
                   const current = vendor.schedules || [{ orderDay: vendor.orderDay ?? 3, deliveryDay: vendor.deliveryDay ?? 4 }];
