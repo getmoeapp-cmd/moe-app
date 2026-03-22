@@ -256,6 +256,15 @@ const vendorsOrderingToday = (vendors) => {
   return vendors.filter(v => v.orderDays && v.orderDays.includes(today));
 };
 
+// ─── SUBSCRIPTION PLANS ──────────────────────────────────────────────────────
+const PLANS = {
+  starter:    { name: "Starter",    price: 299, vendors: 3,        items: 100,      users: 2,        label: "For small kitchens" },
+  pro:        { name: "Pro",        price: 399, vendors: Infinity, items: Infinity,  users: 10,       label: "For growing operations" },
+  enterprise: { name: "Enterprise", price: 499, vendors: Infinity, items: Infinity,  users: Infinity, label: "For multi-location businesses" },
+};
+const TRIAL_DAYS = 14;
+const DEMO_GROUPS = ["demo", "tommys"]; // Demo accounts skip subscription
+
 // ─── PDF GENERATOR ────────────────────────────────────────────────────────────
 const printVendorPDF = ({ vendorName, items, weekNum, date }) => {
   const win = window.open("", "_blank");
@@ -289,6 +298,7 @@ export default function App() {
   const [loginError, setLoginError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [usageLog, setUsageLog]     = useState({});
+  const [subscription, setSubscription] = useState(null); // { plan, status, trialStart, trialEnd, subscribedAt }
 
   const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
 
@@ -317,11 +327,13 @@ export default function App() {
       const hi = await load("history", []);
       const inv = await load("inventory", DEFAULT_INVENTORY);
       const ul = await load("usageLog", {});
+      const sub = await load("subscription", null);
       setStock(st);
       setVendors(vd);
       setHistory(hi);
       setInventory(inv);
       setUsageLog(ul);
+      setSubscription(sub);
     };
     init();
   }, [user, group]);
@@ -340,7 +352,8 @@ export default function App() {
         if (data_key === "vendors")   setVendors(value);
         if (data_key === "history")   setHistory(value);
         if (data_key === "inventory") setInventory(value);
-        if (data_key === "usageLog")  setUsageLog(value);
+        if (data_key === "usageLog")     setUsageLog(value);
+        if (data_key === "subscription") setSubscription(value);
       } catch {}
     }).subscribe();
     return () => { sb.removeChannel(channel); };
@@ -421,6 +434,35 @@ export default function App() {
   // ── Login ────────────────────────────────────────────────────────────────
   if (!user) return <LoginScreen onLogin={u => { setUser(u); setGroup(u.group || "demo"); setLoginError(""); }} error={loginError} setError={setLoginError} />;
 
+  // ── Subscription gate (skip for demo accounts) ─────────────────────────
+  const isDemo = DEMO_GROUPS.includes(group);
+  const trialDaysLeft = subscription?.trialEnd ? Math.max(0, Math.ceil((new Date(subscription.trialEnd) - new Date()) / 86400000)) : 0;
+  const isTrialing = subscription?.status === "trialing" && trialDaysLeft > 0;
+  const isActive = subscription?.status === "active";
+  const hasAccess = isDemo || isTrialing || isActive;
+
+  // Auto-start trial for new accounts (no subscription yet)
+  if (!isDemo && !subscription && user) {
+    const now = new Date();
+    const trialEnd = new Date(now); trialEnd.setDate(now.getDate() + TRIAL_DAYS);
+    const newSub = { plan: "pro", status: "trialing", trialStart: now.toISOString(), trialEnd: trialEnd.toISOString() };
+    setSubscription(newSub);
+    save("subscription", newSub);
+  }
+
+  // Show pricing page if trial expired and no active subscription
+  if (!hasAccess && !isDemo) {
+    return <PricingPage subscription={subscription} user={user} onLogout={() => setUser(null)}
+      onSelectPlan={(plan) => {
+        const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() };
+        setSubscription(newSub);
+        save("subscription", newSub);
+      }} />;
+  }
+
+  // Get current plan limits
+  const currentPlan = PLANS[subscription?.plan] || PLANS.pro;
+
   const todayVendors = vendorsOrderingToday(vendors);
   const weekNum = getWeekNumber();
 
@@ -450,6 +492,7 @@ export default function App() {
               { key:"insights", label:"Insights", icon:"📊", desc:"Par suggestions by usage" },
               { key:"backend",  label:"Backend",  icon:"🔧", desc:"Add & edit items" },
               { key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors & schedules" },
+              { key:"subscription", label:"Subscription", icon:"💳", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
             ] : []),
           ].map(item => {
             const isActive = view === item.key;
@@ -501,6 +544,14 @@ export default function App() {
         </div>
       </header>
 
+      {/* Trial banner */}
+      {isTrialing && !isDemo && (
+        <div style={{ background:"#422006", borderBottom:"1px solid #d97706", padding:"8px 16px", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+          <span style={{ color:"#fbbf24", fontSize:12, fontWeight:600 }}>Free trial — {trialDaysLeft} day{trialDaysLeft !== 1 ? "s" : ""} remaining</span>
+          <button onClick={() => setView("subscription")} style={{ background:"#d97706", border:"none", borderRadius:6, padding:"3px 12px", color:"#fff", fontSize:11, fontWeight:600, cursor:"pointer" }}>Upgrade</button>
+        </div>
+      )}
+
       {/* Main content */}
       <main style={{ maxWidth:1200, margin:"0 auto", padding:"20px 16px" }}>
         {view === "inventory" && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
@@ -509,6 +560,7 @@ export default function App() {
         {view === "insights" && user.role === "owner" && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
         {view === "backend" && user.role === "owner" && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
         {view === "settings" && user.role === "owner" && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} />}
+        {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
       </main>
     </div>
   );
@@ -1605,6 +1657,210 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRICING PAGE — Shown when trial expired, must pick a plan
+// ═══════════════════════════════════════════════════════════════════════════════
+function PricingPage({ subscription, user, onLogout, onSelectPlan }) {
+  const [selected, setSelected] = useState("pro");
+  const trialExpired = subscription?.status === "trialing";
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+      <div style={{ maxWidth:960, margin:"0 auto", padding:"40px 20px" }}>
+        {/* Header */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:40 }}>
+          <div>
+            <div style={{ fontSize:28, fontWeight:900, color:"#f1f5f9" }}>M<span style={{ color:"#94a3b8" }}>OE</span></div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <span style={{ color:"#64748b", fontSize:13 }}>{user?.name}</span>
+            <button onClick={onLogout} style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:6, color:"#64748b", padding:"5px 12px", cursor:"pointer", fontSize:12 }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#64748b"; }}>
+              Sign Out
+            </button>
+          </div>
+        </div>
+
+        {/* Trial expired banner */}
+        {trialExpired && (
+          <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:12, padding:"16px 20px", marginBottom:32, textAlign:"center" }}>
+            <div style={{ color:"#fca5a5", fontSize:16, fontWeight:700, marginBottom:4 }}>Your free trial has ended</div>
+            <div style={{ color:"#f87171", fontSize:13 }}>Choose a plan below to continue using MOE</div>
+          </div>
+        )}
+
+        {/* Title */}
+        <div style={{ textAlign:"center", marginBottom:40 }}>
+          <h1 style={{ color:"#f1f5f9", fontSize:28, fontWeight:800, margin:"0 0 8px" }}>Choose Your Plan</h1>
+          <p style={{ color:"#64748b", fontSize:15, margin:0 }}>Simple pricing for kitchens of every size. Cancel anytime.</p>
+        </div>
+
+        {/* Plan cards */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))", gap:16, marginBottom:40 }}>
+          {Object.entries(PLANS).map(([key, plan]) => {
+            const isSelected = selected === key;
+            const isPro = key === "pro";
+            return (
+              <div key={key} onClick={() => setSelected(key)}
+                style={{ background:"#0f1a2e", border:`2px solid ${isSelected ? "#e2e8f0" : isPro ? "#1e2d45" : "#1e2d45"}`, borderRadius:16, padding:"28px 24px", cursor:"pointer", position:"relative", transition:"all 0.2s" }}
+                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.borderColor = "#475569"; }}
+                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.borderColor = isPro ? "#1e2d45" : "#1e2d45"; }}>
+
+                {isPro && (
+                  <div style={{ position:"absolute", top:-12, left:"50%", transform:"translateX(-50%)", background:"#e2e8f0", color:"#080c14", borderRadius:20, padding:"3px 14px", fontSize:11, fontWeight:700, letterSpacing:"0.5px" }}>
+                    MOST POPULAR
+                  </div>
+                )}
+
+                <div style={{ color:"#94a3b8", fontSize:12, fontWeight:600, textTransform:"uppercase", letterSpacing:"1px", fontFamily:"'DM Mono',monospace", marginBottom:8 }}>{plan.name}</div>
+                <div style={{ color:"#f1f5f9", fontSize:36, fontWeight:800, marginBottom:4 }}>
+                  ${plan.price}<span style={{ fontSize:15, fontWeight:400, color:"#64748b" }}>/mo</span>
+                </div>
+                <div style={{ color:"#475569", fontSize:13, marginBottom:20 }}>{plan.label}</div>
+
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  <PlanFeature label={plan.vendors === Infinity ? "Unlimited vendors" : `${plan.vendors} vendors`} included />
+                  <PlanFeature label={plan.items === Infinity ? "Unlimited items" : `${plan.items} items`} included />
+                  <PlanFeature label={plan.users === Infinity ? "Unlimited users" : `${plan.users} user${plan.users !== 1 ? "s" : ""}`} included />
+                  <PlanFeature label="Inventory tracking" included />
+                  <PlanFeature label="Order submission & history" included />
+                  <PlanFeature label="PDF export" included />
+                  <PlanFeature label="Insights & par suggestions" included={key !== "starter"} />
+                  <PlanFeature label="Priority support" included={key === "enterprise"} />
+                  <PlanFeature label="Custom onboarding" included={key === "enterprise"} />
+                </div>
+
+                <button onClick={(e) => { e.stopPropagation(); setSelected(key); }}
+                  style={{ width:"100%", marginTop:24, padding:"12px", borderRadius:10, border: isSelected ? "none" : "1px solid #1e2d45", background: isSelected ? "linear-gradient(135deg,#e2e8f0,#94a3b8)" : "transparent", color: isSelected ? "#080c14" : "#94a3b8", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                  {isSelected ? "Selected" : "Select Plan"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Subscribe button */}
+        <div style={{ textAlign:"center" }}>
+          <button onClick={() => onSelectPlan(selected)}
+            style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:12, padding:"16px 48px", color:"#fff", fontSize:17, fontWeight:700, cursor:"pointer", letterSpacing:"0.5px" }}>
+            Subscribe to {PLANS[selected].name} — ${PLANS[selected].price}/mo
+          </button>
+          <p style={{ color:"#475569", fontSize:12, marginTop:12 }}>Stripe payment integration coming soon. Your subscription will activate immediately.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlanFeature({ label, included }) {
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+      <span style={{ color: included ? "#4ade80" : "#334155", fontSize:14, flexShrink:0 }}>{included ? "✓" : "—"}</span>
+      <span style={{ color: included ? "#94a3b8" : "#334155", fontSize:13 }}>{label}</span>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SUBSCRIPTION VIEW — Manage plan from inside the app (owner sidebar)
+// ═══════════════════════════════════════════════════════════════════════════════
+function SubscriptionView({ subscription, onSelectPlan, trialDaysLeft, isTrialing, isActive }) {
+  const currentPlanKey = subscription?.plan || "pro";
+  const currentPlan = PLANS[currentPlanKey];
+
+  return (
+    <div>
+      <div style={{ marginBottom:24 }}>
+        <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>💳 Subscription</h2>
+        <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Manage your plan and billing</p>
+      </div>
+
+      {/* Current plan status */}
+      <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:"20px 24px", marginBottom:24 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
+              <span style={{ color:"#f1f5f9", fontSize:20, fontWeight:700 }}>{currentPlan.name}</span>
+              {isTrialing && (
+                <span style={{ background:"#422006", border:"1px solid #d97706", borderRadius:6, padding:"3px 10px", color:"#fbbf24", fontSize:11, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>
+                  TRIAL — {trialDaysLeft}d left
+                </span>
+              )}
+              {isActive && (
+                <span style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:6, padding:"3px 10px", color:"#4ade80", fontSize:11, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>
+                  ACTIVE
+                </span>
+              )}
+            </div>
+            <div style={{ color:"#475569", fontSize:13 }}>{currentPlan.label}</div>
+          </div>
+          <div style={{ textAlign:"right" }}>
+            <div style={{ color:"#f1f5f9", fontSize:28, fontWeight:800 }}>${currentPlan.price}<span style={{ fontSize:14, fontWeight:400, color:"#64748b" }}>/mo</span></div>
+          </div>
+        </div>
+
+        {/* Current plan limits */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10, marginTop:16, paddingTop:16, borderTop:"1px solid #1e2d45" }}>
+          {[
+            { label:"Vendors", value: currentPlan.vendors === Infinity ? "Unlimited" : currentPlan.vendors, color:"#a5b4fc" },
+            { label:"Items", value: currentPlan.items === Infinity ? "Unlimited" : currentPlan.items, color:"#4ade80" },
+            { label:"Users", value: currentPlan.users === Infinity ? "Unlimited" : currentPlan.users, color:"#fbbf24" },
+          ].map(l => (
+            <div key={l.label} style={{ background:"#080c14", borderRadius:8, padding:"10px 14px" }}>
+              <div style={{ color:l.color, fontSize:18, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{l.value}</div>
+              <div style={{ color:"#475569", fontSize:11, marginTop:2 }}>{l.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {subscription?.subscribedAt && (
+          <div style={{ marginTop:12, color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>
+            Subscribed: {new Date(subscription.subscribedAt).toLocaleDateString()}
+          </div>
+        )}
+      </div>
+
+      {/* Change plan */}
+      <h3 style={{ color:"#94a3b8", fontSize:14, fontWeight:600, margin:"0 0 12px" }}>{isActive ? "Change Plan" : "Upgrade Plan"}</h3>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))", gap:12 }}>
+        {Object.entries(PLANS).map(([key, plan]) => {
+          const isCurrent = key === currentPlanKey;
+          return (
+            <div key={key} style={{ background:"#0f1a2e", border:`1px solid ${isCurrent ? "#e2e8f0" : "#1e2d45"}`, borderRadius:12, padding:"18px 20px" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+                <div>
+                  <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{plan.name}</span>
+                  {isCurrent && <span style={{ color:"#475569", fontSize:11, marginLeft:8 }}>(current)</span>}
+                </div>
+                <span style={{ color:"#f1f5f9", fontSize:18, fontWeight:700 }}>${plan.price}<span style={{ fontSize:12, fontWeight:400, color:"#64748b" }}>/mo</span></span>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:14 }}>
+                <span style={{ color:"#94a3b8", fontSize:12 }}>✓ {plan.vendors === Infinity ? "Unlimited" : plan.vendors} vendors · {plan.items === Infinity ? "Unlimited" : plan.items} items · {plan.users === Infinity ? "Unlimited" : plan.users} users</span>
+                {key !== "starter" && <span style={{ color:"#94a3b8", fontSize:12 }}>✓ Insights & par suggestions</span>}
+                {key === "enterprise" && <span style={{ color:"#94a3b8", fontSize:12 }}>✓ Priority support & onboarding</span>}
+              </div>
+              {isCurrent ? (
+                <div style={{ padding:"8px", textAlign:"center", color:"#475569", fontSize:12, border:"1px solid #1e2d45", borderRadius:8 }}>Current Plan</div>
+              ) : (
+                <button onClick={() => onSelectPlan(key)}
+                  style={{ width:"100%", padding:"8px", borderRadius:8, border:"none", background: key === "enterprise" ? "linear-gradient(135deg,#e2e8f0,#94a3b8)" : "linear-gradient(135deg,#22c55e,#16a34a)", color: key === "enterprise" ? "#080c14" : "#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                  {isTrialing ? `Subscribe — $${plan.price}/mo` : `Switch to ${plan.name}`}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ marginTop:24, background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:10, padding:"12px 16px" }}>
+        <span style={{ color:"#475569", fontSize:12 }}>Stripe payment integration coming soon. Plan changes take effect immediately. Need help? Contact support.</span>
+      </div>
     </div>
   );
 }
