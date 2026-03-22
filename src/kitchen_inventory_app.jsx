@@ -523,7 +523,7 @@ export default function App() {
           // Find the most recent unsaved/saved order for this vendor's items
           Object.keys(newOrd).forEach(wk => {
             const o = newOrd[wk];
-            if (!o || o._archived) return;
+            if (!o || o._archived || !o.lines) return;
             // Check if this order contains this vendor's items
             const hasVendorItems = (o.lines || []).some(l =>
               (l.supplier || "").toLowerCase().trim() === vendor.name.toLowerCase().trim()
@@ -537,7 +537,8 @@ export default function App() {
         });
         if (ordersChanged) {
           setOrders(newOrd);
-          dualSet("orders", ORDERS_KEY, newOrd);
+          sbSet(group, "orders", newOrd);
+          try { localStorage.setItem(ORDERS_KEY(group), JSON.stringify(newOrd)); } catch(e) {}
         }
       }
     };
@@ -663,6 +664,7 @@ export default function App() {
         let changed = false;
         const updated = { ...prev };
         Object.entries(prev).forEach(([wk, o]) => {
+          if (!o) return;  // skip null reserved slots
           if (wk !== currentWk && !o.saved) {
             updated[wk] = { ...o, saved: true, autoArchived: true };
             changed = true;
@@ -1798,7 +1800,7 @@ function HistoryView({ orders }) {
   const [search, setSearch]     = useState("");
   const [selected, setSelected] = useState(null);
 
-  const sorted = Object.values(orders).filter(o => o.saved || o._archived).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const sorted = Object.values(orders).filter(o => o && (o.saved || o._archived)).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
   const filtered = sorted.filter(o => !search || (o.weekKey||"").includes(search) || fmtDate(o.orderDate||new Date().toISOString().split("T")[0]).toLowerCase().includes(search.toLowerCase()));
   const view = selected ? orders[selected] : null;
 
@@ -1935,7 +1937,7 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orde
 
   // Build total ordered per item from all saved orders
   const totalOrdered = {};
-  Object.values(orders).filter(o => o.saved).forEach(o => {
+  Object.values(orders).filter(o => o && o.saved).forEach(o => {
     (o.lines || []).forEach(l => {
       if (l.qty > 0) totalOrdered[l.id] = (totalOrdered[l.id] || 0) + l.qty;
     });
