@@ -584,25 +584,26 @@ function InventoryView({ inventory, stock, updateStock, vendors }) {
                 const status = getStatus(item, s);
                 const orderQty = calcOrderQty(item, s);
                 return (
-                  <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr auto 120px 70px", alignItems:"center", padding:"10px 16px", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none", gap:8 }}>
-                    <div>
-                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                        <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:500 }}>{item.name}</span>
-                        <span style={{ background:"#0f2040", border:"1px solid #1e3a5f", borderRadius:4, padding:"1px 6px", color:"#94a3b8", fontSize:9, fontFamily:"'DM Mono',monospace" }}>{item.vendor}</span>
+                  <div key={item.id} style={{ padding:"10px 14px", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none" }}>
+                    {/* Top row: name + vendor tag + status */}
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8, gap:6, flexWrap:"wrap" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, minWidth:0 }}>
+                        <span style={{ color:"#e2e8f0", fontSize:14, fontWeight:500, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.name}</span>
+                        <span style={{ background:"#0f2040", border:"1px solid #1e3a5f", borderRadius:4, padding:"1px 6px", color:"#94a3b8", fontSize:9, fontFamily:"'DM Mono',monospace", flexShrink:0 }}>{item.vendor}</span>
                       </div>
-                      <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{item.order_unit} · Max {item.max_stock} · Reorder {item.reorder}</div>
+                      <span style={{ background:status.bg, color:status.color, borderRadius:6, padding:"3px 8px", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", flexShrink:0 }}>{status.label}</span>
                     </div>
-                    {/* Order qty badge */}
-                    <div>{orderQty > 0 ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"3px 8px", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>Order {orderQty}</span> : <span style={{ color:"#1e2d45" }}>—</span>}</div>
-                    {/* Stock input */}
-                    <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                      <button onClick={() => updateStock(item.id, Math.max(0, s-1))} style={{ width:28, height:28, background:"#1e2d45", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
-                      <input type="number" value={s} min={0} onChange={e => updateStock(item.id, e.target.value)} onFocus={e => e.target.select()}
-                        style={{ width:48, background:"#080c14", border:`1px solid ${status.color}`, borderRadius:6, padding:"4px 6px", color:status.color, fontSize:13, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
-                      <button onClick={() => updateStock(item.id, s+1)} style={{ width:28, height:28, background:"#1e2d45", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+                    {/* Bottom row: stock controls + order qty */}
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <button onClick={() => updateStock(item.id, Math.max(0, s-1))} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+                        <input type="number" value={s} min={0} onChange={e => updateStock(item.id, e.target.value)} onFocus={e => e.target.select()}
+                          style={{ width:52, background:"#080c14", border:`1px solid ${status.color}`, borderRadius:8, padding:"6px", color:status.color, fontSize:15, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
+                        <button onClick={() => updateStock(item.id, s+1)} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+                        <span style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", marginLeft:4 }}>{item.order_unit} · Max {item.max_stock}</span>
+                      </div>
+                      <div>{orderQty > 0 ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"4px 10px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>Order {orderQty}</span> : null}</div>
                     </div>
-                    {/* Status */}
-                    <div style={{ textAlign:"right" }}><span style={{ background:status.bg, color:status.color, borderRadius:6, padding:"3px 8px", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>{status.label}</span></div>
                   </div>
                 );
               })}
@@ -782,15 +783,6 @@ function HistoryView({ history }) {
                       onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#94a3b8"; }}>
                       🖨 PDF
                     </button>
-                  </div>
-                  <div style={{ padding:"0 16px 10px" }}>
-                    <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                      {entry.lines.map(line => (
-                        <span key={line.id} style={{ background:"#080c14", borderRadius:6, padding:"3px 10px", color:"#94a3b8", fontSize:11, fontFamily:"'DM Mono',monospace" }}>
-                          {line.name} <span style={{ color:"#fca5a5", fontWeight:600 }}>{line.qty}</span> {line.order_unit}
-                        </span>
-                      ))}
-                    </div>
                   </div>
                 </div>
               ))}
