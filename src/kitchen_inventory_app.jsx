@@ -483,7 +483,7 @@ export default function App() {
       {/* Sidebar */}
       <div style={{ position:"fixed", top:0, left:0, height:"100vh", width:260, background:"#0f1a2e", borderRight:"1px solid #1e2d45", transform:sidebarOpen?"translateX(0)":"translateX(-100%)", transition:"transform 0.25s ease", zIndex:201, display:"flex", flexDirection:"column" }}>
         <div style={{ padding:"20px", borderBottom:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <span style={{ color:"#f1f5f9", fontSize:20, fontWeight:900, fontFamily:"'DM Sans',sans-serif" }}>M<span style={{ color:"#94a3b8" }}>OE</span></span>
+          <MoeLogo size="md" />
           <button onClick={() => setSidebarOpen(false)} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:18 }}>✕</button>
         </div>
         <div style={{ padding:"14px 20px", borderBottom:"1px solid #1e2d45" }}>
@@ -539,7 +539,7 @@ export default function App() {
             <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
             <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
           </button>
-          <span style={{ color:"#f1f5f9", fontSize:18, fontWeight:900 }}>M<span style={{ color:"#94a3b8" }}>OE</span></span>
+          <MoeLogo size="sm" />
           <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{view.toUpperCase()}</span>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -574,6 +574,29 @@ export default function App() {
         {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
       </main>
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MOE LOGO — Hex SVG logo
+// ═══════════════════════════════════════════════════════════════════════════════
+function MoeLogo({ size = "md" }) {
+  const configs = { sm: { vw: 110, vh: 36, hx: 18, hy: 18, outerR: 16, midR: 11, innerR: 6, dot: 1.8, tx: 36, ty: 23, fs: 20 }, md: { vw: 130, vh: 44, hx: 22, hy: 22, outerR: 20, midR: 13, innerR: 7, dot: 2.2, tx: 44, ty: 28, fs: 24 }, lg: { vw: 220, vh: 72, hx: 36, hy: 36, outerR: 33, midR: 22, innerR: 11, dot: 3.5, tx: 74, ty: 46, fs: 40 } };
+  const c = configs[size] || configs.md;
+  const { vw, vh, hx, hy, outerR: oR, midR: mR, innerR: iR, dot: d, tx, ty, fs } = c;
+  const hex = (cx, cy, r) => { const pts = []; for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - 30); pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`); } return pts.join(" "); };
+  const spokeLines = Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 180 * (60 * i - 30); return { x1: (hx + oR * Math.cos(a)).toFixed(2), y1: (hy + oR * Math.sin(a)).toFixed(2), x2: (hx + mR * Math.cos(a)).toFixed(2), y2: (hy + mR * Math.sin(a)).toFixed(2) }; });
+  const outerDots = Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 180 * (60 * i - 30); return { cx: (hx + oR * Math.cos(a)).toFixed(2), cy: (hy + oR * Math.sin(a)).toFixed(2) }; });
+  return (
+    <svg width={vw} height={vh} viewBox={`0 0 ${vw} ${vh}`} xmlns="http://www.w3.org/2000/svg" style={{ display:"block", flexShrink:0 }}>
+      <polygon points={hex(hx, hy, oR)} fill="none" stroke="#94a3b8" strokeWidth="0.8" opacity="0.2"/>
+      {spokeLines.map((l, i) => <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#94a3b8" strokeWidth="0.7" opacity="0.3"/>)}
+      {outerDots.map((p, i) => <circle key={i} cx={p.cx} cy={p.cy} r={d} fill="#64748b" opacity="0.55"/>)}
+      <polygon points={hex(hx, hy, mR)} fill="none" stroke="#cbd5e1" strokeWidth="1" opacity="0.55"/>
+      <polygon points={hex(hx, hy, iR)} fill="#f1f5f9"/>
+      <circle cx={hx} cy={hy} r={iR * 0.45} fill="#080c14" opacity="0.45"/>
+      <text x={tx} y={ty} fontFamily="'DM Sans',sans-serif" fontWeight="900" fontSize={fs} letterSpacing="-1" fill="#f1f5f9">M<tspan fill="#e2e8f0">OE</tspan></text>
+    </svg>
   );
 }
 
@@ -683,7 +706,7 @@ function LoginScreen({ onLogin, error, setError }) {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <div style={{ width:420 }}>
         <div style={{ textAlign:"center", marginBottom:24 }}>
-          <div style={{ fontSize:36, fontWeight:900, color:"#f1f5f9", marginBottom:4 }}>M<span style={{ color:"#94a3b8" }}>OE</span></div>
+          <div style={{ display:"flex", justifyContent:"center", marginBottom:8 }}><MoeLogo size="lg" /></div>
           <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", letterSpacing:"2px", marginBottom:4 }}>MAKE ORDERING EASY</div>
         </div>
 
@@ -1865,7 +1888,7 @@ function PricingPage({ subscription, user, onLogout, onSelectPlan }) {
         {/* Header */}
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:40 }}>
           <div>
-            <div style={{ fontSize:28, fontWeight:900, color:"#f1f5f9" }}>M<span style={{ color:"#94a3b8" }}>OE</span></div>
+            <MoeLogo size="md" />
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
             <span style={{ color:"#64748b", fontSize:13 }}>{user?.name}</span>
