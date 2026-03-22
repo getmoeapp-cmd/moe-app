@@ -299,6 +299,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [usageLog, setUsageLog]     = useState({});
   const [subscription, setSubscription] = useState(null); // { plan, status, trialStart, trialEnd, subscribedAt }
+  const [team, setTeam]                 = useState([]); // [{ id, email, name, role, addedAt }]
 
   const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
 
@@ -328,12 +329,14 @@ export default function App() {
       const inv = await load("inventory", DEFAULT_INVENTORY);
       const ul = await load("usageLog", {});
       const sub = await load("subscription", null);
+      const tm = await load("team", []);
       setStock(st);
       setVendors(vd);
       setHistory(hi);
       setInventory(inv);
       setUsageLog(ul);
       setSubscription(sub);
+      setTeam(tm);
     };
     init();
   }, [user, group]);
@@ -354,6 +357,7 @@ export default function App() {
         if (data_key === "inventory") setInventory(value);
         if (data_key === "usageLog")     setUsageLog(value);
         if (data_key === "subscription") setSubscription(value);
+        if (data_key === "team")         setTeam(value);
       } catch {}
     }).subscribe();
     return () => { sb.removeChannel(channel); };
@@ -420,6 +424,9 @@ export default function App() {
 
   // ── Save vendors ─────────────────────────────────────────────────────────
   const saveVendors = (newVendors) => { setVendors(newVendors); save("vendors", newVendors); showFlash(); };
+
+  // ── Save team ──────────────────────────────────────────────────────────
+  const saveTeam = (newTeam) => { setTeam(newTeam); save("team", newTeam); showFlash(); };
 
   // ── Apply par suggestion — update an item's max_stock in inventory ──────
   const applyParSuggestion = (itemId, newMaxStock) => {
@@ -489,8 +496,8 @@ export default function App() {
             { key:"orders",    label:"Orders",    icon:"📦", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length },
             { key:"history",   label:"History",   icon:"📚", desc:"Past orders by week" },
             ...(user.role === "owner" ? [
-              { key:"insights", label:"Insights", icon:"📊", desc:"Par suggestions by usage" },
-              { key:"import",   label:"Import Items", icon:"📤", desc:"Upload list or invoice photo" },
+              { key:"insights", label:"Insights", icon:"📊", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing },
+              { key:"import",   label:"Import Items", icon:"📤", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing },
               { key:"backend",  label:"Backend",  icon:"🔧", desc:"Add & edit items" },
               { key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors & schedules" },
               { key:"subscription", label:"Subscription", icon:"💳", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
@@ -498,14 +505,14 @@ export default function App() {
           ].map(item => {
             const isActive = view === item.key;
             return (
-              <button key={item.key} onClick={() => { setView(item.key); setSidebarOpen(false); }}
-                style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#080c14":"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #e2e8f0":"3px solid transparent" }}
+              <button key={item.key} onClick={() => { if (!item.locked) { setView(item.key); setSidebarOpen(false); } else { setView("subscription"); setSidebarOpen(false); } }}
+                style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#080c14":"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #e2e8f0":"3px solid transparent", opacity:item.locked?0.5:1 }}
                 onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "#080c14"; }}
                 onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
                 <span style={{ fontSize:18 }}>{item.icon}</span>
                 <div style={{ textAlign:"left", flex:1 }}>
-                  <div style={{ color:isActive?"#e2e8f0":"#94a3b8", fontSize:14, fontWeight:isActive?600:400 }}>{item.label}</div>
-                  <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>
+                  <div style={{ color:isActive?"#e2e8f0":"#94a3b8", fontSize:14, fontWeight:isActive?600:400 }}>{item.label}{item.locked ? " 🔒" : ""}</div>
+                  <div style={{ color:item.locked?"#d97706":"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>
                 </div>
                 {item.badge > 0 && <span style={{ background:"#422006", color:"#fbbf24", borderRadius:10, padding:"2px 8px", fontSize:10, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
               </button>
@@ -561,7 +568,7 @@ export default function App() {
         {view === "insights" && user.role === "owner" && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
         {view === "import" && user.role === "owner" && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && user.role === "owner" && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
-        {view === "settings" && user.role === "owner" && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} />}
+        {view === "settings" && user.role === "owner" && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} />}
         {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
       </main>
     </div>
@@ -635,19 +642,34 @@ function LoginScreen({ onLogin, error, setError }) {
     onLogin({ name: `${account.ownerFirst} ${account.ownerLast}`, role: "owner", group: groupId, email: account.email, business: account.business });
   };
 
-  // Also check registered accounts on login
+  // Also check registered accounts and team members on login
   const handleLoginWithAccounts = async () => {
-    // Check hardcoded demo users first
-    const u = USERS[email.toLowerCase().trim()];
-    if (u && u.password === pass) { onLogin({ ...u, email }); return; }
+    const emailLower = email.toLowerCase().trim();
 
-    // Check registered accounts
+    // Check hardcoded demo users first
+    const u = USERS[emailLower];
+    if (u && u.password === pass) { onLogin({ ...u, email: emailLower }); return; }
+
+    // Check registered owner accounts
     const accounts = await sbGet("__moe_accounts__", "accounts") || {};
-    const acct = accounts[email.toLowerCase().trim()];
+    const acct = accounts[emailLower];
     if (acct && acct.password === pass) {
       onLogin({ name: `${acct.ownerFirst} ${acct.ownerLast}`, role: acct.role, group: acct.group, email: acct.email, business: acct.business });
       return;
     }
+
+    // Check team members across all registered accounts
+    for (const [ownerEmail, ownerAcct] of Object.entries(accounts)) {
+      const teamData = await sbGet(ownerAcct.group, "team");
+      if (Array.isArray(teamData)) {
+        const member = teamData.find(m => m.email.toLowerCase() === emailLower && m.password === pass);
+        if (member) {
+          onLogin({ name: member.name, role: member.role || "employee", group: ownerAcct.group, email: member.email, business: ownerAcct.business });
+          return;
+        }
+      }
+    }
+
     setError("Invalid email or password.");
   };
 
@@ -1105,10 +1127,12 @@ function HistoryView({ history }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SETTINGS VIEW — Manage vendors & their order days (owner only)
 // ═══════════════════════════════════════════════════════════════════════════════
-function SettingsView({ vendors, saveVendors, inventory }) {
+function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, currentPlan, isTrialing }) {
+  const [activeTab, setActiveTab] = useState("vendors");
   const [localVendors, setLocalVendors] = useState(vendors);
   const [dirty, setDirty] = useState(false);
 
+  // ── Vendor management ──────────────────────────────────────────────────
   const update = (id, field, value) => {
     setLocalVendors(prev => prev.map(v => v.id === id ? { ...v, [field]: value } : v));
     setDirty(true);
@@ -1138,72 +1162,234 @@ function SettingsView({ vendors, saveVendors, inventory }) {
     setDirty(false);
   };
 
+  // ── Employee management ────────────────────────────────────────────────
+  const [empName, setEmpName] = useState("");
+  const [empEmail, setEmpEmail] = useState("");
+  const [empPassword, setEmpPassword] = useState("");
+  const [empRole, setEmpRole] = useState("employee");
+  const [empError, setEmpError] = useState("");
+  const [showAddEmp, setShowAddEmp] = useState(false);
+  const [editingEmp, setEditingEmp] = useState(null);
+
+  const maxUsers = currentPlan?.users || 2;
+  const atLimit = !isTrialing && maxUsers !== Infinity && team.length >= maxUsers;
+
+  const addEmployee = () => {
+    setEmpError("");
+    if (!empName.trim()) return setEmpError("Name is required.");
+    if (!empEmail.trim() || !empEmail.includes("@")) return setEmpError("Valid email is required.");
+    if (!empPassword || empPassword.length < 6) return setEmpError("Password must be at least 6 characters.");
+    if (team.some(m => m.email.toLowerCase() === empEmail.toLowerCase().trim())) return setEmpError("This email is already on your team.");
+
+    const newMember = {
+      id: Date.now(), name: empName.trim(), email: empEmail.toLowerCase().trim(),
+      password: empPassword, role: empRole, addedAt: new Date().toISOString(),
+    };
+    saveTeam([...team, newMember]);
+    setEmpName(""); setEmpEmail(""); setEmpPassword(""); setEmpRole("employee"); setShowAddEmp(false);
+  };
+
+  const removeEmployee = (id) => saveTeam(team.filter(m => m.id !== id));
+
+  const updateEmployee = (id, field, value) => {
+    saveTeam(team.map(m => m.id === id ? { ...m, [field]: value } : m));
+  };
+
   return (
     <div>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:10 }}>
         <div>
           <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Settings</h2>
-          <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Manage vendors and order schedules</p>
+          <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Manage vendors, schedules, and team members</p>
         </div>
-        {dirty && (
-          <button onClick={handleSave}
-            style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:"8px 20px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-            💾 Save Changes
-          </button>
-        )}
       </div>
 
-      <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:16 }}>
-        {localVendors.map((vendor, idx) => {
-          const itemCount = flatItems(inventory).filter(i => (i.vendor||"").trim().toLowerCase() === vendor.name.toLowerCase()).length;
-          return (
-            <div key={vendor.id} style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:18 }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", letterSpacing:"1px", textTransform:"uppercase" }}>Vendor {idx+1}</span>
-                  {vendor.name && <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>· {itemCount} items</span>}
-                </div>
-                {localVendors.length > 1 && (
-                  <button onClick={() => removeVendor(vendor.id)}
-                    style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:6, color:"#64748b", cursor:"pointer", fontSize:11, padding:"3px 8px" }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#64748b"; }}>
-                    Remove
-                  </button>
-                )}
-              </div>
+      {/* Tabs */}
+      <div style={{ display:"flex", gap:8, marginBottom:20 }}>
+        {[{ key:"vendors", label:"Vendors", icon:"📦" }, { key:"team", label:"Team", icon:"👥" }].map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            style={{ background:activeTab===tab.key?"#e2e8f0":"transparent", border:`1px solid ${activeTab===tab.key?"#e2e8f0":"#1e2d45"}`, borderRadius:8, padding:"7px 16px", color:activeTab===tab.key?"#080c14":"#64748b", fontSize:13, fontWeight:activeTab===tab.key?600:400, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+            {tab.icon} {tab.label}
+            {tab.key === "team" && <span style={{ background:"#0f2040", color:"#a5b4fc", borderRadius:10, padding:"1px 7px", fontSize:10, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{team.length}</span>}
+          </button>
+        ))}
+      </div>
 
-              <div style={{ marginBottom:14 }}>
-                <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Vendor Name</label>
-                <input value={vendor.name} onChange={e => update(vendor.id, "name", e.target.value)} placeholder="e.g. Anacapri, Market..."
+      {/* ── VENDORS TAB ── */}
+      {activeTab === "vendors" && (
+        <>
+          {dirty && (
+            <div style={{ marginBottom:16 }}>
+              <button onClick={handleSave}
+                style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:"8px 20px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                Save Changes
+              </button>
+            </div>
+          )}
+          <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:16 }}>
+            {localVendors.map((vendor, idx) => {
+              const itemCount = flatItems(inventory).filter(i => (i.vendor||"").trim().toLowerCase() === vendor.name.toLowerCase()).length;
+              return (
+                <div key={vendor.id} style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:18 }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", letterSpacing:"1px", textTransform:"uppercase" }}>Vendor {idx+1}</span>
+                      {vendor.name && <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>· {itemCount} items</span>}
+                    </div>
+                    {localVendors.length > 1 && (
+                      <button onClick={() => removeVendor(vendor.id)}
+                        style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:6, color:"#64748b", cursor:"pointer", fontSize:11, padding:"3px 8px" }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#64748b"; }}>
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ marginBottom:14 }}>
+                    <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Vendor Name</label>
+                    <input value={vendor.name} onChange={e => update(vendor.id, "name", e.target.value)} placeholder="e.g. Anacapri, Market..."
+                      style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                  </div>
+                  <div>
+                    <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Order Days</label>
+                    <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                      {DAYS.map((day, i) => {
+                        const selected = (vendor.orderDays || []).includes(i);
+                        return (
+                          <button key={day} onClick={() => toggleDay(vendor.id, i)}
+                            style={{ padding:"8px 14px", borderRadius:8, background:selected?"#e2e8f0":"#080c14", border:`1px solid ${selected?"#e2e8f0":"#1e2d45"}`, color:selected?"#080c14":"#64748b", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+                            {DAYS_SHORT[i]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button onClick={addVendor}
+            style={{ background:"none", border:"1px dashed #1e2d45", borderRadius:8, color:"#475569", cursor:"pointer", fontSize:13, padding:"10px 20px", display:"flex", alignItems:"center", gap:6 }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
+            ＋ Add Vendor
+          </button>
+        </>
+      )}
+
+      {/* ── TEAM TAB ── */}
+      {activeTab === "team" && (
+        <>
+          {/* Info bar */}
+          <div style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:10, padding:"12px 16px", marginBottom:20 }}>
+            <span style={{ color:"#a5b4fc", fontSize:12 }}>Add employees so they can sign in and access the inventory for your store. </span>
+            <span style={{ color:"#64748b", fontSize:12 }}>Employees see Inventory, Orders, and History — not Backend or Settings.</span>
+          </div>
+
+          {/* Usage bar */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ color:"#94a3b8", fontSize:13 }}>Team Members</span>
+              <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#a5b4fc", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>
+                {team.length} / {maxUsers === Infinity ? "∞" : maxUsers}
+              </span>
+            </div>
+            {!showAddEmp && (
+              <button onClick={() => { if (atLimit) return; setShowAddEmp(true); }}
+                style={{ background: atLimit ? "#1e2d45" : "linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:"8px 16px", color: atLimit ? "#475569" : "#fff", fontSize:13, fontWeight:600, cursor: atLimit ? "not-allowed" : "pointer" }}>
+                {atLimit ? `Limit reached — upgrade plan` : "＋ Add Employee"}
+              </button>
+            )}
+          </div>
+
+          {/* Add employee form */}
+          {showAddEmp && (
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:20, marginBottom:16 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+                <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>New Team Member</span>
+                <button onClick={() => { setShowAddEmp(false); setEmpError(""); }}
+                  style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:16 }}>✕</button>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
+                <div>
+                  <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Full Name *</label>
+                  <input value={empName} onChange={e => setEmpName(e.target.value)} placeholder="Roberto Garcia"
+                    style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                </div>
+                <div>
+                  <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Role</label>
+                  <select value={empRole} onChange={e => setEmpRole(e.target.value)}
+                    style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box", cursor:"pointer" }}>
+                    <option value="employee">Employee</option>
+                    <option value="manager">Manager</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginBottom:12 }}>
+                <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Email Address *</label>
+                <input value={empEmail} onChange={e => setEmpEmail(e.target.value)} placeholder="roberto@email.com" type="email"
                   style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box" }} />
               </div>
-
-              <div>
-                <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Order Days</label>
-                <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                  {DAYS.map((day, i) => {
-                    const selected = (vendor.orderDays || []).includes(i);
-                    return (
-                      <button key={day} onClick={() => toggleDay(vendor.id, i)}
-                        style={{ padding:"8px 14px", borderRadius:8, background:selected?"#e2e8f0":"#080c14", border:`1px solid ${selected?"#e2e8f0":"#1e2d45"}`, color:selected?"#080c14":"#64748b", fontSize:12, fontWeight:600, cursor:"pointer" }}>
-                        {DAYS_SHORT[i]}
-                      </button>
-                    );
-                  })}
-                </div>
+              <div style={{ marginBottom:16 }}>
+                <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Temporary Password *</label>
+                <input value={empPassword} onChange={e => setEmpPassword(e.target.value)} placeholder="Min 6 characters"
+                  style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                <div style={{ color:"#475569", fontSize:11, marginTop:4 }}>Share this with your employee so they can sign in</div>
+              </div>
+              {empError && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:12 }}>{empError}</div>}
+              <div style={{ display:"flex", gap:10 }}>
+                <button onClick={addEmployee}
+                  style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:"8px 20px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                  Add to Team
+                </button>
+                <button onClick={() => { setShowAddEmp(false); setEmpError(""); }}
+                  style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 16px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>
+                  Cancel
+                </button>
               </div>
             </div>
-          );
-        })}
-      </div>
+          )}
 
-      <button onClick={addVendor}
-        style={{ background:"none", border:"1px dashed #1e2d45", borderRadius:8, color:"#475569", cursor:"pointer", fontSize:13, padding:"10px 20px", display:"flex", alignItems:"center", gap:6 }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
-        ＋ Add Vendor
-      </button>
+          {/* Team list */}
+          {team.length === 0 ? (
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:32, textAlign:"center" }}>
+              <div style={{ fontSize:36, marginBottom:12 }}>👥</div>
+              <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No team members yet</div>
+              <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Add employees so they can sign in and count inventory</div>
+            </div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {team.map(member => (
+                <div key={member.id} style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:10, padding:"14px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
+                  <div style={{ flex:1, minWidth:200 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+                      <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{member.name}</span>
+                      <span style={{ background: member.role === "manager" ? "#422006" : "#0f2040", border:`1px solid ${member.role === "manager" ? "#d97706" : "#1e40af"}`, borderRadius:5, padding:"1px 7px", color: member.role === "manager" ? "#fbbf24" : "#a5b4fc", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase" }}>
+                        {member.role}
+                      </span>
+                    </div>
+                    <div style={{ color:"#475569", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{member.email}</div>
+                    <div style={{ color:"#334155", fontSize:10, fontFamily:"'DM Mono',monospace", marginTop:2 }}>Added {new Date(member.addedAt).toLocaleDateString()}</div>
+                  </div>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <select value={member.role} onChange={e => updateEmployee(member.id, "role", e.target.value)}
+                      style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"4px 8px", color:"#f1f5f9", fontSize:11, outline:"none", cursor:"pointer" }}>
+                      <option value="employee">Employee</option>
+                      <option value="manager">Manager</option>
+                    </select>
+                    <button onClick={() => removeEmployee(member.id)}
+                      style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:6, color:"#64748b", cursor:"pointer", fontSize:11, padding:"4px 10px" }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#64748b"; }}>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
