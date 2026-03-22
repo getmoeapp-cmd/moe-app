@@ -901,257 +901,237 @@ function SettingsView({ vendors, saveVendors, inventory }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BACKEND VIEW — Add/edit/remove items, assign vendor + optional section
+// EDITABLE CELL — Click to edit inline
+// ═══════════════════════════════════════════════════════════════════════════════
+function EditableCell({ value, onSave, type="text", width=80 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value));
+  const open = () => { setEditing(true); setDraft(String(value)); };
+  const commit = () => { setEditing(false); if (String(draft) !== String(value)) onSave(draft); };
+  const cancel = () => { setEditing(false); setDraft(String(value)); };
+  if (!editing) return (
+    <div onClick={open} title="Click to edit" className="edit-cell"
+      style={{ cursor:"text", color:"#e2e8f0", fontSize:12, padding:"4px 6px", borderRadius:5, border:"1px solid transparent", display:"inline-flex", alignItems:"center", gap:4, minWidth:width, transition:"all 0.12s" }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.background="#0d1a2e"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor="transparent"; e.currentTarget.style.background="transparent"; }}>
+      <span style={{ flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+        {value !== "" && value !== null && value !== undefined ? String(value) : <span style={{ color:"#475569", fontStyle:"italic" }}>—</span>}
+      </span>
+      <span className="edit-pencil" style={{ color:"#e2e8f0", fontSize:9, opacity:0.7, flexShrink:0, display:"none" }}>✏</span>
+    </div>
+  );
+  return (
+    <input autoFocus value={draft} type={type} min={type === "number" ? 0 : undefined}
+      onChange={e => setDraft(e.target.value)} onBlur={commit}
+      onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") cancel(); }}
+      style={{ width, background:"#080c14", border:"1px solid #e2e8f0", borderRadius:5, padding:"4px 7px", color:"#f1f5f9", fontSize:12, outline:"none", fontFamily:"'DM Sans',sans-serif", boxSizing:"border-box" }} />
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ORDER UNIT SELECT
+// ═══════════════════════════════════════════════════════════════════════════════
+const ORDER_UNITS = ["Case","Each","Piece","Unit","Bag","Bundle","Gallon","Roll","Lbs"];
+function OrderUnitSelect({ value, onSave }) {
+  const [editing, setEditing] = useState(false);
+  if (!editing) return (
+    <div onClick={() => setEditing(true)}
+      style={{ cursor:"pointer", color:"#e2e8f0", fontSize:12, padding:"4px 6px", borderRadius:5, border:"1px solid transparent", display:"inline-flex", alignItems:"center", gap:4, minWidth:80, transition:"all 0.12s" }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.background="#0d1a2e"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor="transparent"; e.currentTarget.style.background="transparent"; }}>
+      <span style={{ flex:1 }}>{value || "—"}</span>
+      <span className="edit-pencil" style={{ color:"#e2e8f0", fontSize:9, opacity:0.7, display:"none" }}>✏</span>
+    </div>
+  );
+  return (
+    <select autoFocus value={value} onChange={e => { onSave(e.target.value); setEditing(false); }} onBlur={() => setEditing(false)}
+      style={{ background:"#080c14", border:"1px solid #e2e8f0", borderRadius:5, padding:"4px 7px", color:"#f1f5f9", fontSize:12, outline:"none" }}>
+      {ORDER_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+    </select>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HOVER ROW — Shows remove button on hover
+// ═══════════════════════════════════════════════════════════════════════════════
+function HoverRow({ children, bg, onRemove }) {
+  const [hovered, setHovered] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const handleRemove = (e) => { e.stopPropagation(); if (confirm) { onRemove(); } else { setConfirm(true); setTimeout(() => setConfirm(false), 2500); } };
+  const childArray = React.Children.toArray(children);
+  const firstTd = childArray[0]; const restTds = childArray.slice(1);
+  const enhancedFirstTd = React.cloneElement(firstTd, {
+    style: { ...firstTd.props.style, position:"relative" },
+    children: (<div style={{ display:"flex", alignItems:"center", gap:4 }}><div style={{ flex:1 }}>{firstTd.props.children}</div>
+      {hovered && <button onClick={handleRemove} title={confirm ? "Click again to confirm" : "Remove item"} style={{ background:confirm?"#7f1d1d":"transparent", border:`1px solid ${confirm?"#ef4444":"#475569"}`, borderRadius:4, color:confirm?"#fca5a5":"#64748b", cursor:"pointer", fontSize:10, padding:"2px 6px", whiteSpace:"nowrap", flexShrink:0, lineHeight:1.4 }}>{confirm ? "confirm ✕" : "✕"}</button>}
+    </div>),
+  });
+  return (<tr style={{ background:bg, borderTop:"1px solid #0f172a" }} onMouseEnter={() => setHovered(true)} onMouseLeave={() => { setHovered(false); setConfirm(false); }}>{enhancedFirstTd}{restTds}</tr>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BACKEND VIEW — Original table layout with click-to-edit
 // ═══════════════════════════════════════════════════════════════════════════════
 function BackendView({ inventory, saveInventory, vendors, stock }) {
-  const ORDER_UNITS = ["Case","Each","Piece","Unit","Bag","Bundle","Gallon","Roll","Lbs"];
-
-  // Flat list of all items for editing
-  const allItems = flatItems(inventory);
-  const sections = inventory.map(s => s.section);
-
-  // ── Add item ───────────────────────────────────────────────────────────────
-  const addItem = (section) => {
-    const targetSection = section || "📦  Unsorted";
-    const newId = Date.now();
-    const newItem = { id: newId, name: "", order_unit: "Case", upu: 1, vendor: vendors[0]?.name || "", max_stock: 1, reorder: 1 };
-    const newInv = inventory.map(s => s.section === targetSection ? { ...s, items: [...s.items, newItem] } : s);
-    // If section doesn't exist yet, add it
-    if (!inventory.some(s => s.section === targetSection)) {
-      newInv.push({ section: targetSection, items: [newItem] });
-    }
-    saveInventory(newInv);
-  };
-
-  // ── Update item field ──────────────────────────────────────────────────────
-  const updateItem = (itemId, field, value) => {
+  // ── Helpers that mutate inventory and persist ──
+  const saveItemField = (itemId, field, rawVal) => {
     const numFields = ["upu", "max_stock", "reorder"];
-    const val = numFields.includes(field) ? (parseInt(value) || 0) : value;
-    const newInv = inventory.map(s => ({
-      ...s,
-      items: s.items.map(i => i.id === itemId ? { ...i, [field]: val } : i),
-    }));
-    saveInventory(newInv);
+    const val = numFields.includes(field) ? (parseInt(rawVal) || 0) : rawVal;
+    saveInventory(inventory.map(s => ({ ...s, items: s.items.map(i => i.id === itemId ? { ...i, [field]: val } : i) })));
   };
 
-  // ── Move item to different section ─────────────────────────────────────────
-  const moveItem = (itemId, newSection) => {
-    let item = null;
-    // Remove from current section
-    let newInv = inventory.map(s => ({
-      ...s,
-      items: s.items.filter(i => {
-        if (i.id === itemId) { item = i; return false; }
-        return true;
-      }),
-    }));
-    if (!item) return;
-    // Add to target section
-    const targetExists = newInv.some(s => s.section === newSection);
-    if (targetExists) {
-      newInv = newInv.map(s => s.section === newSection ? { ...s, items: [...s.items, item] } : s);
-    } else {
-      newInv.push({ section: newSection, items: [item] });
-    }
-    // Remove empty sections
-    newInv = newInv.filter(s => s.items.length > 0);
-    saveInventory(newInv);
+  const addItem = (sectionKey) => {
+    const newItem = { id: Date.now(), name: "New Item", order_unit: "Case", upu: 1, vendor: vendors[0]?.name || "", max_stock: 1, reorder: 1 };
+    saveInventory(inventory.map(s => s.section === sectionKey ? { ...s, items: [...s.items, newItem] } : s));
   };
 
-  // ── Remove item ────────────────────────────────────────────────────────────
   const removeItem = (itemId) => {
-    let newInv = inventory.map(s => ({ ...s, items: s.items.filter(i => i.id !== itemId) }));
-    newInv = newInv.filter(s => s.items.length > 0);
+    const newInv = inventory.map(s => ({ ...s, items: s.items.filter(i => i.id !== itemId) })).filter(s => s.items.length > 0);
     saveInventory(newInv);
   };
 
-  // ── Add section ────────────────────────────────────────────────────────────
-  const [newSectionName, setNewSectionName] = useState("");
   const [showAddSection, setShowAddSection] = useState(false);
+  const [newSectionName, setNewSectionName] = useState("");
   const addSection = () => {
     if (!newSectionName.trim()) return;
-    const newInv = [...inventory, { section: newSectionName.trim(), items: [] }];
-    saveInventory(newInv);
-    setNewSectionName("");
-    setShowAddSection(false);
+    saveInventory([...inventory, { section: newSectionName.trim(), items: [{ id: Date.now(), name: "New Item", order_unit: "Case", upu: 1, vendor: vendors[0]?.name || "", max_stock: 1, reorder: 1 }] }]);
+    setNewSectionName(""); setShowAddSection(false);
   };
 
-  // ── Rename section ─────────────────────────────────────────────────────────
-  const renameSection = (oldName, newName) => {
+  const deleteSection = (sectionKey) => {
+    saveInventory(inventory.filter(s => s.section !== sectionKey));
+  };
+
+  const saveSectionName = (oldName, newName) => {
     if (!newName.trim() || newName === oldName) return;
     saveInventory(inventory.map(s => s.section === oldName ? { ...s, section: newName.trim() } : s));
   };
 
-  // ── Remove section (moves items to Unsorted) ──────────────────────────────
-  const removeSection = (sectionName) => {
-    const section = inventory.find(s => s.section === sectionName);
-    if (!section) return;
-    let newInv = inventory.filter(s => s.section !== sectionName);
-    if (section.items.length > 0) {
-      const unsorted = newInv.find(s => s.section === "📦  Unsorted");
-      if (unsorted) {
-        newInv = newInv.map(s => s.section === "📦  Unsorted" ? { ...s, items: [...s.items, ...section.items] } : s);
-      } else {
-        newInv.push({ section: "📦  Unsorted", items: section.items });
-      }
-    }
-    saveInventory(newInv);
-  };
-
-  // ── Add new item inline state ──────────────────────────────────────────────
-  const [addingToSection, setAddingToSection] = useState(null);
-
-  const inp = { background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"5px 8px", color:"#f1f5f9", fontSize:12, outline:"none", fontFamily:"'DM Sans',sans-serif", boxSizing:"border-box" };
-  const lbl = { color:"#475569", fontSize:9, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" };
-
   return (
     <div>
-      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:10 }}>
+      <style>{`@media (max-width: 768px) { .edit-pencil { display: none !important; } } .edit-cell:hover .edit-pencil { display: inline !important; }`}</style>
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
         <div>
-          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Backend</h2>
-          <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Add items, assign vendors, organize by store sections</p>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Backend — Edit Item Details</h2>
+          <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Click any cell to edit · Hover a row to remove it</p>
         </div>
-        <div style={{ display:"flex", gap:8 }}>
+        <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
           {!showAddSection ? (
             <button onClick={() => setShowAddSection(true)}
-              style={{ background:"none", border:"1px dashed #1e2d45", borderRadius:8, color:"#475569", cursor:"pointer", fontSize:12, padding:"7px 14px", display:"flex", alignItems:"center", gap:5 }}
+              style={{ background:"none", border:"1px dashed #1e2d45", borderRadius:8, color:"#475569", cursor:"pointer", fontSize:13, padding:"7px 16px", display:"flex", alignItems:"center", gap:6 }}
               onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
               ＋ Add Section
             </button>
           ) : (
-            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
               <input autoFocus value={newSectionName} onChange={e => setNewSectionName(e.target.value)} placeholder="Section name..."
                 onKeyDown={e => { if (e.key === "Enter") addSection(); if (e.key === "Escape") { setShowAddSection(false); setNewSectionName(""); } }}
-                style={{ ...inp, width:180, padding:"7px 10px" }} />
-              <button onClick={addSection} style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:7, padding:"7px 14px", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>Add</button>
-              <button onClick={() => { setShowAddSection(false); setNewSectionName(""); }} style={{ background:"none", border:"1px solid #1e2d45", borderRadius:7, padding:"7px 10px", color:"#64748b", fontSize:12, cursor:"pointer" }}>Cancel</button>
+                style={{ background:"#0f1a2e", border:"1px solid #e2e8f0", borderRadius:7, padding:"7px 12px", color:"#f1f5f9", fontSize:13, outline:"none", width:180 }} />
+              <button onClick={addSection} style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:7, padding:"7px 14px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer" }}>Add</button>
+              <button onClick={() => { setShowAddSection(false); setNewSectionName(""); }} style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:7, padding:"7px 10px", color:"#64748b", fontSize:13, cursor:"pointer" }}>Cancel</button>
             </div>
           )}
         </div>
       </div>
 
       {inventory.map(section => (
-        <SectionBlock key={section.section} section={section} vendors={vendors} stock={stock} sections={sections}
-          updateItem={updateItem} removeItem={removeItem} moveItem={moveItem}
-          addingToSection={addingToSection} setAddingToSection={setAddingToSection}
-          addItem={addItem} renameSection={renameSection} removeSection={removeSection}
-          ORDER_UNITS={ORDER_UNITS} inp={inp} lbl={lbl} />
+        <BackendSection key={section.section} section={section} stock={stock} vendors={vendors}
+          saveItemField={saveItemField} addItem={addItem} removeItem={removeItem}
+          saveSectionName={saveSectionName} deleteSection={deleteSection} />
       ))}
-
-      {inventory.length === 0 && (
-        <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:48, textAlign:"center" }}>
-          <div style={{ fontSize:36, marginBottom:12 }}>🔧</div>
-          <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No items yet</div>
-          <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Add a section first, then add items to it</div>
-        </div>
-      )}
     </div>
   );
 }
 
-// ── Section block inside BackendView ──────────────────────────────────────────
-function SectionBlock({ section, vendors, stock, sections, updateItem, removeItem, moveItem, addingToSection, setAddingToSection, addItem, renameSection, removeSection, ORDER_UNITS, inp, lbl }) {
+// ── Section inside BackendView ────────────────────────────────────────────────
+function BackendSection({ section, stock, vendors, saveItemField, addItem, removeItem, saveSectionName, deleteSection }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(section.section);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const commitRename = () => { renameSection(section.section, draft); setEditing(false); };
+  const [confirmDel, setConfirmDel] = useState(false);
+  const commitRename = () => { saveSectionName(section.section, draft); setEditing(false); };
 
   return (
-    <div style={{ marginBottom:16 }}>
+    <div style={{ marginBottom:12 }}>
       {/* Section header */}
-      <div style={{ background:"#080c14", border:"1px solid #1e2d45", borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"8px 16px", display:"flex", alignItems:"center", gap:8 }}>
+      <div style={{ background:"#080c14", padding:"6px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #1e2d45", borderBottom:"none", display:"flex", alignItems:"center", gap:8 }}>
         {editing ? (
           <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
             onBlur={commitRename} onKeyDown={e => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") { setEditing(false); setDraft(section.section); } }}
-            style={{ background:"transparent", border:"none", borderBottom:"1px solid #475569", color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", outline:"none", width:220, padding:"2px 0" }} />
+            style={{ background:"transparent", border:"none", borderBottom:"1px solid #e2e8f0", color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", outline:"none", width:220, padding:"2px 0" }} />
         ) : (
           <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", flex:1 }}>{section.section}</span>
         )}
-        <span style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{section.items.length} items</span>
-        {!editing && (
-          <>
-            <button onClick={() => { setDraft(section.section); setEditing(true); }}
-              style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:10, padding:"2px 6px" }}
-              onMouseEnter={e => e.currentTarget.style.color="#e2e8f0"} onMouseLeave={e => e.currentTarget.style.color="#475569"}>✏ rename</button>
-            <button onClick={() => { if (confirmDelete) { removeSection(section.section); } else { setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 2500); } }}
-              style={{ background:confirmDelete?"#7f1d1d":"none", border:`1px solid ${confirmDelete?"#ef4444":"transparent"}`, color:confirmDelete?"#fca5a5":"#475569", cursor:"pointer", fontSize:10, padding:"2px 6px", borderRadius:4 }}
-              onMouseEnter={e => { if (!confirmDelete) { e.currentTarget.style.color="#ef4444"; } }}
-              onMouseLeave={e => { if (!confirmDelete) { e.currentTarget.style.color="#475569"; } }}>
-              {confirmDelete ? "confirm ✕" : "✕"}
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* Items */}
-      <div style={{ border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
-        {section.items.length > 0 && (
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 100px 70px 50px 70px 70px 40px", background:"#060a12", padding:"5px 16px", gap:6 }}>
-            {["Name","Vendor","Unit","UPU","Max","Reorder",""].map(h => (
-              <span key={h} style={{ color:"#475569", fontSize:9, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>{h}</span>
-            ))}
-          </div>
-        )}
-
-        {section.items.map((item, idx) => (
-          <ItemRow key={item.id} item={item} idx={idx} vendors={vendors} sections={sections} stock={stock}
-            updateItem={updateItem} removeItem={removeItem} moveItem={moveItem}
-            ORDER_UNITS={ORDER_UNITS} inp={inp} sectionName={section.section} />
-        ))}
-
-        {/* Add item button */}
-        <div style={{ padding:"6px 16px", borderTop: section.items.length > 0 ? "1px solid #080c14" : "none", background:"#0a1220" }}>
-          <button onClick={() => addItem(section.section)}
-            style={{ background:"none", border:"1px dashed #1e2d45", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:11, padding:"5px 12px", display:"flex", alignItems:"center", gap:4 }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
-            ＋ Add Item
+        {!editing && <>
+          <button onClick={() => { setDraft(section.section); setEditing(true); }} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:11, padding:"2px 6px", borderRadius:4 }} onMouseEnter={e => e.currentTarget.style.color="#e2e8f0"} onMouseLeave={e => e.currentTarget.style.color="#475569"}>✏ rename</button>
+          <button onClick={() => { if (confirmDel) deleteSection(section.section); else { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 2500); } }}
+            style={{ background:confirmDel?"#7f1d1d":"none", border:`1px solid ${confirmDel?"#ef4444":"transparent"}`, color:confirmDel?"#fca5a5":"#475569", cursor:"pointer", fontSize:11, padding:"2px 8px", borderRadius:4, lineHeight:1.4 }}
+            onMouseEnter={e => { if (!confirmDel) { e.currentTarget.style.color="#ef4444"; e.currentTarget.style.borderColor="#ef4444"; } }}
+            onMouseLeave={e => { if (!confirmDel) { e.currentTarget.style.color="#475569"; e.currentTarget.style.borderColor="transparent"; } }}>
+            {confirmDel ? "confirm ✕" : "✕ delete"}
           </button>
-        </div>
+        </>}
       </div>
-    </div>
-  );
-}
 
-// ── Single item row in BackendView ────────────────────────────────────────────
-function ItemRow({ item, idx, vendors, sections, stock, updateItem, removeItem, moveItem, ORDER_UNITS, inp, sectionName }) {
-  const [confirmDel, setConfirmDel] = useState(false);
-  const s = stock[item.id] ?? 0;
-
-  return (
-    <div style={{ display:"grid", gridTemplateColumns:"1fr 100px 70px 50px 70px 70px 40px", padding:"6px 16px", gap:6, alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none" }}>
-      {/* Name */}
-      <input value={item.name} onChange={e => updateItem(item.id, "name", e.target.value)} placeholder="Item name..."
-        style={{ ...inp, width:"100%" }} />
-      {/* Vendor */}
-      <select value={item.vendor || ""} onChange={e => updateItem(item.id, "vendor", e.target.value)}
-        style={{ ...inp, cursor:"pointer", fontSize:11 }}>
-        <option value="">— vendor —</option>
-        {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-      </select>
-      {/* Order Unit */}
-      <select value={item.order_unit} onChange={e => updateItem(item.id, "order_unit", e.target.value)}
-        style={{ ...inp, cursor:"pointer", fontSize:11 }}>
-        {ORDER_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-      </select>
-      {/* UPU */}
-      <input type="number" value={item.upu} min={1} onChange={e => updateItem(item.id, "upu", e.target.value)}
-        style={{ ...inp, width:"100%", textAlign:"center" }} />
-      {/* Max Stock */}
-      <input type="number" value={item.max_stock} min={1} onChange={e => updateItem(item.id, "max_stock", e.target.value)}
-        style={{ ...inp, width:"100%", textAlign:"center" }} />
-      {/* Reorder */}
-      <input type="number" value={item.reorder} min={0} onChange={e => updateItem(item.id, "reorder", e.target.value)}
-        style={{ ...inp, width:"100%", textAlign:"center" }} />
-      {/* Delete */}
-      <button onClick={() => { if (confirmDel) { removeItem(item.id); } else { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 2000); } }}
-        style={{ background:confirmDel?"#7f1d1d":"transparent", border:`1px solid ${confirmDel?"#ef4444":"#1e2d45"}`, borderRadius:5, color:confirmDel?"#fca5a5":"#475569", cursor:"pointer", fontSize:11, padding:"3px 6px", width:"100%" }}
-        onMouseEnter={e => { if (!confirmDel) { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; } }}
-        onMouseLeave={e => { if (!confirmDel) { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; } }}>
-        {confirmDel ? "✕" : "✕"}
-      </button>
+      {/* Table */}
+      <div style={{ maxHeight:400, overflowY:"auto", overflowX:"auto", position:"relative" }}>
+        <table style={{ width:"100%", tableLayout:"fixed", borderCollapse:"collapse", background:"#0f1a2e", border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px" }}>
+          <thead>
+            <tr style={{ background:"#080c14" }}>
+              {[
+                ["Item Name","left",170,true], ["Vendor","left",100,false], ["Order Unit","left",90,false],
+                ["Units/Pkg","center",60,false], ["Max Stock","center",75,false], ["Reorder Pt","center",75,false],
+                ["Current","center",70,false], ["Needed","center",70,false], ["Order Qty","center",70,false], ["Status","center",80,false],
+              ].map(([h, align, w, stickyLeft]) => (
+                <th key={h} style={{ position:"sticky", top:0, left:stickyLeft?0:undefined, zIndex:stickyLeft?4:2, background:"#080c14", color:"#e2e8f0", fontSize:10, fontWeight:600, padding:"8px 8px", textAlign:align, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase", whiteSpace:"nowrap", minWidth:w, width:w, boxShadow:stickyLeft?"2px 0 8px rgba(0,0,0,0.4)":undefined }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {section.items.map((item, idx) => {
+              const s = stock[item.id] ?? 0;
+              const needed = Math.max(0, item.max_stock - s);
+              const orderQty = calcOrderQty(item, s);
+              const status = getStatus(item, s);
+              const rowBg = idx % 2 === 0 ? "#0f1a2e" : "#0a1220";
+              return (
+                <HoverRow key={item.id} bg={rowBg} onRemove={() => removeItem(item.id)}>
+                  <td style={{ padding:"5px 8px", position:"sticky", left:0, zIndex:1, background:rowBg, boxShadow:"2px 0 8px rgba(0,0,0,0.4)" }}>
+                    <EditableCell value={item.name} onSave={v => saveItemField(item.id, "name", v)} width={155} />
+                  </td>
+                  <td style={{ padding:"5px 8px" }}>
+                    <select value={item.vendor || ""} onChange={e => saveItemField(item.id, "vendor", e.target.value)}
+                      style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:5, padding:"4px 6px", color:"#f1f5f9", fontSize:11, outline:"none", cursor:"pointer", width:"100%" }}>
+                      <option value="">—</option>
+                      {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ padding:"5px 8px" }}><OrderUnitSelect value={item.order_unit} onSave={v => saveItemField(item.id, "order_unit", v)} /></td>
+                  <td style={{ padding:"5px 8px", textAlign:"center" }}><EditableCell value={item.upu} onSave={v => saveItemField(item.id, "upu", v)} type="number" width={50} /></td>
+                  <td style={{ padding:"5px 8px", textAlign:"center" }}><EditableCell value={item.max_stock} onSave={v => saveItemField(item.id, "max_stock", v)} type="number" width={55} /></td>
+                  <td style={{ padding:"5px 8px", textAlign:"center" }}><EditableCell value={item.reorder} onSave={v => saveItemField(item.id, "reorder", v)} type="number" width={55} /></td>
+                  <td style={{ padding:"5px 10px", textAlign:"center" }}><span style={{ color:"#4ade80", fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:700 }}>{s}</span></td>
+                  <td style={{ padding:"5px 10px", textAlign:"center" }}><span style={{ color:"#94a3b8", fontFamily:"'DM Mono',monospace", fontSize:12 }}>{needed}</span></td>
+                  <td style={{ padding:"5px 10px", textAlign:"center" }}>{orderQty > 0 ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:5, padding:"2px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{orderQty}</span> : <span style={{ color:"#1e2d45", fontSize:12 }}>0</span>}</td>
+                  <td style={{ padding:"5px 10px", textAlign:"center" }}><span style={{ background:status.bg, color:status.color, borderRadius:5, padding:"2px 8px", fontSize:11, fontWeight:600, fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap" }}>{status.label}</span></td>
+                </HoverRow>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={10} style={{ padding:"6px 10px", borderTop:"1px solid #0f172a" }}>
+                <button onClick={() => addItem(section.section)}
+                  style={{ background:"none", border:"1px dashed #1e2d45", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:12, padding:"5px 14px", display:"flex", alignItems:"center", gap:6 }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
+                  <span style={{ fontSize:14, lineHeight:1 }}>＋</span> Add Item
+                </button>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 }
