@@ -267,6 +267,11 @@ const sbSet = async (grp, key, value) => {
 };
 
 
+// ─── GLOBAL KEY-VALUE STORE (for vendor connections, invites etc.) ───────────
+const GLOBAL_GRP = "__moe_global__";
+const globalGet = (key) => sbGet(GLOBAL_GRP, key);
+const globalSet = (key, val) => sbSet(GLOBAL_GRP, key, val);
+
 // ─── DATE UTILS ───────────────────────────────────────────────────────────────
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -1072,41 +1077,58 @@ export default function App() {
 
 // ─── MOE LOGO ─────────────────────────────────────────────────────────────────
 function MoeLogo({ size = "md" }) {
-  const scale = size === "lg" ? 1.8 : size === "sm" ? 0.7 : 1;
-  const w = Math.round(120 * scale);
-  const h = Math.round(44 * scale);
+  // sizes: sm=header, md=default, lg=login screen
+  const configs = {
+    sm: { vw: 110, vh: 36, hx: 18, hy: 18, outerR: 16, midR: 11, innerR: 6,  spoke: 5,  dot: 1.8, tx: 36,  ty: 23, fs: 20 },
+    md: { vw: 130, vh: 44, hx: 22, hy: 22, outerR: 20, midR: 13, innerR: 7,  spoke: 6,  dot: 2.2, tx: 44,  ty: 28, fs: 24 },
+    lg: { vw: 220, vh: 72, hx: 36, hy: 36, outerR: 33, midR: 22, innerR: 11, spoke: 10, dot: 3.5, tx: 74,  ty: 46, fs: 40 },
+  };
+  const c = configs[size] || configs.md;
+  const { vw, vh, hx, hy, outerR: oR, midR: mR, innerR: iR, spoke: sp, dot: d, tx, ty, fs } = c;
+
+  // Hexagon points helper
+  const hex = (cx, cy, r) => {
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 180 * (60 * i - 30);
+      pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`);
+    }
+    return pts.join(" ");
+  };
+
+  // Spoke endpoints: outer point to mid-hex edge
+  const spokeLines = Array.from({ length: 6 }, (_, i) => {
+    const a = Math.PI / 180 * (60 * i - 30);
+    return {
+      x1: (hx + oR * Math.cos(a)).toFixed(2), y1: (hy + oR * Math.sin(a)).toFixed(2),
+      x2: (hx + mR * Math.cos(a)).toFixed(2), y2: (hy + mR * Math.sin(a)).toFixed(2),
+    };
+  });
+
+  // Outer dot positions
+  const outerDots = Array.from({ length: 6 }, (_, i) => {
+    const a = Math.PI / 180 * (60 * i - 30);
+    return { cx: (hx + oR * Math.cos(a)).toFixed(2), cy: (hy + oR * Math.sin(a)).toFixed(2) };
+  });
+
   return (
-    <svg width={w} height={h} viewBox="0 0 120 44" xmlns="http://www.w3.org/2000/svg" style={{ display:"block", flexShrink:0 }}>
-      {/* ── AI face head ── */}
-      <rect x="2" y="6" width="36" height="36" rx="9" fill="#1e293b" stroke="#f97316" strokeWidth="1.5"/>
-      {/* Circuit line top */}
-      <line x1="20" y1="6" x2="20" y2="2" stroke="#f97316" strokeWidth="1.5"/>
-      <circle cx="20" cy="1" r="2" fill="#f97316"/>
-      {/* Circuit lines sides */}
-      <line x1="2" y1="18" x2="-1" y2="18" stroke="#475569" strokeWidth="1"/>
-      <circle cx="-2" cy="18" r="1.5" fill="#475569"/>
-      <line x1="38" y1="18" x2="41" y2="18" stroke="#f97316" strokeWidth="1.5"/>
-      <circle cx="42" cy="18" r="1.5" fill="#f97316"/>
-      <line x1="38" y1="26" x2="41" y2="26" stroke="#475569" strokeWidth="1"/>
-      <circle cx="42" cy="26" r="1.5" fill="#475569"/>
-      {/* Left ear port */}
-      <rect x="0" y="15" width="4" height="12" rx="2" fill="#334155"/>
-      {/* Right ear port */}
-      <rect x="36" y="15" width="4" height="12" rx="2" fill="#334155"/>
-      {/* Ring eye left */}
-      <circle cx="13" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
-      <circle cx="13" cy="21" r="3.5" fill="#f97316"/>
-      <circle cx="14.5" cy="19.5" r="1.2" fill="#fef3c7"/>
-      {/* Ring eye right */}
-      <circle cx="27" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
-      <circle cx="27" cy="21" r="3.5" fill="#f97316"/>
-      <circle cx="28.5" cy="19.5" r="1.2" fill="#fef3c7"/>
-      {/* Smile with circuit end dots */}
-      <path d="M13 33 Q20 38 27 33" fill="none" stroke="#f97316" strokeWidth="1.8" strokeLinecap="round"/>
-      <circle cx="13" cy="33" r="2" fill="#f97316"/>
-      <circle cx="27" cy="33" r="2" fill="#f97316"/>
-      {/* ── MOE wordmark ── */}
-      <text x="50" y="32" fontFamily="'DM Sans',sans-serif" fontWeight="900" fontSize="26" letterSpacing="-1.5" fill="#f1f5f9">M<tspan fill="#f97316">OE</tspan></text>
+    <svg width={vw} height={vh} viewBox={`0 0 ${vw} ${vh}`} xmlns="http://www.w3.org/2000/svg" style={{ display:"block", flexShrink:0 }}>
+      {/* outer ring */}
+      <polygon points={hex(hx, hy, oR)} fill="none" stroke="#94a3b8" strokeWidth="0.8" opacity="0.2"/>
+      {/* spokes */}
+      {spokeLines.map((l, i) => <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#94a3b8" strokeWidth="0.7" opacity="0.3"/>)}
+      {/* outer dots */}
+      {outerDots.map((p, i) => <circle key={i} cx={p.cx} cy={p.cy} r={d} fill="#64748b" opacity="0.55"/>)}
+      {/* mid ring */}
+      <polygon points={hex(hx, hy, mR)} fill="none" stroke="#cbd5e1" strokeWidth="1" opacity="0.55"/>
+      {/* inner solid hex */}
+      <polygon points={hex(hx, hy, iR)} fill="#f1f5f9"/>
+      {/* center void */}
+      <circle cx={hx} cy={hy} r={iR * 0.45} fill="#0f172a" opacity="0.45"/>
+      {/* wordmark */}
+      <text x={tx} y={ty} fontFamily="'DM Sans',sans-serif" fontWeight="900" fontSize={fs} letterSpacing="-1" fill="#f1f5f9">
+        M<tspan fill="#e2e8f0">OE</tspan>
+      </text>
     </svg>
   );
 }
@@ -1139,27 +1161,7 @@ function LoginScreen({ onLogin, error, setError }) {
       <div style={{ width:380 }}>
         <div style={{ textAlign:"center", marginBottom:32 }}>
           <div style={{ display:"flex", justifyContent:"center", alignItems:"center", marginBottom:12 }}>
-            <svg width="216" height="80" viewBox="0 0 120 44" xmlns="http://www.w3.org/2000/svg" style={{ display:"block" }}>
-              <rect x="2" y="6" width="36" height="36" rx="9" fill="#1e293b" stroke="#f97316" strokeWidth="1.5"/>
-              <line x1="20" y1="6" x2="20" y2="2" stroke="#f97316" strokeWidth="1.5"/>
-              <circle cx="20" cy="1" r="2" fill="#f97316"/>
-              <line x1="38" y1="18" x2="41" y2="18" stroke="#f97316" strokeWidth="1.5"/>
-              <circle cx="42" cy="18" r="1.5" fill="#f97316"/>
-              <line x1="38" y1="26" x2="41" y2="26" stroke="#475569" strokeWidth="1"/>
-              <circle cx="42" cy="26" r="1.5" fill="#475569"/>
-              <rect x="0" y="15" width="4" height="12" rx="2" fill="#334155"/>
-              <rect x="36" y="15" width="4" height="12" rx="2" fill="#334155"/>
-              <circle cx="13" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
-              <circle cx="13" cy="21" r="3.5" fill="#f97316"/>
-              <circle cx="14.5" cy="19.5" r="1.2" fill="#fef3c7"/>
-              <circle cx="27" cy="21" r="7" fill="#0f172a" stroke="#f97316" strokeWidth="1.8"/>
-              <circle cx="27" cy="21" r="3.5" fill="#f97316"/>
-              <circle cx="28.5" cy="19.5" r="1.2" fill="#fef3c7"/>
-              <path d="M13 33 Q20 38 27 33" fill="none" stroke="#f97316" strokeWidth="1.8" strokeLinecap="round"/>
-              <circle cx="13" cy="33" r="2" fill="#f97316"/>
-              <circle cx="27" cy="33" r="2" fill="#f97316"/>
-              <text x="50" y="32" fontFamily="'DM Sans',sans-serif" fontWeight="900" fontSize="26" letterSpacing="-1.5" fill="#f1f5f9">M<tspan fill="#f97316">OE</tspan></text>
-            </svg>
+            <MoeLogo size="lg" />
           </div>
           <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", letterSpacing:"2px", textAlign:"center", marginBottom:4 }}>MAKE ORDERING EASY</div>
           <p style={{ color:"#64748b", fontSize:14, margin:0 }}>Sign in to continue</p>
@@ -1718,6 +1720,7 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
         </div>
       </div>
 
+      {/* Submitted confirmation banner */}
       {order?.submitted && (
         <div style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:12, padding:"16px 20px", marginBottom:20, display:"flex", alignItems:"center", gap:12 }}>
           <span style={{ fontSize:24 }}>✅</span>
@@ -1731,46 +1734,48 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
         </div>
       )}
 
-      {activeLines.length === 0 && !order?.submitted ? (
+      {/* All stocked up */}
+      {!order?.submitted && activeLines.length === 0 && (
         <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}>
           <div style={{ fontSize:40, marginBottom:12 }}>✅</div>
           <div style={{ color:"#4ade80", fontSize:18, fontWeight:700 }}>All stocked up!</div>
           <div style={{ color:"#64748b", fontSize:14, marginTop:6 }}>No items need to be ordered this week.</div>
         </div>
-      ) : order?.submitted ? null : (
-        Object.entries(bySupplier).map(([supplier, items]) => (
-          <div key={supplier} style={{ marginBottom:16 }}>
-            <div style={{ background:"#0f172a", padding:"8px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-              <div>
-                <span style={{ color:"#f97316", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>📦 {supplier}</span>
-                <span style={{ color:"#475569", fontSize:11, marginLeft:10 }}>{items.length} item{items.length!==1?"s":""}</span>
-              </div>
-              <button
-                onClick={() => printSupplierPDF({ supplier, items, weekKey:`WK ${wk}`, orderDate, receiveDate })}
-                style={{ background:"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:6, padding:"5px 12px", color:"#fff", fontSize:11, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:5 }}>
-                🖨 PDF
-              </button>
-            </div>
-            <div style={{ background:"#1e293b", border:"1px solid #334155", borderTop:"none", borderRadius:"0 0 10px 10px", overflow:"hidden" }}>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 160px", background:"#0f172a", padding:"7px 16px", borderBottom:"1px solid #334155" }}>
-                <span style={{ color:"#475569", fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Item</span>
-                <span style={{ color:"#475569", fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Qty to Order</span>
-              </div>
-              {items.map((item, idx) => (
-                <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 160px", alignItems:"center", padding:"10px 16px", background:idx%2===0?"#1e293b":"#172033", borderBottom:idx<items.length-1?"1px solid #0f172a":"none" }}>
-                  <div>
-                    <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:500 }}>{item.name}</div>
-                    <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:1 }}>{String(item.section||"").replace(/[^\w\s]/g,"").trim()}</div>
-                  </div>
-                  <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:7, padding:"4px 10px", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>
-                    {item.qty} {item.order_unit}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))
       )}
+
+      {/* Order items by supplier */}
+      {!order?.submitted && activeLines.length > 0 && Object.entries(bySupplier).map(([supplier, items]) => (
+        <div key={supplier} style={{ marginBottom:16 }}>
+          <div style={{ background:"#0f172a", padding:"8px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div>
+              <span style={{ color:"#f97316", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>📦 {supplier}</span>
+              <span style={{ color:"#475569", fontSize:11, marginLeft:10 }}>{items.length} item{items.length!==1?"s":""}</span>
+            </div>
+            <button
+              onClick={() => printSupplierPDF({ supplier, items, weekKey:`WK ${wk}`, orderDate, receiveDate })}
+              style={{ background:"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:6, padding:"5px 12px", color:"#fff", fontSize:11, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:5 }}>
+              🖨 PDF
+            </button>
+          </div>
+          <div style={{ background:"#1e293b", border:"1px solid #334155", borderTop:"none", borderRadius:"0 0 10px 10px", overflow:"hidden" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 160px", background:"#0f172a", padding:"7px 16px", borderBottom:"1px solid #334155" }}>
+              <span style={{ color:"#475569", fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Item</span>
+              <span style={{ color:"#475569", fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Qty to Order</span>
+            </div>
+            {items.map((item, idx) => (
+              <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 160px", alignItems:"center", padding:"10px 16px", background:idx%2===0?"#1e293b":"#172033", borderBottom:idx<items.length-1?"1px solid #0f172a":"none" }}>
+                <div>
+                  <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:500 }}>{item.name}</div>
+                  <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:1 }}>{String(item.section||"").replace(/[^\w\s]/g,"").trim()}</div>
+                </div>
+                <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:7, padding:"4px 10px", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>
+                  {item.qty} {item.order_unit}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
