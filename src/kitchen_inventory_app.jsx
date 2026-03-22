@@ -493,13 +493,15 @@ export default function App() {
         <div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
           {[
             { key:"inventory", label:"Inventory", icon:"📋", desc:"Count stock by location" },
-            { key:"orders",    label:"Orders",    icon:"📦", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length },
-            { key:"history",   label:"History",   icon:"📚", desc:"Past orders by week" },
-            ...(user.role === "owner" ? [
+            ...((user.role === "owner" || user.role === "manager") ? [
+              { key:"orders",    label:"Orders",    icon:"📦", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length },
+              { key:"history",   label:"History",   icon:"📚", desc:"Past orders by week" },
               { key:"insights", label:"Insights", icon:"📊", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing },
-              { key:"import",   label:"Import Items", icon:"📤", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing },
               { key:"backend",  label:"Backend",  icon:"🔧", desc:"Add & edit items" },
-              { key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors & schedules" },
+              { key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors & team" },
+            ] : []),
+            ...(user.role === "owner" ? [
+              { key:"import",   label:"Import Items", icon:"📤", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing },
               { key:"subscription", label:"Subscription", icon:"💳", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
             ] : []),
           ].map(item => {
@@ -563,12 +565,12 @@ export default function App() {
       {/* Main content */}
       <main style={{ maxWidth:1200, margin:"0 auto", padding:"20px 16px" }}>
         {view === "inventory" && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
-        {view === "orders" && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} />}
-        {view === "history" && <HistoryView history={history} />}
-        {view === "insights" && user.role === "owner" && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
+        {view === "orders" && (user.role === "owner" || user.role === "manager") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} />}
+        {view === "history" && (user.role === "owner" || user.role === "manager") && <HistoryView history={history} />}
+        {view === "insights" && (user.role === "owner" || user.role === "manager") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
         {view === "import" && user.role === "owner" && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
-        {view === "backend" && user.role === "owner" && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
-        {view === "settings" && user.role === "owner" && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} />}
+        {view === "backend" && (user.role === "owner" || user.role === "manager") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
+        {view === "settings" && (user.role === "owner" || user.role === "manager") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} />}
         {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
       </main>
     </div>
