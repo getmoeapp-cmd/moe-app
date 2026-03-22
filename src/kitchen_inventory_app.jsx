@@ -315,6 +315,9 @@ export default function App() {
     return fallback;
   }, [group]);
 
+  // ── Save inventory ────────────────────────────────────────────────────────
+  const saveInventory = useCallback((newInv) => { setInventory(newInv); save("inventory", newInv); showFlash(); }, [save]);
+
   // ── Load data on login ───────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
@@ -322,9 +325,11 @@ export default function App() {
       const st = await load("stock", {});
       const vd = await load("vendors", DEFAULT_VENDORS);
       const hi = await load("history", []);
+      const inv = await load("inventory", DEFAULT_INVENTORY);
       setStock(st);
       setVendors(vd);
       setHistory(hi);
+      setInventory(inv);
     };
     init();
   }, [user, group]);
@@ -339,9 +344,10 @@ export default function App() {
       try {
         const { data_key, data_value } = payload.new;
         const value = JSON.parse(data_value);
-        if (data_key === "stock")   setStock(value);
-        if (data_key === "vendors") setVendors(value);
-        if (data_key === "history") setHistory(value);
+        if (data_key === "stock")     setStock(value);
+        if (data_key === "vendors")   setVendors(value);
+        if (data_key === "history")   setHistory(value);
+        if (data_key === "inventory") setInventory(value);
       } catch {}
     }).subscribe();
     return () => { sb.removeChannel(channel); };
@@ -423,7 +429,10 @@ export default function App() {
             { key:"inventory", label:"Inventory", icon:"📋", desc:"Count stock by location" },
             { key:"orders",    label:"Orders",    icon:"📦", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length },
             { key:"history",   label:"History",   icon:"📚", desc:"Past orders by week" },
-            ...(user.role === "owner" ? [{ key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors, items, sections" }] : []),
+            ...(user.role === "owner" ? [
+              { key:"backend",  label:"Backend",  icon:"🔧", desc:"Add & edit items" },
+              { key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors & schedules" },
+            ] : []),
           ].map(item => {
             const isActive = view === item.key;
             return (
@@ -479,6 +488,7 @@ export default function App() {
         {view === "inventory" && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
         {view === "orders" && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} />}
         {view === "history" && <HistoryView history={history} />}
+        {view === "backend" && user.role === "owner" && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
         {view === "settings" && user.role === "owner" && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} />}
       </main>
     </div>
@@ -893,6 +903,262 @@ function SettingsView({ vendors, saveVendors, inventory }) {
         onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
         onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
         ＋ Add Vendor
+      </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BACKEND VIEW — Add/edit/remove items, assign vendor + optional section
+// ═══════════════════════════════════════════════════════════════════════════════
+function BackendView({ inventory, saveInventory, vendors, stock }) {
+  const ORDER_UNITS = ["Case","Each","Piece","Unit","Bag","Bundle","Gallon","Roll","Lbs"];
+
+  // Flat list of all items for editing
+  const allItems = flatItems(inventory);
+  const sections = inventory.map(s => s.section);
+
+  // ── Add item ───────────────────────────────────────────────────────────────
+  const addItem = (section) => {
+    const targetSection = section || "📦  Unsorted";
+    const newId = Date.now();
+    const newItem = { id: newId, name: "", order_unit: "Case", upu: 1, vendor: vendors[0]?.name || "", max_stock: 1, reorder: 1 };
+    const newInv = inventory.map(s => s.section === targetSection ? { ...s, items: [...s.items, newItem] } : s);
+    // If section doesn't exist yet, add it
+    if (!inventory.some(s => s.section === targetSection)) {
+      newInv.push({ section: targetSection, items: [newItem] });
+    }
+    saveInventory(newInv);
+  };
+
+  // ── Update item field ──────────────────────────────────────────────────────
+  const updateItem = (itemId, field, value) => {
+    const numFields = ["upu", "max_stock", "reorder"];
+    const val = numFields.includes(field) ? (parseInt(value) || 0) : value;
+    const newInv = inventory.map(s => ({
+      ...s,
+      items: s.items.map(i => i.id === itemId ? { ...i, [field]: val } : i),
+    }));
+    saveInventory(newInv);
+  };
+
+  // ── Move item to different section ─────────────────────────────────────────
+  const moveItem = (itemId, newSection) => {
+    let item = null;
+    // Remove from current section
+    let newInv = inventory.map(s => ({
+      ...s,
+      items: s.items.filter(i => {
+        if (i.id === itemId) { item = i; return false; }
+        return true;
+      }),
+    }));
+    if (!item) return;
+    // Add to target section
+    const targetExists = newInv.some(s => s.section === newSection);
+    if (targetExists) {
+      newInv = newInv.map(s => s.section === newSection ? { ...s, items: [...s.items, item] } : s);
+    } else {
+      newInv.push({ section: newSection, items: [item] });
+    }
+    // Remove empty sections
+    newInv = newInv.filter(s => s.items.length > 0);
+    saveInventory(newInv);
+  };
+
+  // ── Remove item ────────────────────────────────────────────────────────────
+  const removeItem = (itemId) => {
+    let newInv = inventory.map(s => ({ ...s, items: s.items.filter(i => i.id !== itemId) }));
+    newInv = newInv.filter(s => s.items.length > 0);
+    saveInventory(newInv);
+  };
+
+  // ── Add section ────────────────────────────────────────────────────────────
+  const [newSectionName, setNewSectionName] = useState("");
+  const [showAddSection, setShowAddSection] = useState(false);
+  const addSection = () => {
+    if (!newSectionName.trim()) return;
+    const newInv = [...inventory, { section: newSectionName.trim(), items: [] }];
+    saveInventory(newInv);
+    setNewSectionName("");
+    setShowAddSection(false);
+  };
+
+  // ── Rename section ─────────────────────────────────────────────────────────
+  const renameSection = (oldName, newName) => {
+    if (!newName.trim() || newName === oldName) return;
+    saveInventory(inventory.map(s => s.section === oldName ? { ...s, section: newName.trim() } : s));
+  };
+
+  // ── Remove section (moves items to Unsorted) ──────────────────────────────
+  const removeSection = (sectionName) => {
+    const section = inventory.find(s => s.section === sectionName);
+    if (!section) return;
+    let newInv = inventory.filter(s => s.section !== sectionName);
+    if (section.items.length > 0) {
+      const unsorted = newInv.find(s => s.section === "📦  Unsorted");
+      if (unsorted) {
+        newInv = newInv.map(s => s.section === "📦  Unsorted" ? { ...s, items: [...s.items, ...section.items] } : s);
+      } else {
+        newInv.push({ section: "📦  Unsorted", items: section.items });
+      }
+    }
+    saveInventory(newInv);
+  };
+
+  // ── Add new item inline state ──────────────────────────────────────────────
+  const [addingToSection, setAddingToSection] = useState(null);
+
+  const inp = { background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"5px 8px", color:"#f1f5f9", fontSize:12, outline:"none", fontFamily:"'DM Sans',sans-serif", boxSizing:"border-box" };
+  const lbl = { color:"#475569", fontSize:9, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" };
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:10 }}>
+        <div>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Backend</h2>
+          <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Add items, assign vendors, organize by store sections</p>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          {!showAddSection ? (
+            <button onClick={() => setShowAddSection(true)}
+              style={{ background:"none", border:"1px dashed #1e2d45", borderRadius:8, color:"#475569", cursor:"pointer", fontSize:12, padding:"7px 14px", display:"flex", alignItems:"center", gap:5 }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
+              ＋ Add Section
+            </button>
+          ) : (
+            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+              <input autoFocus value={newSectionName} onChange={e => setNewSectionName(e.target.value)} placeholder="Section name..."
+                onKeyDown={e => { if (e.key === "Enter") addSection(); if (e.key === "Escape") { setShowAddSection(false); setNewSectionName(""); } }}
+                style={{ ...inp, width:180, padding:"7px 10px" }} />
+              <button onClick={addSection} style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:7, padding:"7px 14px", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>Add</button>
+              <button onClick={() => { setShowAddSection(false); setNewSectionName(""); }} style={{ background:"none", border:"1px solid #1e2d45", borderRadius:7, padding:"7px 10px", color:"#64748b", fontSize:12, cursor:"pointer" }}>Cancel</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {inventory.map(section => (
+        <SectionBlock key={section.section} section={section} vendors={vendors} stock={stock} sections={sections}
+          updateItem={updateItem} removeItem={removeItem} moveItem={moveItem}
+          addingToSection={addingToSection} setAddingToSection={setAddingToSection}
+          addItem={addItem} renameSection={renameSection} removeSection={removeSection}
+          ORDER_UNITS={ORDER_UNITS} inp={inp} lbl={lbl} />
+      ))}
+
+      {inventory.length === 0 && (
+        <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:48, textAlign:"center" }}>
+          <div style={{ fontSize:36, marginBottom:12 }}>🔧</div>
+          <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No items yet</div>
+          <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Add a section first, then add items to it</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Section block inside BackendView ──────────────────────────────────────────
+function SectionBlock({ section, vendors, stock, sections, updateItem, removeItem, moveItem, addingToSection, setAddingToSection, addItem, renameSection, removeSection, ORDER_UNITS, inp, lbl }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(section.section);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const commitRename = () => { renameSection(section.section, draft); setEditing(false); };
+
+  return (
+    <div style={{ marginBottom:16 }}>
+      {/* Section header */}
+      <div style={{ background:"#080c14", border:"1px solid #1e2d45", borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"8px 16px", display:"flex", alignItems:"center", gap:8 }}>
+        {editing ? (
+          <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+            onBlur={commitRename} onKeyDown={e => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") { setEditing(false); setDraft(section.section); } }}
+            style={{ background:"transparent", border:"none", borderBottom:"1px solid #475569", color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", outline:"none", width:220, padding:"2px 0" }} />
+        ) : (
+          <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", flex:1 }}>{section.section}</span>
+        )}
+        <span style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{section.items.length} items</span>
+        {!editing && (
+          <>
+            <button onClick={() => { setDraft(section.section); setEditing(true); }}
+              style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:10, padding:"2px 6px" }}
+              onMouseEnter={e => e.currentTarget.style.color="#e2e8f0"} onMouseLeave={e => e.currentTarget.style.color="#475569"}>✏ rename</button>
+            <button onClick={() => { if (confirmDelete) { removeSection(section.section); } else { setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 2500); } }}
+              style={{ background:confirmDelete?"#7f1d1d":"none", border:`1px solid ${confirmDelete?"#ef4444":"transparent"}`, color:confirmDelete?"#fca5a5":"#475569", cursor:"pointer", fontSize:10, padding:"2px 6px", borderRadius:4 }}
+              onMouseEnter={e => { if (!confirmDelete) { e.currentTarget.style.color="#ef4444"; } }}
+              onMouseLeave={e => { if (!confirmDelete) { e.currentTarget.style.color="#475569"; } }}>
+              {confirmDelete ? "confirm ✕" : "✕"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Items */}
+      <div style={{ border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
+        {section.items.length > 0 && (
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 100px 70px 50px 70px 70px 40px", background:"#060a12", padding:"5px 16px", gap:6 }}>
+            {["Name","Vendor","Unit","UPU","Max","Reorder",""].map(h => (
+              <span key={h} style={{ color:"#475569", fontSize:9, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>{h}</span>
+            ))}
+          </div>
+        )}
+
+        {section.items.map((item, idx) => (
+          <ItemRow key={item.id} item={item} idx={idx} vendors={vendors} sections={sections} stock={stock}
+            updateItem={updateItem} removeItem={removeItem} moveItem={moveItem}
+            ORDER_UNITS={ORDER_UNITS} inp={inp} sectionName={section.section} />
+        ))}
+
+        {/* Add item button */}
+        <div style={{ padding:"6px 16px", borderTop: section.items.length > 0 ? "1px solid #080c14" : "none", background:"#0a1220" }}>
+          <button onClick={() => addItem(section.section)}
+            style={{ background:"none", border:"1px dashed #1e2d45", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:11, padding:"5px 12px", display:"flex", alignItems:"center", gap:4 }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
+            ＋ Add Item
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Single item row in BackendView ────────────────────────────────────────────
+function ItemRow({ item, idx, vendors, sections, stock, updateItem, removeItem, moveItem, ORDER_UNITS, inp, sectionName }) {
+  const [confirmDel, setConfirmDel] = useState(false);
+  const s = stock[item.id] ?? 0;
+
+  return (
+    <div style={{ display:"grid", gridTemplateColumns:"1fr 100px 70px 50px 70px 70px 40px", padding:"6px 16px", gap:6, alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none" }}>
+      {/* Name */}
+      <input value={item.name} onChange={e => updateItem(item.id, "name", e.target.value)} placeholder="Item name..."
+        style={{ ...inp, width:"100%" }} />
+      {/* Vendor */}
+      <select value={item.vendor || ""} onChange={e => updateItem(item.id, "vendor", e.target.value)}
+        style={{ ...inp, cursor:"pointer", fontSize:11 }}>
+        <option value="">— vendor —</option>
+        {vendors.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+      </select>
+      {/* Order Unit */}
+      <select value={item.order_unit} onChange={e => updateItem(item.id, "order_unit", e.target.value)}
+        style={{ ...inp, cursor:"pointer", fontSize:11 }}>
+        {ORDER_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+      </select>
+      {/* UPU */}
+      <input type="number" value={item.upu} min={1} onChange={e => updateItem(item.id, "upu", e.target.value)}
+        style={{ ...inp, width:"100%", textAlign:"center" }} />
+      {/* Max Stock */}
+      <input type="number" value={item.max_stock} min={1} onChange={e => updateItem(item.id, "max_stock", e.target.value)}
+        style={{ ...inp, width:"100%", textAlign:"center" }} />
+      {/* Reorder */}
+      <input type="number" value={item.reorder} min={0} onChange={e => updateItem(item.id, "reorder", e.target.value)}
+        style={{ ...inp, width:"100%", textAlign:"center" }} />
+      {/* Delete */}
+      <button onClick={() => { if (confirmDel) { removeItem(item.id); } else { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 2000); } }}
+        style={{ background:confirmDel?"#7f1d1d":"transparent", border:`1px solid ${confirmDel?"#ef4444":"#1e2d45"}`, borderRadius:5, color:confirmDel?"#fca5a5":"#475569", cursor:"pointer", fontSize:11, padding:"3px 6px", width:"100%" }}
+        onMouseEnter={e => { if (!confirmDel) { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; } }}
+        onMouseLeave={e => { if (!confirmDel) { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; } }}>
+        {confirmDel ? "✕" : "✕"}
       </button>
     </div>
   );
