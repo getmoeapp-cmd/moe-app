@@ -518,38 +518,273 @@ export default function App() {
 // LOGIN
 // ═══════════════════════════════════════════════════════════════════════════════
 function LoginScreen({ onLogin, error, setError }) {
-  const [email, setEmail] = useState(""); const [pass, setPass] = useState(""); const [show, setShow] = useState(false);
-  const handleLogin = () => { const u = USERS[email.toLowerCase().trim()]; if (u && u.password === pass) onLogin({ ...u, email }); else setError("Invalid email or password."); };
+  const [mode, setMode] = useState("signin"); // "signin" or "register"
+  const [show, setShow] = useState(false);
+
+  // Sign In fields
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+
+  // Registration fields
+  const [reg, setReg] = useState({
+    ownerFirst: "", ownerLast: "", ownerEmail: "", ownerPhone: "",
+    password: "", confirmPassword: "",
+    bizName: "", bizType: "restaurant", bizPhone: "", bizAddress: "", bizCity: "", bizState: "", bizZip: "",
+  });
+  const [regStep, setRegStep] = useState(1); // 1 = owner info, 2 = business info
+  const [regError, setRegError] = useState("");
+
+  const updateReg = (field, val) => setReg(prev => ({ ...prev, [field]: val }));
+
+  const handleLogin = () => {
+    const u = USERS[email.toLowerCase().trim()];
+    if (u && u.password === pass) onLogin({ ...u, email });
+    else setError("Invalid email or password.");
+  };
+
+  const handleRegister = async () => {
+    setRegError("");
+    // Validate
+    if (!reg.ownerFirst.trim() || !reg.ownerLast.trim()) return setRegError("First and last name required.");
+    if (!reg.ownerEmail.trim() || !reg.ownerEmail.includes("@")) return setRegError("Valid email required.");
+    if (!reg.ownerPhone.trim()) return setRegError("Phone number required.");
+    if (!reg.password || reg.password.length < 6) return setRegError("Password must be at least 6 characters.");
+    if (reg.password !== reg.confirmPassword) return setRegError("Passwords don't match.");
+    if (!reg.bizName.trim()) return setRegError("Business name required.");
+    if (!reg.bizPhone.trim()) return setRegError("Business phone required.");
+    if (!reg.bizAddress.trim()) return setRegError("Business address required.");
+    if (!reg.bizCity.trim() || !reg.bizState.trim() || !reg.bizZip.trim()) return setRegError("Full address required.");
+
+    // Generate a group ID from business name
+    const groupId = reg.bizName.trim().toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 30);
+
+    // Check if email already exists in registered accounts
+    const existing = await sbGet("__moe_accounts__", "accounts") || {};
+    if (existing[reg.ownerEmail.toLowerCase().trim()]) return setRegError("An account with this email already exists.");
+
+    // Save account
+    const account = {
+      ownerFirst: reg.ownerFirst.trim(), ownerLast: reg.ownerLast.trim(),
+      email: reg.ownerEmail.toLowerCase().trim(), phone: reg.ownerPhone.trim(),
+      password: reg.password, role: "owner", group: groupId,
+      business: {
+        name: reg.bizName.trim(), type: reg.bizType,
+        phone: reg.bizPhone.trim(), address: reg.bizAddress.trim(),
+        city: reg.bizCity.trim(), state: reg.bizState.trim(), zip: reg.bizZip.trim(),
+      },
+      createdAt: new Date().toISOString(),
+    };
+    existing[account.email] = account;
+    await sbSet("__moe_accounts__", "accounts", existing);
+
+    // Log them in
+    onLogin({ name: `${account.ownerFirst} ${account.ownerLast}`, role: "owner", group: groupId, email: account.email, business: account.business });
+  };
+
+  // Also check registered accounts on login
+  const handleLoginWithAccounts = async () => {
+    // Check hardcoded demo users first
+    const u = USERS[email.toLowerCase().trim()];
+    if (u && u.password === pass) { onLogin({ ...u, email }); return; }
+
+    // Check registered accounts
+    const accounts = await sbGet("__moe_accounts__", "accounts") || {};
+    const acct = accounts[email.toLowerCase().trim()];
+    if (acct && acct.password === pass) {
+      onLogin({ name: `${acct.ownerFirst} ${acct.ownerLast}`, role: acct.role, group: acct.group, email: acct.email, business: acct.business });
+      return;
+    }
+    setError("Invalid email or password.");
+  };
+
+  const inp = { width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" };
+  const lbl = { display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" };
+
   return (
     <div style={{ minHeight:"100vh", background:"#080c14", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      <div style={{ width:380 }}>
-        <div style={{ textAlign:"center", marginBottom:32 }}>
+      <div style={{ width:420 }}>
+        <div style={{ textAlign:"center", marginBottom:24 }}>
           <div style={{ fontSize:36, fontWeight:900, color:"#f1f5f9", marginBottom:4 }}>M<span style={{ color:"#94a3b8" }}>OE</span></div>
           <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", letterSpacing:"2px", marginBottom:4 }}>MAKE ORDERING EASY</div>
-          <p style={{ color:"#64748b", fontSize:14, margin:0 }}>Sign in to continue</p>
         </div>
-        <div style={{ background:"#0f1a2e", borderRadius:16, border:"1px solid #1e2d45", padding:28 }}>
-          <div style={{ marginBottom:16 }}>
-            <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Email</label>
-            <input value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key==="Enter" && handleLogin()} placeholder="you@kitchen.com" type="email"
-              style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" }} />
-          </div>
-          <div style={{ marginBottom:20 }}>
-            <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Password</label>
-            <div style={{ position:"relative" }}>
-              <input value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key==="Enter" && handleLogin()} type={show?"text":"password"} placeholder="••••••••"
-                style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 40px 10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" }} />
-              <button onClick={() => setShow(!show)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:14 }}>{show?"🙈":"👁"}</button>
+
+        {/* ── SIGN IN ── */}
+        {mode === "signin" && (
+          <>
+            <p style={{ color:"#64748b", fontSize:14, margin:"0 0 20px", textAlign:"center" }}>Sign in to continue</p>
+            <div style={{ background:"#0f1a2e", borderRadius:16, border:"1px solid #1e2d45", padding:28 }}>
+              <div style={{ marginBottom:16 }}>
+                <label style={lbl}>Email</label>
+                <input value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key==="Enter" && handleLoginWithAccounts()} placeholder="you@business.com" type="email" style={inp} />
+              </div>
+              <div style={{ marginBottom:20 }}>
+                <label style={lbl}>Password</label>
+                <div style={{ position:"relative" }}>
+                  <input value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key==="Enter" && handleLoginWithAccounts()} type={show?"text":"password"} placeholder="••••••••"
+                    style={{ ...inp, paddingRight:40 }} />
+                  <button onClick={() => setShow(!show)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:14 }}>{show?"🙈":"👁"}</button>
+                </div>
+              </div>
+              {error && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:16 }}>{error}</div>}
+              <button onClick={handleLoginWithAccounts} style={{ width:"100%", background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:12, color:"#080c14", fontSize:15, fontWeight:700, cursor:"pointer" }}>Sign In</button>
+              <div style={{ textAlign:"center", marginTop:16 }}>
+                <span style={{ color:"#475569", fontSize:13 }}>Don't have an account? </span>
+                <button onClick={() => { setMode("register"); setError(""); setRegError(""); setRegStep(1); }}
+                  style={{ background:"none", border:"none", color:"#e2e8f0", fontSize:13, fontWeight:600, cursor:"pointer", textDecoration:"underline", padding:0 }}>
+                  Create Account
+                </button>
+              </div>
             </div>
+          </>
+        )}
+
+        {/* ── CREATE ACCOUNT ── */}
+        {mode === "register" && (
+          <div style={{ background:"#0f1a2e", borderRadius:16, border:"1px solid #1e2d45", padding:28 }}>
+            {/* Back + title */}
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
+              <button onClick={() => { setMode("signin"); setRegError(""); }}
+                style={{ background:"none", border:"1px solid #1e2d45", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:12, padding:"4px 10px" }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#94a3b8"; }}>
+                ← Back
+              </button>
+              <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>Create Account</span>
+            </div>
+            {/* Step indicator */}
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20 }}>
+              {[1, 2].map(step => (
+                <React.Fragment key={step}>
+                  <div onClick={() => { if (step < regStep) setRegStep(step); }}
+                    style={{ width:28, height:28, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, cursor:step<=regStep?"pointer":"default",
+                      background:regStep>=step?"#e2e8f0":"#1e2d45", color:regStep>=step?"#080c14":"#475569" }}>
+                    {step}
+                  </div>
+                  {step < 2 && <div style={{ flex:1, height:2, background:regStep>1?"#e2e8f0":"#1e2d45", borderRadius:1 }} />}
+                </React.Fragment>
+              ))}
+              <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginLeft:8 }}>
+                {regStep === 1 ? "Owner Info" : "Business Info"}
+              </span>
+            </div>
+
+            {/* Step 1: Owner Information */}
+            {regStep === 1 && (
+              <>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
+                  <div>
+                    <label style={lbl}>First Name *</label>
+                    <input value={reg.ownerFirst} onChange={e => updateReg("ownerFirst", e.target.value)} placeholder="John" style={inp} />
+                  </div>
+                  <div>
+                    <label style={lbl}>Last Name *</label>
+                    <input value={reg.ownerLast} onChange={e => updateReg("ownerLast", e.target.value)} placeholder="Doe" style={inp} />
+                  </div>
+                </div>
+                <div style={{ marginBottom:12 }}>
+                  <label style={lbl}>Email Address *</label>
+                  <input value={reg.ownerEmail} onChange={e => updateReg("ownerEmail", e.target.value)} placeholder="john@mybusiness.com" type="email" style={inp} />
+                </div>
+                <div style={{ marginBottom:12 }}>
+                  <label style={lbl}>Phone Number *</label>
+                  <input value={reg.ownerPhone} onChange={e => updateReg("ownerPhone", e.target.value)} placeholder="(555) 123-4567" type="tel" style={inp} />
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:16 }}>
+                  <div>
+                    <label style={lbl}>Password *</label>
+                    <input value={reg.password} onChange={e => updateReg("password", e.target.value)} type="password" placeholder="Min 6 chars" style={inp} />
+                  </div>
+                  <div>
+                    <label style={lbl}>Confirm Password *</label>
+                    <input value={reg.confirmPassword} onChange={e => updateReg("confirmPassword", e.target.value)} type="password" placeholder="••••••••" style={inp} />
+                  </div>
+                </div>
+                <button onClick={() => {
+                  if (!reg.ownerFirst.trim() || !reg.ownerLast.trim()) { setRegError("First and last name required."); return; }
+                  if (!reg.ownerEmail.trim() || !reg.ownerEmail.includes("@")) { setRegError("Valid email required."); return; }
+                  if (!reg.ownerPhone.trim()) { setRegError("Phone number required."); return; }
+                  if (!reg.password || reg.password.length < 6) { setRegError("Password must be at least 6 characters."); return; }
+                  if (reg.password !== reg.confirmPassword) { setRegError("Passwords don't match."); return; }
+                  setRegError(""); setRegStep(2);
+                }}
+                  style={{ width:"100%", background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:12, color:"#080c14", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                  Next — Business Info →
+                </button>
+              </>
+            )}
+
+            {/* Step 2: Business Information */}
+            {regStep === 2 && (
+              <>
+                <div style={{ marginBottom:12 }}>
+                  <label style={lbl}>Business Name *</label>
+                  <input value={reg.bizName} onChange={e => updateReg("bizName", e.target.value)} placeholder="Tommy's Pizzeria" style={inp} />
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
+                  <div>
+                    <label style={lbl}>Business Type</label>
+                    <select value={reg.bizType} onChange={e => updateReg("bizType", e.target.value)}
+                      style={{ ...inp, cursor:"pointer" }}>
+                      <option value="restaurant">Restaurant</option>
+                      <option value="pizzeria">Pizzeria</option>
+                      <option value="bakery">Bakery</option>
+                      <option value="cafe">Café</option>
+                      <option value="bar">Bar / Lounge</option>
+                      <option value="catering">Catering</option>
+                      <option value="food_truck">Food Truck</option>
+                      <option value="deli">Deli</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lbl}>Business Phone *</label>
+                    <input value={reg.bizPhone} onChange={e => updateReg("bizPhone", e.target.value)} placeholder="(555) 987-6543" type="tel" style={inp} />
+                  </div>
+                </div>
+                <div style={{ marginBottom:12 }}>
+                  <label style={lbl}>Street Address *</label>
+                  <input value={reg.bizAddress} onChange={e => updateReg("bizAddress", e.target.value)} placeholder="123 Main Street" style={inp} />
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:12, marginBottom:16 }}>
+                  <div>
+                    <label style={lbl}>City *</label>
+                    <input value={reg.bizCity} onChange={e => updateReg("bizCity", e.target.value)} placeholder="Brooklyn" style={inp} />
+                  </div>
+                  <div>
+                    <label style={lbl}>State *</label>
+                    <input value={reg.bizState} onChange={e => updateReg("bizState", e.target.value)} placeholder="NY" maxLength={2} style={{ ...inp, textTransform:"uppercase" }} />
+                  </div>
+                  <div>
+                    <label style={lbl}>Zip *</label>
+                    <input value={reg.bizZip} onChange={e => updateReg("bizZip", e.target.value)} placeholder="11201" style={inp} />
+                  </div>
+                </div>
+                {regError && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:16 }}>{regError}</div>}
+                <div style={{ display:"flex", gap:10 }}>
+                  <button onClick={() => setRegStep(1)}
+                    style={{ flex:1, background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:12, color:"#94a3b8", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+                    ← Back
+                  </button>
+                  <button onClick={handleRegister}
+                    style={{ flex:2, background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:12, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                    Create Account
+                  </button>
+                </div>
+              </>
+            )}
+
+            {regStep === 1 && regError && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginTop:16 }}>{regError}</div>}
           </div>
-          {error && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:16 }}>{error}</div>}
-          <button onClick={handleLogin} style={{ width:"100%", background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:12, color:"#080c14", fontSize:15, fontWeight:700, cursor:"pointer" }}>Sign In</button>
-        </div>
-        <div style={{ marginTop:20, background:"#0f1a2e", borderRadius:12, border:"1px solid #1e2d45", padding:"14px 18px" }}>
-          <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Demo Credentials</div>
-          <div style={{ color:"#94a3b8", fontSize:12, lineHeight:2 }}><span style={{ color:"#e2e8f0" }}>Owner:</span> owner@kitchen.com / owner123<br /><span style={{ color:"#22c55e" }}>Employee:</span> employee@kitchen.com / employee123<br /><span style={{ color:"#fbbf24" }}>Tommy's Owner:</span> ronnie@kitchen.com / ronnie123<br /><span style={{ color:"#fbbf24" }}>Tommy's Employee:</span> roberto@kitchen.com / roberto123</div>
-        </div>
+        )}
+
+        {/* Demo credentials */}
+        {mode === "signin" && (
+          <div style={{ marginTop:20, background:"#0f1a2e", borderRadius:12, border:"1px solid #1e2d45", padding:"14px 18px" }}>
+            <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Demo Credentials</div>
+            <div style={{ color:"#94a3b8", fontSize:12, lineHeight:2 }}><span style={{ color:"#e2e8f0" }}>Owner:</span> owner@kitchen.com / owner123<br /><span style={{ color:"#22c55e" }}>Employee:</span> employee@kitchen.com / employee123<br /><span style={{ color:"#fbbf24" }}>Tommy's Owner:</span> ronnie@kitchen.com / ronnie123<br /><span style={{ color:"#fbbf24" }}>Tommy's Employee:</span> roberto@kitchen.com / roberto123</div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -707,7 +942,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder }) {
                 ) : needsOrder.length > 0 ? (
                   <button onClick={() => handleSubmit(vendor.name)}
                     style={{ background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:"8px 20px", color:"#080c14", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                    🚀 Submit Order
+                    Submit Order
                   </button>
                 ) : null}
               </div>
