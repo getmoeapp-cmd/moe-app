@@ -459,10 +459,9 @@ export default function App() {
       const archiveKey = `${weekKey}_sub_${Date.now()}`;
       const today = new Date(); const orderDay = settings.orderDay ?? 3;
       const orderDate = getWeekdayDate(today, orderDay); const receiveDate = new Date(orderDate); receiveDate.setDate(orderDate.getDate() + 1);
-      const orderedLines = (updatedOrder.lines || []).filter(l => l.qty > 0);
-      const newStock = { ...stock };
-      // ── FIX: Reset ordered items to 0 (not max_stock) so next count starts fresh ──
-      inventory.forEach(sec => { sec.items.forEach(item => { if (orderedLines.some(l => l.id === item.id)) { newStock[item.id] = 0; } }); });
+      const newStock = {};
+      // Reset ALL items to 0 after submit — clean slate for next count
+      inventory.forEach(sec => { sec.items.forEach(item => { newStock[item.id] = 0; }); });
       const freshLines = inventory.flatMap(s => s.items.map(item => ({ id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier, section: s.section, qty: calcOrderQty(item, newStock[item.id] ?? 0) })));
       const freshOrder = { weekKey, orderDate: orderDate.toISOString().split("T")[0], receiveDate: receiveDate.toISOString().split("T")[0], createdAt: new Date().toISOString(), lines: freshLines, saved: false };
       setStock(newStock); dualSet("stock", STOCK_KEY, newStock);
