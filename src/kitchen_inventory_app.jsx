@@ -888,7 +888,7 @@ export default function App() {
       inventory.forEach(sec => {
         sec.items.forEach(item => {
           if (orderedLines.some(l => l.id === item.id)) {
-            newStock[item.id] = item.max_stock;
+            newStock[item.id] = 0;
           }
         });
       });
