@@ -553,6 +553,8 @@ export default function App() {
 
   // ── Manual sync — fetch all keys from Supabase right now ──────────────────
   const pullFromSupabase = React.useCallback(async () => {
+    // Never overwrite local state if we just made a local edit
+    if (Date.now() - lastLocalEdit.current < 8000) return;
     const sb = getSB();
     if (!sb) return;
     try {
@@ -600,7 +602,7 @@ export default function App() {
           switch(data_key) {
             case "stock":
               // Skip realtime echo if we just wrote stock ourselves (within 5s)
-              if (Date.now() - lastLocalEdit.current < 5000) break;
+              if (Date.now() - lastLocalEdit.current < 10000) break;
               setStock(prev => {
                 if (JSON.stringify(prev) === JSON.stringify(value)) return prev;
                 return value;
@@ -628,7 +630,7 @@ export default function App() {
             case "settings": setSettings(value); break;
             case "orders":
               // Skip realtime echo if we just wrote orders ourselves (within 5s)
-              if (Date.now() - lastLocalEdit.current < 5000) break;
+              if (Date.now() - lastLocalEdit.current < 10000) break;
               setOrders(value);
               break;
             default: break;
@@ -897,23 +899,41 @@ export default function App() {
         saved: false,
       };
 
-      // Stamp timestamp BEFORE writing so RT echo is suppressed
+      // Stamp timestamp BEFORE writing so RT echo is suppressed (8s window)
       lastLocalEdit.current = Date.now();
 
-      // Write stock reset
+      // Update local state immediately
       setStock(newStock);
-      dualSet("stock", STOCK_KEY, newStock);
 
-      // Write archived + fresh order
       setOrders(prev => {
         const newOrders = {
           ...prev,
           [archiveKey]: { ...updatedOrder, saved: true },
           [weekKey]: freshOrder,
         };
-        dualSet("orders", ORDERS_KEY, newOrders);
         return newOrders;
       });
+
+      // Write to localStorage immediately for persistence
+      try { localStorage.setItem(STOCK_KEY(group), JSON.stringify(newStock)); } catch(e) {}
+
+      // Delay Supabase writes by 3s so the RT echo arrives after our guard window
+      setTimeout(() => {
+        sbSet(group, "stock", newStock);
+        sbSet(group, "orders", {
+          ...(() => { try { return JSON.parse(localStorage.getItem(ORDERS_KEY(group)) || "{}"); } catch { return {}; } })(),
+          [archiveKey]: { ...updatedOrder, saved: true },
+          [weekKey]: freshOrder,
+        });
+        try {
+          const finalOrders = {
+            ...JSON.parse(localStorage.getItem(ORDERS_KEY(group)) || "{}"),
+            [archiveKey]: { ...updatedOrder, saved: true },
+            [weekKey]: freshOrder,
+          };
+          localStorage.setItem(ORDERS_KEY(group), JSON.stringify(finalOrders));
+        } catch(e) {}
+      }, 3000);
     } else {
       setOrders(prev => {
         const newOrders = { ...prev, [weekKey]: { ...updatedOrder, saved: true } };
