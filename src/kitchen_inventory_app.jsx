@@ -599,8 +599,8 @@ export default function App() {
           const baseInv = (group==="tommys"||group==="demo") ? DEFAULT_INVENTORY : BLANK_INVENTORY;
           switch(data_key) {
             case "stock":
-              // Only apply stock from real-time if this device didn't just save it
-              // Check if the incoming value is different before applying
+              // Skip realtime echo if we just wrote stock ourselves (within 5s)
+              if (Date.now() - lastLocalEdit.current < 5000) break;
               setStock(prev => {
                 if (JSON.stringify(prev) === JSON.stringify(value)) return prev;
                 return value;
@@ -626,7 +626,11 @@ export default function App() {
               });
               break;
             case "settings": setSettings(value); break;
-            case "orders":   setOrders(value);   break;
+            case "orders":
+              // Skip realtime echo if we just wrote orders ourselves (within 5s)
+              if (Date.now() - lastLocalEdit.current < 5000) break;
+              setOrders(value);
+              break;
             default: break;
           }
           // Rebuild inventory after any structural change
@@ -705,6 +709,7 @@ export default function App() {
 
   // Write to both local storage and Supabase
   const dualSet = useCallback((sbKey, localKeyFn, value) => {
+    lastLocalEdit.current = Date.now();
     try { localStorage.setItem(localKeyFn(group), JSON.stringify(value)); } catch(e) {}
     sbSet(group, sbKey, value);
   }, [group]);
@@ -871,43 +876,43 @@ export default function App() {
     sbSet(group, "orders", newOrders); try { localStorage.setItem(ORDERS_KEY(group), JSON.stringify(newOrders)); } catch(e) {}
   }, []);
 
-  const saveOrder = useCallback((weekKey, updatedOrder) => {
+  const saveOrder = useCallback((weekKey, updatedOrder, currentStock, currentInventory) => {
     if (updatedOrder.submitted) {
       const archiveKey = `${weekKey}_sub_${Date.now()}`;
 
-      // Use functional updates to always get current stock + inventory
-      setStock(prevStock => {
-        const orderedLines = (updatedOrder.lines || []).filter(l => l.qty > 0);
-        const newStock = { ...prevStock };
-        // Zero out stock for every ordered item
-        orderedLines.forEach(l => { newStock[l.id] = 0; });
-        dualSet("stock", STOCK_KEY, newStock);
+      // Zero stock for every ordered item
+      const orderedLines = (updatedOrder.lines || []).filter(l => l.qty > 0);
+      const newStock = { ...currentStock };
+      orderedLines.forEach(l => { newStock[l.id] = 0; });
 
-        // Build fresh order from zeroed stock, inside setStock so it's always current
-        setInventory(prevInv => {
-          const freshLines = prevInv.flatMap(s => s.items.map(item => ({
-            id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
-            section: s.section, qty: calcOrderQty(item, newStock[item.id] ?? 0),
-          })));
-          const freshOrder = {
-            weekKey,
-            createdAt: new Date().toISOString(),
-            lines: freshLines,
-            saved: false,
-          };
-          setOrders(prev => {
-            const newOrders = {
-              ...prev,
-              [archiveKey]: { ...updatedOrder, saved: true },
-              [weekKey]: freshOrder,
-            };
-            dualSet("orders", ORDERS_KEY, newOrders);
-            return newOrders;
-          });
-          return prevInv; // inventory unchanged
-        });
+      // Build fresh order from zeroed stock
+      const freshLines = currentInventory.flatMap(s => s.items.map(item => ({
+        id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
+        section: s.section, qty: calcOrderQty(item, newStock[item.id] ?? 0),
+      })));
+      const freshOrder = {
+        weekKey,
+        createdAt: new Date().toISOString(),
+        lines: freshLines,
+        saved: false,
+      };
 
-        return newStock;
+      // Stamp timestamp BEFORE writing so RT echo is suppressed
+      lastLocalEdit.current = Date.now();
+
+      // Write stock reset
+      setStock(newStock);
+      dualSet("stock", STOCK_KEY, newStock);
+
+      // Write archived + fresh order
+      setOrders(prev => {
+        const newOrders = {
+          ...prev,
+          [archiveKey]: { ...updatedOrder, saved: true },
+          [weekKey]: freshOrder,
+        };
+        dualSet("orders", ORDERS_KEY, newOrders);
+        return newOrders;
       });
     } else {
       setOrders(prev => {
@@ -1678,8 +1683,8 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
       submitted: true,
     };
 
-    // 1. Save to history
-    saveOrder(currentWeekKey, toSave);
+    // 1. Save to history — pass current stock + inventory so saveOrder has fresh values
+    saveOrder(currentWeekKey, toSave, stock, inventory);
 
     // 2. Send to each connected vendor whose items are in this order
     if (submitOrderToVendor && connections.length > 0) {
