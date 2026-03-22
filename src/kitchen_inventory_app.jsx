@@ -288,6 +288,7 @@ export default function App() {
   const [flash, setFlash]       = useState("");
   const [loginError, setLoginError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [usageLog, setUsageLog]     = useState({});
 
   const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
 
@@ -315,10 +316,12 @@ export default function App() {
       const vd = await load("vendors", DEFAULT_VENDORS);
       const hi = await load("history", []);
       const inv = await load("inventory", DEFAULT_INVENTORY);
+      const ul = await load("usageLog", {});
       setStock(st);
       setVendors(vd);
       setHistory(hi);
       setInventory(inv);
+      setUsageLog(ul);
     };
     init();
   }, [user, group]);
@@ -337,6 +340,7 @@ export default function App() {
         if (data_key === "vendors")   setVendors(value);
         if (data_key === "history")   setHistory(value);
         if (data_key === "inventory") setInventory(value);
+        if (data_key === "usageLog")  setUsageLog(value);
       } catch {}
     }).subscribe();
     return () => { sb.removeChannel(channel); };
@@ -363,7 +367,21 @@ export default function App() {
 
     if (orderLines.length === 0) return;
 
-    // 1. Save to history
+    // 1. Log usage — record what was ordered per item for this week
+    const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2,"0")}`;
+    const newUsageLog = { ...usageLog };
+    if (!newUsageLog[wk]) newUsageLog[wk] = {};
+    if (!newUsageLog[wk][vendorName]) newUsageLog[wk][vendorName] = {};
+    orderLines.forEach(line => {
+      newUsageLog[wk][vendorName][line.id] = {
+        name: line.name, qty: line.qty, order_unit: line.order_unit,
+        stockBefore: line.currentStock, maxStock: vendorItems.find(i => i.id === line.id)?.max_stock || 0,
+      };
+    });
+    setUsageLog(newUsageLog);
+    save("usageLog", newUsageLog);
+
+    // 2. Save to history
     const entry = {
       id: `ord_${Date.now()}`,
       vendor: vendorName,
@@ -378,7 +396,7 @@ export default function App() {
     setHistory(newHistory);
     save("history", newHistory);
 
-    // 2. Reset this vendor's items to 0
+    // 3. Reset this vendor's items to 0
     const newStock = { ...stock };
     vendorItems.forEach(item => { newStock[item.id] = 0; });
     setStock(newStock);
@@ -389,6 +407,16 @@ export default function App() {
 
   // ── Save vendors ─────────────────────────────────────────────────────────
   const saveVendors = (newVendors) => { setVendors(newVendors); save("vendors", newVendors); showFlash(); };
+
+  // ── Apply par suggestion — update an item's max_stock in inventory ──────
+  const applyParSuggestion = (itemId, newMaxStock) => {
+    const newInv = inventory.map(s => ({
+      ...s, items: s.items.map(i => i.id === itemId ? { ...i, max_stock: newMaxStock } : i),
+    }));
+    setInventory(newInv);
+    save("inventory", newInv);
+    showFlash("✓ Par updated");
+  };
 
   // ── Login ────────────────────────────────────────────────────────────────
   if (!user) return <LoginScreen onLogin={u => { setUser(u); setGroup(u.group || "demo"); setLoginError(""); }} error={loginError} setError={setLoginError} />;
@@ -419,6 +447,7 @@ export default function App() {
             { key:"orders",    label:"Orders",    icon:"📦", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length },
             { key:"history",   label:"History",   icon:"📚", desc:"Past orders by week" },
             ...(user.role === "owner" ? [
+              { key:"insights", label:"Insights", icon:"📊", desc:"Par suggestions by usage" },
               { key:"backend",  label:"Backend",  icon:"🔧", desc:"Add & edit items" },
               { key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors & schedules" },
             ] : []),
@@ -477,6 +506,7 @@ export default function App() {
         {view === "inventory" && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
         {view === "orders" && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} />}
         {view === "history" && <HistoryView history={history} />}
+        {view === "insights" && user.role === "owner" && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
         {view === "backend" && user.role === "owner" && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
         {view === "settings" && user.role === "owner" && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} />}
       </main>
@@ -585,11 +615,11 @@ function InventoryView({ inventory, stock, updateStock, vendors }) {
                     {/* Bottom row: stock controls + order qty */}
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
                       <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <span style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", marginRight:2 }}>Current Stock</span>
                         <button onClick={() => updateStock(item.id, Math.max(0, s-1))} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
                         <input type="number" value={s} min={0} onChange={e => updateStock(item.id, e.target.value)} onFocus={e => e.target.select()}
-                          style={{ width:52, background:"#080c14", border:`1px solid ${status.color}`, borderRadius:8, padding:"6px", color:status.color, fontSize:15, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
+                          style={{ width:52, background:"#080c14", border:"1px solid #475569", borderRadius:8, padding:"6px", color:"#f1f5f9", fontSize:15, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
                         <button onClick={() => updateStock(item.id, s+1)} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
-                        <span style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", marginLeft:4 }}>{item.order_unit} · Max {item.max_stock}</span>
                       </div>
                       <div>{orderQty > 0 ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"4px 10px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>Order {orderQty}</span> : null}</div>
                     </div>
@@ -1121,6 +1151,225 @@ function BackendSection({ section, stock, vendors, saveItemField, addItem, remov
           </tfoot>
         </table>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INSIGHTS VIEW — Analyzes ordering patterns, suggests new par levels after 3 weeks
+// ═══════════════════════════════════════════════════════════════════════════════
+function InsightsView({ inventory, usageLog, vendors, applyParSuggestion }) {
+  const [accepted, setAccepted] = useState({});
+  const [dismissed, setDismissed] = useState({});
+  const [filterVendor, setFilterVendor] = useState("ALL");
+
+  const allItems = flatItems(inventory);
+  const weeks = Object.keys(usageLog).sort();
+
+  // Build per-item ordering history: { itemId: { name, vendor, order_unit, max_stock, weeklyQty: [qty, qty, ...] } }
+  const itemStats = {};
+  weeks.forEach(wk => {
+    const weekData = usageLog[wk] || {};
+    Object.entries(weekData).forEach(([vendorName, items]) => {
+      Object.entries(items).forEach(([itemId, data]) => {
+        if (!itemStats[itemId]) {
+          itemStats[itemId] = {
+            id: Number(itemId), name: data.name, vendor: vendorName,
+            order_unit: data.order_unit, max_stock: data.maxStock,
+            weeklyQty: [], weeks: [],
+          };
+        }
+        itemStats[itemId].weeklyQty.push(data.qty);
+        itemStats[itemId].weeks.push(wk);
+      });
+    });
+  });
+
+  // Update max_stock from current inventory (may have changed)
+  Object.values(itemStats).forEach(stat => {
+    const item = allItems.find(i => i.id === stat.id);
+    if (item) { stat.max_stock = item.max_stock; stat.name = item.name; }
+  });
+
+  // Build suggestions for items with 3+ weeks of data
+  const suggestions = Object.values(itemStats)
+    .filter(stat => stat.weeklyQty.length >= 3)
+    .map(stat => {
+      const avg = Math.round(stat.weeklyQty.reduce((a, b) => a + b, 0) / stat.weeklyQty.length);
+      const peak = Math.max(...stat.weeklyQty);
+      const min = Math.min(...stat.weeklyQty);
+      // Suggested max_stock = average order qty * 1.3 (30% buffer over average)
+      // But at least peak qty (never suggest less than what was needed at peak)
+      const suggested = Math.max(Math.ceil(avg * 1.3), peak);
+      const diff = suggested - stat.max_stock;
+      if (Math.abs(diff) < 1) return null; // No meaningful change
+      return { ...stat, avg, peak, min, suggested, diff };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  const activeSuggestions = suggestions
+    .filter(s => !accepted[s.id] && !dismissed[s.id])
+    .filter(s => filterVendor === "ALL" || s.vendor === filterVendor);
+
+  // Items still building data (< 3 weeks)
+  const buildingData = Object.values(itemStats).filter(s => s.weeklyQty.length > 0 && s.weeklyQty.length < 3);
+
+  // Vendor names from usage data
+  const usedVendors = [...new Set(Object.values(itemStats).map(s => s.vendor))].sort();
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>📊 Insights</h2>
+          <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>
+            {weeks.length} week{weeks.length !== 1 ? "s" : ""} of order data · {Object.keys(itemStats).length} items tracked
+          </p>
+        </div>
+        {usedVendors.length > 1 && (
+          <select value={filterVendor} onChange={e => setFilterVendor(e.target.value)}
+            style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", cursor:"pointer" }}>
+            <option value="ALL">All Vendors</option>
+            {usedVendors.map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+        )}
+      </div>
+
+      {/* How it works */}
+      <div style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:10, padding:"12px 16px", marginBottom:20 }}>
+        <span style={{ color:"#a5b4fc", fontSize:12 }}>How it works: </span>
+        <span style={{ color:"#64748b", fontSize:12 }}>MOE tracks what you order each week per vendor. After 3 weeks, it calculates your average + peak usage and recommends a new max stock with a 30% safety buffer. You can apply or dismiss each suggestion.</span>
+      </div>
+
+      {/* Stats cards */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:10, marginBottom:20 }}>
+        {[
+          { label:"Weeks tracked", value:weeks.length, color:"#a5b4fc", bg:"#0f2040", border:"#1e40af" },
+          { label:"Items tracked", value:Object.keys(itemStats).length, color:"#4ade80", bg:"#052e16", border:"#16a34a" },
+          { label:"Suggestions", value:activeSuggestions.length, color:"#fbbf24", bg:"#422006", border:"#d97706" },
+          { label:"Building data", value:buildingData.length, color:"#94a3b8", bg:"#0f1a2e", border:"#1e2d45" },
+        ].map(c => (
+          <div key={c.label} style={{ background:c.bg, border:`1px solid ${c.border}`, borderRadius:10, padding:"12px 16px" }}>
+            <div style={{ color:c.color, fontSize:24, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{c.value}</div>
+            <div style={{ color:c.color, fontSize:11, opacity:0.8, marginTop:2 }}>{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Not enough data yet */}
+      {weeks.length < 3 && (
+        <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:32, textAlign:"center", marginBottom:20 }}>
+          <div style={{ fontSize:36, marginBottom:12 }}>📊</div>
+          <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:600, marginBottom:8 }}>Building your data</div>
+          <div style={{ color:"#475569", fontSize:13, lineHeight:1.7 }}>
+            MOE needs at least 3 weeks of submitted orders to make recommendations.
+            {weeks.length > 0 ? ` You have ${weeks.length} week${weeks.length !== 1 ? "s" : ""} so far — ${3 - weeks.length} more to go.` : " Start submitting orders and check back."}
+          </div>
+        </div>
+      )}
+
+      {/* Suggestions */}
+      {activeSuggestions.length > 0 && (
+        <div style={{ marginBottom:24 }}>
+          <h3 style={{ color:"#fbbf24", fontSize:14, fontWeight:700, margin:"0 0 12px", display:"flex", alignItems:"center", gap:8 }}>
+            💡 Recommended Changes
+            <span style={{ background:"#422006", border:"1px solid #d97706", borderRadius:10, padding:"2px 8px", fontSize:11 }}>{activeSuggestions.length}</span>
+          </h3>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {activeSuggestions.map(s => (
+              <div key={s.id} style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:10, padding:"14px 16px" }}>
+                <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
+                  <div style={{ flex:1, minWidth:200 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                      <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{s.name}</span>
+                      <span style={{ background:"#0f2040", border:"1px solid #1e3a5f", borderRadius:4, padding:"1px 6px", color:"#94a3b8", fontSize:9, fontFamily:"'DM Mono',monospace" }}>{s.vendor}</span>
+                    </div>
+                    <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
+                      <div><span style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>AVG/WK </span><span style={{ color:"#a5b4fc", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{s.avg}</span></div>
+                      <div><span style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>PEAK </span><span style={{ color:"#fbbf24", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{s.peak}</span></div>
+                      <div><span style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>MIN </span><span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{s.min}</span></div>
+                      <div><span style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{s.weeklyQty.length} WKS</span></div>
+                    </div>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                    <div style={{ textAlign:"center" }}>
+                      <div style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", marginBottom:4 }}>Max Stock</div>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <span style={{ color:"#64748b", fontSize:14, fontFamily:"'DM Mono',monospace", textDecoration:"line-through" }}>{s.max_stock}</span>
+                        <span style={{ color:"#475569" }}>→</span>
+                        <span style={{ color:s.diff > 0 ? "#4ade80" : "#f87171", fontSize:16, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{s.suggested}</span>
+                        <span style={{ background:s.diff > 0 ? "#052e16" : "#450a0a", border:`1px solid ${s.diff > 0 ? "#16a34a" : "#7f1d1d"}`, color:s.diff > 0 ? "#4ade80" : "#fca5a5", borderRadius:5, padding:"2px 6px", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>
+                          {s.diff > 0 ? "+" : ""}{s.diff}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display:"flex", gap:6 }}>
+                      <button onClick={() => { applyParSuggestion(s.id, s.suggested); setAccepted(prev => ({ ...prev, [s.id]: true })); }}
+                        style={{ background:"linear-gradient(135deg,#16a34a,#15803d)", border:"none", borderRadius:7, padding:"7px 14px", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+                        ✓ Apply
+                      </button>
+                      <button onClick={() => setDismissed(prev => ({ ...prev, [s.id]: true }))}
+                        style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:7, padding:"7px 12px", color:"#64748b", fontSize:12, cursor:"pointer" }}>
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {/* Weekly breakdown bar */}
+                <div style={{ marginTop:10, display:"flex", gap:4, alignItems:"end", height:32 }}>
+                  {s.weeklyQty.map((qty, i) => {
+                    const maxQ = Math.max(...s.weeklyQty);
+                    const pct = maxQ > 0 ? (qty / maxQ) * 100 : 0;
+                    return (
+                      <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+                        <div style={{ width:"100%", maxWidth:40, height:`${Math.max(4, pct * 0.28)}px`, background:qty === s.peak ? "#fbbf24" : "#1e40af", borderRadius:2 }} />
+                        <span style={{ color:"#475569", fontSize:8, fontFamily:"'DM Mono',monospace" }}>{qty}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* All good */}
+      {weeks.length >= 3 && activeSuggestions.length === 0 && (
+        <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:32, textAlign:"center", marginBottom:20 }}>
+          <div style={{ fontSize:36, marginBottom:12 }}>✅</div>
+          <div style={{ color:"#4ade80", fontSize:16, fontWeight:600 }}>All par levels look good</div>
+          <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>No recommendations based on current ordering patterns</div>
+        </div>
+      )}
+
+      {/* Applied this session */}
+      {Object.keys(accepted).length > 0 && (
+        <div style={{ marginBottom:20 }}>
+          <div style={{ color:"#4ade80", fontSize:12, fontFamily:"'DM Mono',monospace", marginBottom:8 }}>✓ Applied this session</div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {Object.keys(accepted).map(id => {
+              const s = suggestions.find(s => String(s.id) === String(id));
+              return s ? <div key={id} style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:6, padding:"4px 10px", color:"#4ade80", fontSize:12 }}>{s.name} → {s.suggested}</div> : null;
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Items building data */}
+      {buildingData.length > 0 && (
+        <div>
+          <h3 style={{ color:"#94a3b8", fontSize:13, fontWeight:600, margin:"0 0 10px" }}>⏳ Building data ({buildingData.length} items need {3 - Math.min(...buildingData.map(s => s.weeklyQty.length))}+ more weeks)</h3>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {buildingData.map(s => (
+              <span key={s.id} style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:6, padding:"4px 10px", color:"#94a3b8", fontSize:11, fontFamily:"'DM Mono',monospace" }}>
+                {s.name} <span style={{ color:"#475569" }}>({s.weeklyQty.length}wk)</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
