@@ -872,34 +872,63 @@ export default function App() {
   }, []);
 
   const saveOrder = useCallback((weekKey, updatedOrder) => {
-    setOrders(prev => {
-      const newOrders = { ...prev, [weekKey]: { ...updatedOrder, saved: true } };
-      dualSet("orders", ORDERS_KEY, newOrders);
-      return newOrders;
-    });
-
-    // After submit: reset stock for all ordered items to max_stock
-    // This clears the order list immediately — next count starts fresh
     if (updatedOrder.submitted) {
+      // Archive submitted order under a unique key (weekKey + timestamp)
+      // Then immediately create a fresh unsaved order for the current week
+      const archiveKey = `${weekKey}_sub_${Date.now()}`;
+      const today = new Date();
+      const orderDay = settings.orderDay ?? 3;
+      const orderDate = getWeekdayDate(today, orderDay);
+      const receiveDate = new Date(orderDate);
+      receiveDate.setDate(orderDate.getDate() + 1);
+
+      // Reset stock to max for all ordered items so the fresh list is clean
       const orderedLines = (updatedOrder.lines || []).filter(l => l.qty > 0);
-      if (orderedLines.length > 0) {
-        setStock(prevStock => {
-          const newStock = { ...prevStock };
-          // For each ordered item, set stock to its max_stock value
-          inventory.forEach(sec => {
-            sec.items.forEach(item => {
-              const wasOrdered = orderedLines.some(l => l.id === item.id);
-              if (wasOrdered) newStock[item.id] = item.max_stock;
-            });
-          });
-          dualSet("stock", STOCK_KEY, newStock);
-          return newStock;
+      const newStock = { ...stock };
+      inventory.forEach(sec => {
+        sec.items.forEach(item => {
+          if (orderedLines.some(l => l.id === item.id)) {
+            newStock[item.id] = item.max_stock;
+          }
         });
-      }
+      });
+
+      // Build fresh unsaved order from reset stock
+      const freshLines = inventory.flatMap(s => s.items.map(item => ({
+        id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
+        section: s.section, qty: calcOrderQty(item, newStock[item.id] ?? 0),
+      })));
+      const freshOrder = {
+        weekKey,
+        orderDate: orderDate.toISOString().split("T")[0],
+        receiveDate: receiveDate.toISOString().split("T")[0],
+        createdAt: new Date().toISOString(),
+        lines: freshLines,
+        saved: false,
+      };
+
+      setStock(newStock);
+      dualSet("stock", STOCK_KEY, newStock);
+
+      setOrders(prev => {
+        const newOrders = {
+          ...prev,
+          [archiveKey]: { ...updatedOrder, saved: true },  // archived snapshot
+          [weekKey]: freshOrder,                            // fresh live order
+        };
+        dualSet("orders", ORDERS_KEY, newOrders);
+        return newOrders;
+      });
+    } else {
+      setOrders(prev => {
+        const newOrders = { ...prev, [weekKey]: { ...updatedOrder, saved: true } };
+        dualSet("orders", ORDERS_KEY, newOrders);
+        return newOrders;
+      });
     }
 
     flash();
-  }, [dualSet, inventory]);
+  }, [dualSet, inventory, stock, settings.orderDay]);
 
   const saveSettings = useCallback((newSettings) => {
     setSettings(newSettings);
@@ -1636,14 +1665,13 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
     bySupplier[sup].push(item);
   });
 
-  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
     if (submitting) return;
     setSubmitting(true);
 
-    // Snapshot all lines at this moment
+    // Snapshot all lines at this moment (before stock reset)
     const allLinesSnapshot = inventory.flatMap(s => s.items.map(item => ({
       id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
       section: s.section, qty: calcOrderQty(item, stock[item.id] ?? 0),
@@ -1677,7 +1705,6 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
       }
     }
 
-    setSubmitted(true);
     setSubmitting(false);
   };
 
