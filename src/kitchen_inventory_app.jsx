@@ -872,21 +872,32 @@ export default function App() {
   const saveOrder = useCallback((weekKey, updatedOrder) => {
     setOrders(prev => {
       const newOrders = { ...prev, [weekKey]: { ...updatedOrder, saved: true } };
-      // If submitted, pre-create a blank slot for NEXT week so the list resets automatically
-      if (updatedOrder.submitted) {
-        const nextWeekDate = new Date();
-        nextWeekDate.setDate(nextWeekDate.getDate() + 7);
-        const nextWk = getWeekKey(nextWeekDate);
-        if (!newOrders[nextWk]) {
-          // Just reserve the slot — autoGenerateOrder will fill it when the week arrives
-          newOrders[nextWk] = null;
-        }
-      }
       dualSet("orders", ORDERS_KEY, newOrders);
       return newOrders;
     });
+
+    // After submit: reset stock for all ordered items to max_stock
+    // This clears the order list immediately — next count starts fresh
+    if (updatedOrder.submitted) {
+      const orderedLines = (updatedOrder.lines || []).filter(l => l.qty > 0);
+      if (orderedLines.length > 0) {
+        setStock(prevStock => {
+          const newStock = { ...prevStock };
+          // For each ordered item, set stock to its max_stock value
+          inventory.forEach(sec => {
+            sec.items.forEach(item => {
+              const wasOrdered = orderedLines.some(l => l.id === item.id);
+              if (wasOrdered) newStock[item.id] = item.max_stock;
+            });
+          });
+          dualSet("stock", STOCK_KEY, newStock);
+          return newStock;
+        });
+      }
+    }
+
     flash();
-  }, [dualSet]);
+  }, [dualSet, inventory]);
 
   const saveSettings = useCallback((newSettings) => {
     setSettings(newSettings);
@@ -1730,7 +1741,7 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
             <div style={{ color:"#4ade80", fontSize:15, fontWeight:700 }}>Order submitted successfully!</div>
             <div style={{ color:"#64748b", fontSize:13, marginTop:2 }}>
               Saved to history{connectedVendorCount > 0 ? ` · Sent to ${connectedVendorCount} vendor${connectedVendorCount > 1 ? "s" : ""}` : " · No vendors connected yet"}.
-              {" "}Your next order list will generate automatically next week.
+              {" "}Stock reset to max — order list is now clear for your next count.
             </div>
           </div>
         </div>
