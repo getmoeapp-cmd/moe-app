@@ -873,51 +873,41 @@ export default function App() {
 
   const saveOrder = useCallback((weekKey, updatedOrder) => {
     if (updatedOrder.submitted) {
-      // Archive submitted order under a unique key (weekKey + timestamp)
-      // Then immediately create a fresh unsaved order for the current week
       const archiveKey = `${weekKey}_sub_${Date.now()}`;
-      const today = new Date();
-      const orderDay = settings.orderDay ?? 3;
-      const orderDate = getWeekdayDate(today, orderDay);
-      const receiveDate = new Date(orderDate);
-      receiveDate.setDate(orderDate.getDate() + 1);
 
-      // Reset stock to max for all ordered items so the fresh list is clean
-      const orderedLines = (updatedOrder.lines || []).filter(l => l.qty > 0);
-      const newStock = { ...stock };
-      inventory.forEach(sec => {
-        sec.items.forEach(item => {
-          if (orderedLines.some(l => l.id === item.id)) {
-            newStock[item.id] = 0;
-          }
+      // Use functional updates to always get current stock + inventory
+      setStock(prevStock => {
+        const orderedLines = (updatedOrder.lines || []).filter(l => l.qty > 0);
+        const newStock = { ...prevStock };
+        // Zero out stock for every ordered item
+        orderedLines.forEach(l => { newStock[l.id] = 0; });
+        dualSet("stock", STOCK_KEY, newStock);
+
+        // Build fresh order from zeroed stock, inside setStock so it's always current
+        setInventory(prevInv => {
+          const freshLines = prevInv.flatMap(s => s.items.map(item => ({
+            id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
+            section: s.section, qty: calcOrderQty(item, newStock[item.id] ?? 0),
+          })));
+          const freshOrder = {
+            weekKey,
+            createdAt: new Date().toISOString(),
+            lines: freshLines,
+            saved: false,
+          };
+          setOrders(prev => {
+            const newOrders = {
+              ...prev,
+              [archiveKey]: { ...updatedOrder, saved: true },
+              [weekKey]: freshOrder,
+            };
+            dualSet("orders", ORDERS_KEY, newOrders);
+            return newOrders;
+          });
+          return prevInv; // inventory unchanged
         });
-      });
 
-      // Build fresh unsaved order from reset stock
-      const freshLines = inventory.flatMap(s => s.items.map(item => ({
-        id: item.id, name: item.name, order_unit: item.order_unit, supplier: item.supplier,
-        section: s.section, qty: calcOrderQty(item, newStock[item.id] ?? 0),
-      })));
-      const freshOrder = {
-        weekKey,
-        orderDate: orderDate.toISOString().split("T")[0],
-        receiveDate: receiveDate.toISOString().split("T")[0],
-        createdAt: new Date().toISOString(),
-        lines: freshLines,
-        saved: false,
-      };
-
-      setStock(newStock);
-      dualSet("stock", STOCK_KEY, newStock);
-
-      setOrders(prev => {
-        const newOrders = {
-          ...prev,
-          [archiveKey]: { ...updatedOrder, saved: true },  // archived snapshot
-          [weekKey]: freshOrder,                            // fresh live order
-        };
-        dualSet("orders", ORDERS_KEY, newOrders);
-        return newOrders;
+        return newStock;
       });
     } else {
       setOrders(prev => {
@@ -926,9 +916,8 @@ export default function App() {
         return newOrders;
       });
     }
-
     flash();
-  }, [dualSet, inventory, stock, settings.orderDay]);
+  }, [dualSet]);
 
   const saveSettings = useCallback((newSettings) => {
     setSettings(newSettings);
@@ -1739,10 +1728,7 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
           <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Order List{activeVendor !== "ALL" ? ` — ${activeVendor}` : ""}</h2>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:4, flexWrap:"wrap" }}>
             <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#a5b4fc", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>WK {wk}</span>
-            <span style={{ color:"#64748b", fontSize:12 }}>Order: <span style={{ color:"#94a3b8" }}>{orderDate}</span></span>
-            <span style={{ color:"#64748b", fontSize:12 }}>Receive: <span style={{ color:"#94a3b8" }}>{receiveDate}</span></span>
             {order?.saved && <span style={{ background:"#14532d", border:"1px solid #16a34a", borderRadius:6, padding:"2px 8px", color:"#4ade80", fontSize:11, fontFamily:"'DM Mono',monospace" }}>✓ Saved</span>}
-            {order?.submitted && <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#a5b4fc", fontSize:11, fontFamily:"'DM Mono',monospace" }}>🚀 Submitted</span>}
           </div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
