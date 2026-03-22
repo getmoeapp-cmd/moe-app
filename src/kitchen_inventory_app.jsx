@@ -490,6 +490,7 @@ export default function App() {
             { key:"history",   label:"History",   icon:"📚", desc:"Past orders by week" },
             ...(user.role === "owner" ? [
               { key:"insights", label:"Insights", icon:"📊", desc:"Par suggestions by usage" },
+              { key:"import",   label:"Import Items", icon:"📤", desc:"Upload list or invoice photo" },
               { key:"backend",  label:"Backend",  icon:"🔧", desc:"Add & edit items" },
               { key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors & schedules" },
               { key:"subscription", label:"Subscription", icon:"💳", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
@@ -558,6 +559,7 @@ export default function App() {
         {view === "orders" && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} />}
         {view === "history" && <HistoryView history={history} />}
         {view === "insights" && user.role === "owner" && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
+        {view === "import" && user.role === "owner" && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && user.role === "owner" && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
         {view === "settings" && user.role === "owner" && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} />}
         {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
@@ -1861,6 +1863,385 @@ function SubscriptionView({ subscription, onSelectPlan, trialDaysLeft, isTrialin
       <div style={{ marginTop:24, background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:10, padding:"12px 16px" }}>
         <span style={{ color:"#475569", fontSize:12 }}>Stripe payment integration coming soon. Plan changes take effect immediately. Need help? Contact support.</span>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// IMPORT VIEW — Upload CSV/Excel or invoice photo to populate inventory
+// ═══════════════════════════════════════════════════════════════════════════════
+function ImportView({ inventory, saveInventory, vendors }) {
+  const [mode, setMode] = useState(null); // "file" | "photo"
+  const [parsing, setParsing] = useState(false);
+  const [parsedItems, setParsedItems] = useState([]);
+  const [parseError, setParseError] = useState("");
+  const [previewImage, setPreviewImage] = useState(null);
+  const [imported, setImported] = useState(false);
+  const [targetSection, setTargetSection] = useState("");
+  const [newSectionName, setNewSectionName] = useState("");
+  const fileRef = React.useRef(null);
+  const photoRef = React.useRef(null);
+
+  const sections = inventory.map(s => s.section);
+
+  // ── Parse CSV / TSV text into items ──────────────────────────────────────
+  const parseCSV = (text) => {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return [];
+    const headerLine = lines[0].toLowerCase();
+    const sep = headerLine.includes("\t") ? "\t" : ",";
+    const headers = headerLine.split(sep).map(h => h.trim().replace(/"/g, ""));
+
+    // Map column names to fields
+    const colMap = {};
+    headers.forEach((h, i) => {
+      if (h.match(/item|name|product|description/i)) colMap.name = i;
+      if (h.match(/unit|order.?unit|pkg/i)) colMap.order_unit = i;
+      if (h.match(/upu|units.?per|per.?pkg|pack/i)) colMap.upu = i;
+      if (h.match(/vendor|supplier/i)) colMap.vendor = i;
+      if (h.match(/max|par|max.?stock/i)) colMap.max_stock = i;
+      if (h.match(/reorder|min|reorder.?point/i)) colMap.reorder = i;
+      if (h.match(/section|category|location|area/i)) colMap.section = i;
+    });
+
+    if (colMap.name === undefined) {
+      // No header match — treat first column as name
+      colMap.name = 0;
+      // Try the rest positionally
+      if (headers.length > 1) colMap.order_unit = 1;
+      if (headers.length > 2) colMap.vendor = 2;
+      if (headers.length > 3) colMap.max_stock = 3;
+      if (headers.length > 4) colMap.reorder = 4;
+    }
+
+    return lines.slice(1).map((line, idx) => {
+      const cols = line.split(sep).map(c => c.trim().replace(/^"|"$/g, ""));
+      const name = cols[colMap.name] || "";
+      if (!name) return null;
+      return {
+        id: Date.now() + idx,
+        name,
+        order_unit: cols[colMap.order_unit] || "Case",
+        upu: parseInt(cols[colMap.upu]) || 1,
+        vendor: cols[colMap.vendor] || "",
+        max_stock: parseInt(cols[colMap.max_stock]) || 10,
+        reorder: parseInt(cols[colMap.reorder]) || 2,
+        _section: cols[colMap.section] || "",
+      };
+    }).filter(Boolean);
+  };
+
+  // ── Handle file upload (CSV, TSV, TXT) ──────────────────────────────────
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParseError(""); setParsedItems([]); setImported(false);
+    setParsing(true);
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result;
+        const items = parseCSV(text);
+        if (items.length === 0) { setParseError("No items found. Make sure your file has a header row with at least an item name column."); }
+        else { setParsedItems(items); }
+      } catch (err) { setParseError("Failed to parse file: " + err.message); }
+      setParsing(false);
+    };
+    reader.onerror = () => { setParseError("Failed to read file."); setParsing(false); };
+    reader.readAsText(file);
+  };
+
+  // ── Handle photo upload — use Claude API to extract items ───────────────
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParseError(""); setParsedItems([]); setImported(false);
+    setParsing(true);
+
+    // Show preview
+    const url = URL.createObjectURL(file);
+    setPreviewImage(url);
+
+    try {
+      // Convert to base64
+      const base64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result.split(",")[1]);
+        r.onerror = () => reject(new Error("Read failed"));
+        r.readAsDataURL(file);
+      });
+
+      const mediaType = file.type || "image/jpeg";
+
+      // Call Claude API to extract items from the invoice/photo
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4000,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+              { type: "text", text: `Extract ALL inventory items from this image (invoice, order sheet, or inventory list). Return ONLY a JSON array with no other text, no markdown backticks. Each object should have these fields:
+- "name": item name (string)
+- "order_unit": unit of measurement like Case, Each, Bag, Lbs, Unit, Bundle, Roll, Gallon (string, default "Case")
+- "vendor": vendor/supplier name if visible (string, default "")
+- "max_stock": suggested max stock quantity (number, default 10)
+- "reorder": suggested reorder point (number, default 2)
+- "upu": units per package (number, default 1)
+- "section": category like Produce, Dairy, Frozen, Dry Goods, etc. if you can determine it (string, default "")
+
+Be thorough — extract every single item you can see. If quantities are shown, use them for max_stock. Return ONLY the JSON array.` }
+            ]
+          }]
+        })
+      });
+
+      const data = await response.json();
+      const text = (data.content || []).map(c => c.text || "").join("");
+      const clean = text.replace(/```json|```/g, "").trim();
+      const items = JSON.parse(clean);
+
+      if (Array.isArray(items) && items.length > 0) {
+        setParsedItems(items.map((item, idx) => ({
+          id: Date.now() + idx,
+          name: item.name || "Unknown Item",
+          order_unit: item.order_unit || "Case",
+          upu: parseInt(item.upu) || 1,
+          vendor: item.vendor || "",
+          max_stock: parseInt(item.max_stock) || 10,
+          reorder: parseInt(item.reorder) || 2,
+          _section: item.section || "",
+        })));
+      } else {
+        setParseError("No items could be extracted from this image. Try a clearer photo.");
+      }
+    } catch (err) {
+      setParseError("Failed to process image: " + err.message);
+    }
+    setParsing(false);
+  };
+
+  // ── Edit a parsed item ──────────────────────────────────────────────────
+  const updateParsedItem = (idx, field, value) => {
+    setParsedItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+  };
+  const removeParsedItem = (idx) => {
+    setParsedItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  // ── Import parsed items into inventory ──────────────────────────────────
+  const handleImport = () => {
+    if (parsedItems.length === 0) return;
+
+    const newInv = [...inventory];
+
+    parsedItems.forEach(item => {
+      // Determine which section
+      const sec = item._section || targetSection || (newSectionName.trim() || "📦  Imported Items");
+      const cleanItem = {
+        id: item.id, name: item.name, order_unit: item.order_unit,
+        upu: parseInt(item.upu) || 1, vendor: item.vendor || "",
+        max_stock: parseInt(item.max_stock) || 10, reorder: parseInt(item.reorder) || 2,
+      };
+
+      const existing = newInv.find(s => s.section === sec);
+      if (existing) {
+        // Skip duplicates by name
+        if (!existing.items.some(i => i.name.toLowerCase() === cleanItem.name.toLowerCase())) {
+          existing.items.push(cleanItem);
+        }
+      } else {
+        newInv.push({ section: sec, items: [cleanItem] });
+      }
+    });
+
+    saveInventory(newInv);
+    setImported(true);
+  };
+
+  // ── Reset ───────────────────────────────────────────────────────────────
+  const reset = () => {
+    setMode(null); setParsedItems([]); setParseError(""); setPreviewImage(null);
+    setImported(false); setTargetSection(""); setNewSectionName("");
+    if (fileRef.current) fileRef.current.value = "";
+    if (photoRef.current) photoRef.current.value = "";
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom:24 }}>
+        <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>📤 Import Items</h2>
+        <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Upload an inventory list or take a photo of an invoice to add items to your backend</p>
+      </div>
+
+      {/* Success state */}
+      {imported && (
+        <div style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:12, padding:32, textAlign:"center", marginBottom:20 }}>
+          <div style={{ fontSize:40, marginBottom:12 }}>✅</div>
+          <div style={{ color:"#4ade80", fontSize:18, fontWeight:700, marginBottom:6 }}>{parsedItems.length} items imported</div>
+          <div style={{ color:"#22c55e", fontSize:13, marginBottom:16 }}>Items have been added to your inventory. Go to Backend to review and edit.</div>
+          <button onClick={reset} style={{ background:"transparent", border:"1px solid #16a34a", borderRadius:8, padding:"8px 20px", color:"#4ade80", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+            Import More
+          </button>
+        </div>
+      )}
+
+      {/* Method selection */}
+      {!mode && !imported && (
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:24 }}>
+          <button onClick={() => setMode("file")}
+            style={{ background:"#0f1a2e", border:"2px dashed #1e2d45", borderRadius:16, padding:"40px 24px", cursor:"pointer", textAlign:"center", transition:"all 0.2s" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#e2e8f0"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1e2d45"; }}>
+            <div style={{ fontSize:40, marginBottom:12 }}>📄</div>
+            <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:700, marginBottom:6 }}>Upload a File</div>
+            <div style={{ color:"#475569", fontSize:12 }}>CSV, TSV, or TXT with item names, units, vendors, quantities</div>
+          </button>
+          <button onClick={() => setMode("photo")}
+            style={{ background:"#0f1a2e", border:"2px dashed #1e2d45", borderRadius:16, padding:"40px 24px", cursor:"pointer", textAlign:"center", transition:"all 0.2s" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#e2e8f0"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "#1e2d45"; }}>
+            <div style={{ fontSize:40, marginBottom:12 }}>📸</div>
+            <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:700, marginBottom:6 }}>Photo of Invoice</div>
+            <div style={{ color:"#475569", fontSize:12 }}>Take a photo or upload an image — AI will extract the items</div>
+          </button>
+        </div>
+      )}
+
+      {/* File upload */}
+      {mode === "file" && !imported && parsedItems.length === 0 && (
+        <div style={{ marginBottom:20 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
+            <button onClick={reset} style={{ background:"none", border:"1px solid #1e2d45", borderRadius:6, color:"#94a3b8", padding:"4px 10px", cursor:"pointer", fontSize:12 }}>← Back</button>
+            <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:600 }}>Upload Inventory File</span>
+          </div>
+          <div style={{ background:"#0f1a2e", border:"2px dashed #1e2d45", borderRadius:16, padding:"40px 24px", textAlign:"center" }}>
+            <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" onChange={handleFileUpload} style={{ display:"none" }} />
+            <div style={{ fontSize:36, marginBottom:12 }}>📄</div>
+            <button onClick={() => fileRef.current?.click()}
+              style={{ background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:"10px 24px", color:"#080c14", fontSize:14, fontWeight:700, cursor:"pointer", marginBottom:12 }}>
+              Choose File
+            </button>
+            <div style={{ color:"#475569", fontSize:12 }}>Accepts CSV, TSV, or TXT files</div>
+          </div>
+          {parsing && <div style={{ textAlign:"center", color:"#a5b4fc", marginTop:16 }}>Parsing file...</div>}
+          {parseError && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginTop:16 }}>{parseError}</div>}
+
+          {/* Format guide */}
+          <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:10, padding:"14px 16px", marginTop:16 }}>
+            <div style={{ color:"#94a3b8", fontSize:12, fontWeight:600, marginBottom:8 }}>Expected Format</div>
+            <div style={{ background:"#080c14", borderRadius:6, padding:"10px 12px", fontFamily:"'DM Mono',monospace", fontSize:11, color:"#64748b", overflowX:"auto", whiteSpace:"pre" }}>
+{`Name, Order Unit, Vendor, Max Stock, Reorder, Section
+Flour, Unit, Anacapri, 17, 4, Dry Goods
+Mozzarella, Case, Anacapri, 10, 3, Dairy
+French Fries, Case, , 12, 3, Freezer`}
+            </div>
+            <div style={{ color:"#475569", fontSize:11, marginTop:8 }}>Only the Name column is required. Other columns are optional — MOE will auto-detect headers.</div>
+          </div>
+        </div>
+      )}
+
+      {/* Photo upload */}
+      {mode === "photo" && !imported && parsedItems.length === 0 && (
+        <div style={{ marginBottom:20 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
+            <button onClick={reset} style={{ background:"none", border:"1px solid #1e2d45", borderRadius:6, color:"#94a3b8", padding:"4px 10px", cursor:"pointer", fontSize:12 }}>← Back</button>
+            <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:600 }}>Photo of Invoice / Order Sheet</span>
+          </div>
+          <div style={{ background:"#0f1a2e", border:"2px dashed #1e2d45", borderRadius:16, padding:"40px 24px", textAlign:"center" }}>
+            <input ref={photoRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} style={{ display:"none" }} />
+            <div style={{ fontSize:36, marginBottom:12 }}>📸</div>
+            <button onClick={() => photoRef.current?.click()}
+              style={{ background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:"10px 24px", color:"#080c14", fontSize:14, fontWeight:700, cursor:"pointer", marginBottom:12 }}>
+              Take Photo or Upload Image
+            </button>
+            <div style={{ color:"#475569", fontSize:12 }}>JPG, PNG, HEIC — invoices, order sheets, inventory lists</div>
+          </div>
+          {parsing && (
+            <div style={{ textAlign:"center", marginTop:20 }}>
+              <div style={{ color:"#a5b4fc", fontSize:14, fontWeight:600, marginBottom:8 }}>Analyzing image with AI...</div>
+              <div style={{ color:"#475569", fontSize:12 }}>Extracting item names, quantities, and vendors</div>
+            </div>
+          )}
+          {previewImage && !parsing && parsedItems.length === 0 && (
+            <div style={{ marginTop:16, textAlign:"center" }}>
+              <img src={previewImage} alt="Preview" style={{ maxWidth:"100%", maxHeight:300, borderRadius:10, border:"1px solid #1e2d45" }} />
+            </div>
+          )}
+          {parseError && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginTop:16 }}>{parseError}</div>}
+        </div>
+      )}
+
+      {/* Preview & edit parsed items */}
+      {parsedItems.length > 0 && !imported && (
+        <div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
+            <div>
+              <div style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{parsedItems.length} items found</div>
+              <div style={{ color:"#475569", fontSize:12, marginTop:2 }}>Review, edit, or remove items before importing</div>
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={reset} style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 16px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>Cancel</button>
+              <button onClick={handleImport} style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:"8px 20px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                Import {parsedItems.length} Items
+              </button>
+            </div>
+          </div>
+
+          {/* Target section picker */}
+          <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Import to Section</div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+              <select value={targetSection} onChange={e => setTargetSection(e.target.value)}
+                style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", cursor:"pointer", flex:1, minWidth:180 }}>
+                <option value="">Auto-detect from data</option>
+                {sections.map(s => <option key={s} value={s}>{s}</option>)}
+                <option value="__new__">+ New section...</option>
+              </select>
+              {targetSection === "__new__" && (
+                <input value={newSectionName} onChange={e => setNewSectionName(e.target.value)} placeholder="Section name..."
+                  style={{ background:"#080c14", border:"1px solid #e2e8f0", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", flex:1, minWidth:160 }} />
+              )}
+            </div>
+            <div style={{ color:"#475569", fontSize:11, marginTop:6 }}>Items with a detected section will use that. Others go to the section selected here.</div>
+          </div>
+
+          {/* Items table */}
+          <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr 80px 80px 36px", background:"#080c14", padding:"8px 12px", gap:6 }}>
+              {["Item Name", "Vendor", "Unit", "Max", "Reorder", ""].map(h => (
+                <span key={h} style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
+              ))}
+            </div>
+            <div style={{ maxHeight:400, overflowY:"auto" }}>
+              {parsedItems.map((item, idx) => (
+                <div key={item.id} style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr 80px 80px 36px", padding:"8px 12px", gap:6, alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #080c14" }}>
+                  <input value={item.name} onChange={e => updateParsedItem(idx, "name", e.target.value)}
+                    style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:5, padding:"5px 8px", color:"#f1f5f9", fontSize:12, outline:"none", width:"100%", boxSizing:"border-box" }} />
+                  <input value={item.vendor} onChange={e => updateParsedItem(idx, "vendor", e.target.value)} placeholder="—"
+                    style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:5, padding:"5px 8px", color:"#f1f5f9", fontSize:12, outline:"none", width:"100%", boxSizing:"border-box" }} />
+                  <select value={item.order_unit} onChange={e => updateParsedItem(idx, "order_unit", e.target.value)}
+                    style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:5, padding:"5px 6px", color:"#f1f5f9", fontSize:11, outline:"none", cursor:"pointer" }}>
+                    {["Case","Each","Piece","Unit","Bag","Bundle","Gallon","Roll","Lbs"].map(u => <option key={u}>{u}</option>)}
+                  </select>
+                  <input type="number" value={item.max_stock} onChange={e => updateParsedItem(idx, "max_stock", parseInt(e.target.value)||0)} min={0}
+                    style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:5, padding:"5px 6px", color:"#f1f5f9", fontSize:12, outline:"none", width:"100%", boxSizing:"border-box", textAlign:"center" }} />
+                  <input type="number" value={item.reorder} onChange={e => updateParsedItem(idx, "reorder", parseInt(e.target.value)||0)} min={0}
+                    style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:5, padding:"5px 6px", color:"#f1f5f9", fontSize:12, outline:"none", width:"100%", boxSizing:"border-box", textAlign:"center" }} />
+                  <button onClick={() => removeParsedItem(idx)}
+                    style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:14 }}
+                    onMouseEnter={e => e.currentTarget.style.color="#ef4444"}
+                    onMouseLeave={e => e.currentTarget.style.color="#475569"}>✕</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
