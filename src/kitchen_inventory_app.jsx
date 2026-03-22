@@ -300,7 +300,7 @@ const DateWeekBadge = ({ orderDay = 3, style = {} }) => {
       <span style={{ color:"#94a3b8", fontSize:11, fontFamily:"'DM Mono',monospace" }}>
         {fmtDate(orderDate)}
       </span>
-      <span style={{ background:"#1e3a5f", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#93c5fd", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>
+      <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#a5b4fc", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>
         WK {getWeekNumber()}
       </span>
     </div>
@@ -941,7 +941,7 @@ export default function App() {
   if (!user) return <LoginScreen onLogin={u => { setUser(u); setGroup(u.group || "demo"); setLoginError(""); }} error={loginError} setError={setLoginError} />;
 
   return (
-    <div style={{ minHeight:"100vh", background:"#0f172a", fontFamily:"'DM Sans',sans-serif" }}>
+    <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <style>{`@media (max-width: 768px) { .edit-pencil { display: none !important; } } .edit-cell:hover .edit-pencil { display: inline !important; }`}</style>
       {/* ── Sidebar overlay ── */}
@@ -953,7 +953,7 @@ export default function App() {
       {/* ── Sidebar panel ── */}
       <div style={{
         position:"fixed", top:0, left:0, height:"100vh", width:260,
-        background:"#1e293b", borderRight:"1px solid #334155",
+        background:"#0f1a2e", borderRight:"1px solid #334155",
         transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
         transition:"transform 0.25s ease", zIndex:201,
         display:"flex", flexDirection:"column",
@@ -991,17 +991,17 @@ export default function App() {
                 <button key={item.key} onClick={() => { setView(item.key); setSidebarOpen(false); }}
                   style={{
                     width:"100%", display:"flex", alignItems:"center", gap:12,
-                    background: isActive ? "#0f172a" : "transparent",
+                    background: isActive ? "#080c14" : "transparent",
                     border:"none", borderRadius:10,
                     padding:"11px 14px", cursor:"pointer",
                     marginBottom:4, transition:"all 0.15s",
-                    borderLeft: isActive ? "3px solid #f97316" : "3px solid transparent",
+                    borderLeft: isActive ? "3px solid #94a3b8" : "3px solid transparent",
                   }}
-                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background="#0f172a"; }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background="#080c14"; }}
                   onMouseLeave={e => { if (!isActive) e.currentTarget.style.background="transparent"; }}>
                   <span style={{ fontSize:18, flexShrink:0 }}>{item.icon}</span>
                   <div style={{ textAlign:"left" }}>
-                    <div style={{ color: isActive ? "#f97316" : "#f1f5f9", fontSize:14, fontWeight: isActive ? 600 : 400 }}>{item.label}</div>
+                    <div style={{ color: isActive ? "#e2e8f0" : "#f1f5f9", fontSize:14, fontWeight: isActive ? 600 : 400 }}>{item.label}</div>
                     <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>
                   </div>
                 </button>
@@ -1020,8 +1020,8 @@ export default function App() {
               </span>
               <button onClick={() => pullFromSupabase(true)}
                 style={{ marginLeft:"auto", background:"none", border:"1px solid #334155", borderRadius:5, color:"#475569", cursor:"pointer", fontSize:11, padding:"2px 7px", fontFamily:"'DM Mono',monospace" }}
-                onMouseEnter={e=>{e.currentTarget.style.borderColor="#f97316";e.currentTarget.style.color="#f97316";}}
-                onMouseLeave={e=>{e.currentTarget.style.borderColor="#334155";e.currentTarget.style.color="#475569";}}>
+                onMouseEnter={e=>{e.currentTarget.style.borderColor="#94a3b8";e.currentTarget.style.color="#94a3b8";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor="#1e2d45";e.currentTarget.style.color="#475569";}}>
                 ↻
               </button>
             </div>
@@ -1029,19 +1029,19 @@ export default function App() {
           <button onClick={() => setUser(null)}
             style={{ width:"100%", background:"transparent", border:"1px solid #334155", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13, transition:"all 0.15s" }}
             onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#64748b"; }}>
+            onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#64748b"; }}>
             Sign Out
           </button>
         </div>
       </div>
 
       {/* ── Top header ── */}
-      <header style={{ background:"#1e293b", borderBottom:"1px solid #334155", padding:"0 16px", display:"flex", alignItems:"center", justifyContent:"space-between", height:60, position:"sticky", top:0, zIndex:101 }}>
+      <header style={{ background:"#0f1a2e", borderBottom:"1px solid #334155", padding:"0 16px", display:"flex", alignItems:"center", justifyContent:"space-between", height:60, position:"sticky", top:0, zIndex:101 }}>
         <div style={{ display:"flex", alignItems:"center", gap:12 }}>
           {/* Hamburger button */}
           <button onClick={() => setSidebarOpen(true)}
             style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4.5, justifyContent:"center" }}
-            onMouseEnter={e => e.currentTarget.style.background="#334155"}
+            onMouseEnter={e => e.currentTarget.style.background="#1e2d45"}
             onMouseLeave={e => e.currentTarget.style.background="none"}>
             <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
             <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
@@ -1126,7 +1126,7 @@ function MoeLogo({ size = "md" }) {
       {/* inner solid hex */}
       <polygon points={hex(hx, hy, iR)} fill="#f1f5f9"/>
       {/* center void */}
-      <circle cx={hx} cy={hy} r={iR * 0.45} fill="#0f172a" opacity="0.45"/>
+      <circle cx={hx} cy={hy} r={iR * 0.45} fill="#080c14" opacity="0.45"/>
       {/* wordmark */}
       <text x={tx} y={ty} fontFamily="'DM Sans',sans-serif" fontWeight="900" fontSize={fs} letterSpacing="-1" fill="#f1f5f9">
         M<tspan fill="#e2e8f0">OE</tspan>
@@ -1139,9 +1139,9 @@ function MoeLogo({ size = "md" }) {
 function NavBtn({ children, active, onClick, accent }) {
   return (
     <button onClick={onClick} style={{
-      background: active ? (accent ? "#f97316" : "#334155") : "transparent",
+      background: active ? (accent ? "#e2e8f0" : "#1e2d45") : "transparent",
       color: active ? "#fff" : "#94a3b8",
-      border: `1px solid ${active ? (accent ? "#f97316" : "#475569") : "#334155"}`,
+      border: `1px solid ${active ? (accent ? "#e2e8f0" : "#475569") : "#1e2d45"}`,
       padding:"5px 14px", borderRadius:7, cursor:"pointer", fontSize:13, fontWeight:500,
     }}>{children}</button>
   );
@@ -1158,7 +1158,7 @@ function LoginScreen({ onLogin, error, setError }) {
     else setError("Invalid email or password.");
   };
   return (
-    <div style={{ minHeight:"100vh", background:"#0f172a", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',sans-serif" }}>
+    <div style={{ minHeight:"100vh", background:"#080c14", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
       <div style={{ width:380 }}>
         <div style={{ textAlign:"center", marginBottom:32 }}>
@@ -1168,29 +1168,29 @@ function LoginScreen({ onLogin, error, setError }) {
           <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", letterSpacing:"2px", textAlign:"center", marginBottom:4 }}>MAKE ORDERING EASY</div>
           <p style={{ color:"#64748b", fontSize:14, margin:0 }}>Sign in to continue</p>
         </div>
-        <div style={{ background:"#1e293b", borderRadius:16, border:"1px solid #334155", padding:28 }}>
+        <div style={{ background:"#0f1a2e", borderRadius:16, border:"1px solid #334155", padding:28 }}>
           <div style={{ marginBottom:16 }}>
             <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:500, marginBottom:6, letterSpacing:"0.5px", textTransform:"uppercase" }}>Email</label>
             <input value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key==="Enter" && handleLogin()}
               placeholder="you@kitchen.com" type="email"
-              style={{ width:"100%", background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+              style={{ width:"100%", background:"#080c14", border:"1px solid #334155", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" }} />
           </div>
           <div style={{ marginBottom:20 }}>
             <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:500, marginBottom:6, letterSpacing:"0.5px", textTransform:"uppercase" }}>Password</label>
             <div style={{ position:"relative" }}>
               <input value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key==="Enter" && handleLogin()}
                 type={show ? "text" : "password"} placeholder="••••••••"
-                style={{ width:"100%", background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"10px 40px 10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+                style={{ width:"100%", background:"#080c14", border:"1px solid #334155", borderRadius:8, padding:"10px 40px 10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" }} />
               <button onClick={() => setShow(!show)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:14 }}>{show ? "🙈" : "👁"}</button>
             </div>
           </div>
           {error && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:16 }}>{error}</div>}
-          <button onClick={handleLogin} style={{ width:"100%", background:"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:8, padding:12, color:"#fff", fontSize:15, fontWeight:600, cursor:"pointer" }}>Sign In</button>
+          <button onClick={handleLogin} style={{ width:"100%", background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:12, color:"#080c14", fontSize:15, fontWeight:600, cursor:"pointer" }}>Sign In</button>
         </div>
-        <div style={{ marginTop:20, background:"#1e293b", borderRadius:12, border:"1px solid #334155", padding:"14px 18px" }}>
+        <div style={{ marginTop:20, background:"#0f1a2e", borderRadius:12, border:"1px solid #334155", padding:"14px 18px" }}>
           <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Demo Credentials</div>
           <div style={{ color:"#94a3b8", fontSize:12, lineHeight:2 }}>
-            <span style={{ color:"#f97316" }}>Owner:</span> owner@kitchen.com / owner123<br />
+            <span style={{ color:"#e2e8f0" }}>Owner:</span> owner@kitchen.com / owner123<br />
             <span style={{ color:"#22c55e" }}>Employee:</span> employee@kitchen.com / employee123
           </div>
         </div>
@@ -1233,14 +1233,14 @@ function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
       <div style={{ marginBottom:16, display:"flex", alignItems:"center", gap:10 }}>
         <div style={{ position:"relative", flex:1, maxWidth:320 }}>
           <select value={activeVendor} onChange={e => setActiveVendor(e.target.value)}
-            style={{ width:"100%", background:"#1e293b", border:"1px solid #f97316", borderRadius:10, padding:"10px 40px 10px 14px", color:"#f1f5f9", fontSize:14, fontWeight:600, fontFamily:"'DM Sans',sans-serif", outline:"none", cursor:"pointer", appearance:"none", WebkitAppearance:"none" }}>
+            style={{ width:"100%", background:"#0f1a2e", border:"1px solid #475569", borderRadius:10, padding:"10px 40px 10px 14px", color:"#f1f5f9", fontSize:14, fontWeight:600, fontFamily:"'DM Sans',sans-serif", outline:"none", cursor:"pointer", appearance:"none", WebkitAppearance:"none" }}>
             <option value="ALL">All Vendors</option>
             {vendorOrder.map(v => (
               <option key={v} value={v}>{v}</option>
             ))}
           </select>
           {/* Dropdown arrow */}
-          <div style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", pointerEvents:"none", color:"#f97316", fontSize:12 }}>▼</div>
+          <div style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", pointerEvents:"none", color:"#e2e8f0", fontSize:12 }}>▼</div>
         </div>
         {/* Urgent badge */}
         {urgentItems.length > 0 && activeVendor === "ALL" && (
@@ -1279,37 +1279,37 @@ function EmployeeView({ inventory, stock, updateStock, orderDay = 3 }) {
         return (
           <div key={vendor} style={{ marginBottom:20 }}>
             {/* Vendor header */}
-            <div style={{ background:"#0f172a", border:`1px solid ${isNoVendor?"#334155":"#f97316"}`, borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ background:"#080c14", border:`1px solid ${isNoVendor?"#1e2d45":"#e2e8f0"}`, borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"10px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
               <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                 <span style={{ fontSize:15 }}>{isNoVendor?"📋":"📦"}</span>
-                <span style={{ color:isNoVendor?"#64748b":"#f97316", fontSize:12, fontWeight:700, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{vendor}</span>
-                <span style={{ color:"#334155", fontSize:11 }}>· {vendorItemCount} items</span>
+                <span style={{ color:isNoVendor?"#64748b":"#e2e8f0", fontSize:12, fontWeight:700, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{vendor}</span>
+                <span style={{ color:"#1e2d45", fontSize:11 }}>· {vendorItemCount} items</span>
               </div>
               {vendorUrgent > 0 && <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"2px 8px", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{vendorUrgent} to order</span>}
             </div>
             {/* Sections inside vendor */}
-            <div style={{ border:`1px solid ${isNoVendor?"#334155":"#f97316"}`, borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
+            <div style={{ border:`1px solid ${isNoVendor?"#1e2d45":"#e2e8f0"}`, borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
               {Object.entries(sections).map(([secName, items], secIdx) => (
                 <div key={secName}>
-                  <div style={{ background:"#162032", padding:"5px 16px", borderTop: secIdx>0?"1px solid #0f172a":"none" }}>
+                  <div style={{ background:"#091018", padding:"5px 16px", borderTop: secIdx>0?"1px solid #0f172a":"none" }}>
                     <span style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"1px", textTransform:"uppercase" }}>{secName.replace(/[^\w\s\-&]/g,"").trim()}</span>
                   </div>
                   {items.map((item, idx) => {
                     const s = stock[item.id] ?? 0;
                     const status = getStatus(item, s);
                     return (
-                      <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 120px 80px 100px", alignItems:"center", padding:"10px 16px", borderBottom:idx<items.length-1?"1px solid #0f172a":"none", background:idx%2===0?"#1e293b":"#172033" }}>
+                      <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 120px 80px 100px", alignItems:"center", padding:"10px 16px", borderBottom:idx<items.length-1?"1px solid #0f172a":"none", background:idx%2===0?"#0f1a2e":"#0a1220" }}>
                         <div>
                           <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:500 }}>{item.name}</div>
                           <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:1 }}>{item.order_unit} · Max: {item.max_stock}</div>
                         </div>
                         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                          <button onClick={() => updateStock(item.id, Math.max(0,s-1))} style={{ width:26, height:26, background:"#334155", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
-                          <input type="number" value={s} min={0} onChange={e => updateStock(item.id, e.target.value)} onFocus={e => e.target.select()} style={{ width:48, background:"#0f172a", border:"1px solid #22c55e", borderRadius:6, padding:"4px 6px", color:"#4ade80", fontSize:13, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
-                          <button onClick={() => updateStock(item.id, s+1)} style={{ width:26, height:26, background:"#334155", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+                          <button onClick={() => updateStock(item.id, Math.max(0,s-1))} style={{ width:26, height:26, background:"#1e2d45", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+                          <input type="number" value={s} min={0} onChange={e => updateStock(item.id, e.target.value)} onFocus={e => e.target.select()} style={{ width:48, background:"#080c14", border:"1px solid #22c55e", borderRadius:6, padding:"4px 6px", color:"#4ade80", fontSize:13, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
+                          <button onClick={() => updateStock(item.id, s+1)} style={{ width:26, height:26, background:"#1e2d45", border:"none", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
                         </div>
                         <div style={{ textAlign:"center" }}>
-                          {calcOrderQty(item,s) > 0 ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"3px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>Order {calcOrderQty(item,s)}</span> : <span style={{ color:"#334155", fontSize:12 }}>—</span>}
+                          {calcOrderQty(item,s) > 0 ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"3px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>Order {calcOrderQty(item,s)}</span> : <span style={{ color:"#1e2d45", fontSize:12 }}>—</span>}
                         </div>
                         <div style={{ textAlign:"right" }}>
                           <span style={{ background:status.bg, color:status.color, borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>{status.label}</span>
@@ -1337,19 +1337,19 @@ function EditableCell({ value, onSave, type="text", width=80 }) {
   if (!editing) return (
     <div onClick={open} title="Click to edit"
       className="edit-cell" style={{ cursor:"text", color:"#e2e8f0", fontSize:12, padding:"4px 6px", borderRadius:5, border:"1px solid transparent", display:"inline-flex", alignItems:"center", gap:4, minWidth:width, transition:"all 0.12s" }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.background="#1a2540"; }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.background="#0d1a2e"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor="transparent"; e.currentTarget.style.background="transparent"; }}>
       <span style={{ flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
         {value!==""&&value!==null&&value!==undefined ? String(value) : <span style={{ color:"#475569", fontStyle:"italic" }}>—</span>}
       </span>
-      <span className="edit-pencil" style={{ color:"#f97316", fontSize:9, opacity:0.7, flexShrink:0 }}>✏</span>
+      <span className="edit-pencil" style={{ color:"#e2e8f0", fontSize:9, opacity:0.7, flexShrink:0 }}>✏</span>
     </div>
   );
   return (
     <input autoFocus value={draft} type={type} min={type==="number"?0:undefined}
       onChange={e => setDraft(e.target.value)} onBlur={commit}
       onKeyDown={e => { if(e.key==="Enter")commit(); if(e.key==="Escape")cancel(); }}
-      style={{ width, background:"#0f172a", border:"1px solid #f97316", borderRadius:5, padding:"4px 7px", color:"#f1f5f9", fontSize:12, outline:"none", fontFamily:"'DM Sans',sans-serif", boxSizing:"border-box" }} />
+      style={{ width, background:"#080c14", border:"1px solid #475569", borderRadius:5, padding:"4px 7px", color:"#f1f5f9", fontSize:12, outline:"none", fontFamily:"'DM Sans',sans-serif", boxSizing:"border-box" }} />
   );
 }
 
@@ -1360,15 +1360,15 @@ function OrderUnitSelect({ value, onSave }) {
   if (!editing) return (
     <div onClick={() => setEditing(true)}
       style={{ cursor:"pointer", color:"#e2e8f0", fontSize:12, padding:"4px 6px", borderRadius:5, border:"1px solid transparent", display:"inline-flex", alignItems:"center", gap:4, minWidth:80, transition:"all 0.12s" }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.background="#1a2540"; }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.background="#0d1a2e"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor="transparent"; e.currentTarget.style.background="transparent"; }}>
       <span style={{ flex:1 }}>{value||"—"}</span>
-      <span className="edit-pencil" style={{ color:"#f97316", fontSize:9, opacity:0.7 }}>✏</span>
+      <span className="edit-pencil" style={{ color:"#e2e8f0", fontSize:9, opacity:0.7 }}>✏</span>
     </div>
   );
   return (
     <select autoFocus value={value} onChange={e => { onSave(e.target.value); setEditing(false); }} onBlur={() => setEditing(false)}
-      style={{ background:"#0f172a", border:"1px solid #f97316", borderRadius:5, padding:"4px 7px", color:"#f1f5f9", fontSize:12, outline:"none" }}>
+      style={{ background:"#080c14", border:"1px solid #475569", borderRadius:5, padding:"4px 7px", color:"#f1f5f9", fontSize:12, outline:"none" }}>
       {ORDER_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
     </select>
   );
@@ -1387,18 +1387,18 @@ function EditableSectionHeader({ label, onSave, onDelete }) {
     else { setConfirm(true); setTimeout(() => setConfirm(false), 2500); }
   };
   return (
-    <div style={{ background:"#0f172a", padding:"6px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none", display:"flex", alignItems:"center", gap:8 }}>
+    <div style={{ background:"#080c14", padding:"6px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none", display:"flex", alignItems:"center", gap:8 }}>
       {editing ? (
         <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={e => { if(e.key==="Enter")commit(); if(e.key==="Escape")cancel(); }}
-          style={{ background:"transparent", border:"none", borderBottom:"1px solid #f97316", color:"#f97316", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", outline:"none", width:220, padding:"2px 0" }} />
+          style={{ background:"transparent", border:"none", borderBottom:"1px solid #475569", color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", outline:"none", width:220, padding:"2px 0" }} />
       ) : (
-        <span style={{ color:"#f97316", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", flex:1 }}>{label}</span>
+        <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", flex:1 }}>{label}</span>
       )}
       {!editing && (<>
         <button onClick={open} title="Rename section"
           style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:11, padding:"2px 6px", borderRadius:4, lineHeight:1, transition:"color 0.15s" }}
-          onMouseEnter={e => e.currentTarget.style.color="#f97316"}
+          onMouseEnter={e => e.currentTarget.style.color="#e2e8f0"}
           onMouseLeave={e => e.currentTarget.style.color="#475569"}>✏ rename</button>
         <button onClick={handleDelete} title={confirm ? "Click again to confirm" : "Delete section"}
           style={{ background: confirm ? "#7f1d1d" : "none", border:`1px solid ${confirm ? "#ef4444" : "transparent"}`, color: confirm ? "#fca5a5" : "#475569", cursor:"pointer", fontSize:11, padding:"2px 8px", borderRadius:4, lineHeight:1.4, transition:"all 0.15s" }}
@@ -1421,8 +1421,8 @@ function AddSectionButton({ onAdd }) {
   if (!open) return (
     <button onClick={() => setOpen(true)}
       style={{ background:"none", border:"1px dashed #334155", borderRadius:8, color:"#475569", cursor:"pointer", fontSize:13, padding:"7px 16px", display:"flex", alignItems:"center", gap:6, transition:"all 0.15s" }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.color="#f97316"; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#475569"; }}>
+      onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
       ＋ Add Section
     </button>
   );
@@ -1431,9 +1431,9 @@ function AddSectionButton({ onAdd }) {
       <input autoFocus value={name} onChange={e => setName(e.target.value)}
         placeholder="Section name..."
         onKeyDown={e => { if(e.key==="Enter")submit(); if(e.key==="Escape"){setOpen(false);setName("");} }}
-        style={{ background:"#1e293b", border:"1px solid #f97316", borderRadius:7, padding:"7px 12px", color:"#f1f5f9", fontSize:13, outline:"none", width:180 }} />
+        style={{ background:"#0f1a2e", border:"1px solid #475569", borderRadius:7, padding:"7px 12px", color:"#f1f5f9", fontSize:13, outline:"none", width:180 }} />
       <button onClick={submit}
-        style={{ background:"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:7, padding:"7px 14px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+        style={{ background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:7, padding:"7px 14px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer" }}>
         Add
       </button>
       <button onClick={() => { setOpen(false); setName(""); }}
@@ -1502,23 +1502,23 @@ function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem
         <div key={section.section} style={{ marginBottom:12 }}>
           <EditableSectionHeader label={section.section} onSave={newName => saveSectionName(section._original || section.section, newName)} onDelete={() => deleteSection(section.section)} />
           <div style={{ maxHeight:400, overflowY:"auto", overflowX:"auto", position:"relative" }}>
-            <table style={{ width:"100%", tableLayout:"fixed", borderCollapse:"collapse", background:"#1e293b", border:"1px solid #334155", borderTop:"none", borderRadius:"0 0 12px 12px" }}>
+            <table style={{ width:"100%", tableLayout:"fixed", borderCollapse:"collapse", background:"#0f1a2e", border:"1px solid #334155", borderTop:"none", borderRadius:"0 0 12px 12px" }}>
               <thead>
-                <tr style={{ background:"#0f172a" }}>
+                <tr style={{ background:"#080c14" }}>
                   {[
-                    ["Item Name",     "#f97316", "left",   170, true],
-                    ["Order Unit",    "#f97316", "left",    90, false],
-                    ["Units/Pkg",     "#f97316", "center",  60, false],
-                    ["Supplier",      "#f97316", "left",   110, false],
-                    ["Max Stock",     "#f97316", "center",  75, false],
-                    ["Reorder Pt",    "#f97316", "center",  75, false],
+                    ["Item Name",     "#e2e8f0", "left",   170, true],
+                    ["Order Unit",    "#e2e8f0", "left",    90, false],
+                    ["Units/Pkg",     "#e2e8f0", "center",  60, false],
+                    ["Supplier",      "#e2e8f0", "left",   110, false],
+                    ["Max Stock",     "#e2e8f0", "center",  75, false],
+                    ["Reorder Pt",    "#e2e8f0", "center",  75, false],
                     ["Current Stock", "#475569", "center",  85, false],
                     ["Units Needed",  "#475569", "center",  85, false],
                     ["Order Qty",     "#475569", "center",  80, false],
                     ["Status",        "#475569", "center",  90, false],
                   ].map(([h, color, align, w, stickyLeft]) => (
-                    <th key={h} style={{ position:"sticky", top:0, left:stickyLeft?0:undefined, zIndex:stickyLeft?4:2, background:"#0f172a", color, fontSize:10, fontWeight:600, padding:"8px 10px", textAlign:align, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase", whiteSpace:"nowrap", minWidth:w, width:w, boxShadow:stickyLeft?"2px 0 8px rgba(0,0,0,0.4)":undefined }}>
-                      <>{h}{color==="#f97316"?<span className="edit-pencil"> ✏</span>:""}</>
+                    <th key={h} style={{ position:"sticky", top:0, left:stickyLeft?0:undefined, zIndex:stickyLeft?4:2, background:"#080c14", color, fontSize:10, fontWeight:600, padding:"8px 10px", textAlign:align, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase", whiteSpace:"nowrap", minWidth:w, width:w, boxShadow:stickyLeft?"2px 0 8px rgba(0,0,0,0.4)":undefined }}>
+                      <>{h}{color==="#e2e8f0"?<span className="edit-pencil"> ✏</span>:""}</>
                     </th>
                   ))}
                 </tr>
@@ -1529,7 +1529,7 @@ function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem
                   const needed   = Math.max(0, item.max_stock - s);
                   const orderQty = calcOrderQty(item, s);
                   const status   = getStatus(item, s);
-                  const rowBg    = idx%2===0 ? "#1e293b" : "#172033";
+                  const rowBg    = idx%2===0 ? "#0f1a2e" : "#0a1220";
                   return (
                     <HoverRow key={item.id} bg={rowBg} onRemove={() => removeItem(item.id, section.section)}>
                       <td style={{ padding:"5px 8px", position:"sticky", left:0, zIndex:1, background:rowBg, boxShadow:"2px 0 8px rgba(0,0,0,0.4)" }}>
@@ -1559,7 +1559,7 @@ function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem
                       <td style={{ padding:"5px 10px", textAlign:"center" }}>
                         {orderQty>0
                           ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:5, padding:"2px 8px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{orderQty}</span>
-                          : <span style={{ color:"#334155", fontFamily:"'DM Mono',monospace", fontSize:12 }}>0</span>}
+                          : <span style={{ color:"#1e2d45", fontFamily:"'DM Mono',monospace", fontSize:12 }}>0</span>}
                       </td>
                       <td style={{ padding:"5px 10px", textAlign:"center" }}>
                         <span style={{ background:status.bg, color:status.color, borderRadius:5, padding:"2px 8px", fontSize:11, fontWeight:600, fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap" }}>{status.label}</span>
@@ -1573,8 +1573,8 @@ function BackendView({ inventory, stock, saveItemField, saveSectionName, addItem
                   <td colSpan={10} style={{ padding:"6px 10px", borderTop:"1px solid #0f172a" }}>
                     <button onClick={() => addItem(section.section)}
                       style={{ background:"none", border:"1px dashed #334155", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:12, padding:"5px 14px", display:"flex", alignItems:"center", gap:6, transition:"all 0.15s" }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.color="#f97316"; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#475569"; }}>
+                      onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
                       <span style={{ fontSize:14, lineHeight:1 }}>＋</span> Add Item
                     </button>
                   </td>
@@ -1685,7 +1685,7 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
               const nextOrder = vd ? fmtDate(getWeekdayDate(new Date(), vd.orderDay)) : null;
               return (
                 <button key={v} onClick={() => setActiveVendor(v)}
-                  style={{ padding:"8px 16px", borderRadius:10, border:`1px solid ${isActive?"#f97316":"#334155"}`, background:isActive?"#f97316":"#1e293b", color:isActive?"#fff":"#94a3b8", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap", flexShrink:0 }}>
+                  style={{ padding:"8px 16px", borderRadius:10, border:`1px solid ${isActive?"#e2e8f0":"#1e2d45"}`, background:isActive?"#e2e8f0":"#0f1a2e", color:isActive?"#080c14":"#94a3b8", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap", flexShrink:0 }}>
                   {v === "ALL" ? "All Vendors" : v}
                   {nextOrder && !isActive && <span style={{ display:"block", fontSize:9, color:"#475569", marginTop:1 }}>orders {nextOrder}</span>}
                 </button>
@@ -1698,20 +1698,20 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
         <div>
           <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Order List{activeVendor !== "ALL" ? ` — ${activeVendor}` : ""}</h2>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:4, flexWrap:"wrap" }}>
-            <span style={{ background:"#1e3a5f", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#93c5fd", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>WK {wk}</span>
+            <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#a5b4fc", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>WK {wk}</span>
             <span style={{ color:"#64748b", fontSize:12 }}>Order: <span style={{ color:"#94a3b8" }}>{orderDate}</span></span>
             <span style={{ color:"#64748b", fontSize:12 }}>Receive: <span style={{ color:"#94a3b8" }}>{receiveDate}</span></span>
             {order?.saved && <span style={{ background:"#14532d", border:"1px solid #16a34a", borderRadius:6, padding:"2px 8px", color:"#4ade80", fontSize:11, fontFamily:"'DM Mono',monospace" }}>✓ Saved</span>}
-            {order?.submitted && <span style={{ background:"#1e3a5f", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#93c5fd", fontSize:11, fontFamily:"'DM Mono',monospace" }}>🚀 Submitted</span>}
+            {order?.submitted && <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#a5b4fc", fontSize:11, fontFamily:"'DM Mono',monospace" }}>🚀 Submitted</span>}
           </div>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-          <div style={{ background:"#1e3a5f", border:"1px solid #1e40af", borderRadius:8, padding:"6px 14px", color:"#93c5fd", fontSize:13, fontWeight:600 }}>
+          <div style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:8, padding:"6px 14px", color:"#a5b4fc", fontSize:13, fontWeight:600 }}>
             {activeLines.length} item{activeLines.length!==1?"s":""} to order
           </div>
           {!order?.submitted ? (
             <button onClick={handleSubmit} disabled={submitting || activeLines.length === 0}
-              style={{ background: activeLines.length === 0 ? "#1e293b" : "linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:8, padding:"8px 20px", color: activeLines.length === 0 ? "#475569" : "#fff", fontSize:13, fontWeight:700, cursor: activeLines.length === 0 ? "not-allowed" : "pointer", opacity: submitting ? 0.7 : 1, display:"flex", alignItems:"center", gap:6 }}>
+              style={{ background: activeLines.length === 0 ? "#0f1a2e" : "linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:"8px 20px", color: activeLines.length === 0 ? "#475569" : "#0f172a", fontSize:13, fontWeight:700, cursor: activeLines.length === 0 ? "not-allowed" : "pointer", opacity: submitting ? 0.7 : 1, display:"flex", alignItems:"center", gap:6 }}>
               {submitting ? "Submitting..." : "🚀 Submit Order"}
             </button>
           ) : (
@@ -1738,7 +1738,7 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
 
       {/* All stocked up */}
       {!order?.submitted && activeLines.length === 0 && (
-        <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}>
+        <div style={{ background:"#0f1a2e", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}>
           <div style={{ fontSize:40, marginBottom:12 }}>✅</div>
           <div style={{ color:"#4ade80", fontSize:18, fontWeight:700 }}>All stocked up!</div>
           <div style={{ color:"#64748b", fontSize:14, marginTop:6 }}>No items need to be ordered this week.</div>
@@ -1748,24 +1748,24 @@ function OrderView({ inventory, stock, orders, currentWeekKey, saveOrder, settin
       {/* Order items by supplier */}
       {!order?.submitted && activeLines.length > 0 && Object.entries(bySupplier).map(([supplier, items]) => (
         <div key={supplier} style={{ marginBottom:16 }}>
-          <div style={{ background:"#0f172a", padding:"8px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div style={{ background:"#080c14", padding:"8px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>
-              <span style={{ color:"#f97316", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>📦 {supplier}</span>
+              <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>📦 {supplier}</span>
               <span style={{ color:"#475569", fontSize:11, marginLeft:10 }}>{items.length} item{items.length!==1?"s":""}</span>
             </div>
             <button
               onClick={() => printSupplierPDF({ supplier, items, weekKey:`WK ${wk}`, orderDate, receiveDate })}
-              style={{ background:"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:6, padding:"5px 12px", color:"#fff", fontSize:11, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:5 }}>
+              style={{ background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:6, padding:"5px 12px", color:"#080c14", fontSize:11, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:5 }}>
               🖨 PDF
             </button>
           </div>
-          <div style={{ background:"#1e293b", border:"1px solid #334155", borderTop:"none", borderRadius:"0 0 10px 10px", overflow:"hidden" }}>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 160px", background:"#0f172a", padding:"7px 16px", borderBottom:"1px solid #334155" }}>
+          <div style={{ background:"#0f1a2e", border:"1px solid #334155", borderTop:"none", borderRadius:"0 0 10px 10px", overflow:"hidden" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 160px", background:"#080c14", padding:"7px 16px", borderBottom:"1px solid #334155" }}>
               <span style={{ color:"#475569", fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Item</span>
               <span style={{ color:"#475569", fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Qty to Order</span>
             </div>
             {items.map((item, idx) => (
-              <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 160px", alignItems:"center", padding:"10px 16px", background:idx%2===0?"#1e293b":"#172033", borderBottom:idx<items.length-1?"1px solid #0f172a":"none" }}>
+              <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 160px", alignItems:"center", padding:"10px 16px", background:idx%2===0?"#0f1a2e":"#0a1220", borderBottom:idx<items.length-1?"1px solid #0f172a":"none" }}>
                 <div>
                   <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:500 }}>{item.name}</div>
                   <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:1 }}>{String(item.section||"").replace(/[^\w\s]/g,"").trim()}</div>
@@ -1816,17 +1816,17 @@ function HistoryView({ orders }) {
         </div>
         {Object.entries(bySupplier).map(([supplier, items]) => (
           <div key={supplier} style={{ marginBottom:16 }}>
-            <div style={{ background:"#0f172a", padding:"8px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-              <span style={{ color:"#f97316", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>📦 {supplier}</span>
+            <div style={{ background:"#080c14", padding:"8px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>📦 {supplier}</span>
               <button
                 onClick={() => printSupplierPDF({ supplier, items, weekKey:view.weekKey, orderDate, receiveDate })}
-                style={{ background:"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:6, padding:"5px 12px", color:"#fff", fontSize:11, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:5 }}>
+                style={{ background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:6, padding:"5px 12px", color:"#080c14", fontSize:11, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:5 }}>
                 🖨 PDF
               </button>
             </div>
-            <div style={{ background:"#1e293b", border:"1px solid #334155", borderTop:"none", borderRadius:"0 0 10px 10px", overflow:"hidden" }}>
+            <div style={{ background:"#0f1a2e", border:"1px solid #334155", borderTop:"none", borderRadius:"0 0 10px 10px", overflow:"hidden" }}>
               {items.map((item, idx) => (
-                <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 160px", alignItems:"center", padding:"10px 16px", background:idx%2===0?"#1e293b":"#172033", borderBottom:idx<items.length-1?"1px solid #0f172a":"none" }}>
+                <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 160px", alignItems:"center", padding:"10px 16px", background:idx%2===0?"#0f1a2e":"#0a1220", borderBottom:idx<items.length-1?"1px solid #0f172a":"none" }}>
                   <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:500 }}>{item.name}</div>
                   <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:7, padding:"4px 10px", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>
                     {item.qty} {item.order_unit}
@@ -1848,12 +1848,12 @@ function HistoryView({ orders }) {
       </div>
       <div style={{ marginBottom:16 }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by week or date..."
-          style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:8, padding:"9px 14px", color:"#f1f5f9", fontSize:13, outline:"none", width:"100%", boxSizing:"border-box" }}
-          onFocus={e => e.target.style.borderColor="#f97316"}
-          onBlur={e => e.target.style.borderColor="#334155"} />
+          style={{ background:"#0f1a2e", border:"1px solid #334155", borderRadius:8, padding:"9px 14px", color:"#f1f5f9", fontSize:13, outline:"none", width:"100%", boxSizing:"border-box" }}
+          onFocus={e => e.target.style.borderColor="#e2e8f0"}
+          onBlur={e => e.target.style.borderColor="#1e2d45"} />
       </div>
       {filtered.length === 0 ? (
-        <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}>
+        <div style={{ background:"#0f1a2e", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}>
           <div style={{ fontSize:36, marginBottom:12 }}>📋</div>
           <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No saved orders yet</div>
           <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Save an order from the Order List tab to see it here</div>
@@ -1869,13 +1869,13 @@ function HistoryView({ orders }) {
               bySupplier[sup].push(item);
             });
             return (
-              <div key={o.weekKey} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:10, overflow:"hidden", transition:"border-color 0.15s" }}
-                onMouseEnter={e => e.currentTarget.style.borderColor="#f97316"}
-                onMouseLeave={e => e.currentTarget.style.borderColor="#334155"}>
+              <div key={o.weekKey} style={{ background:"#0f1a2e", border:"1px solid #334155", borderRadius:10, overflow:"hidden", transition:"border-color 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.borderColor="#e2e8f0"}
+                onMouseLeave={e => e.currentTarget.style.borderColor="#1e2d45"}>
                 <div onClick={() => setSelected(o.weekKey)} style={{ padding:"14px 18px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <div>
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                      <span style={{ background:"#1e3a5f", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#93c5fd", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{o.weekKey}</span>
+                      <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#a5b4fc", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{o.weekKey}</span>
                     </div>
                     <div style={{ color:"#94a3b8", fontSize:12 }}>Order: {fmtDate(o.orderDate)} · Receive: {fmtDate(o.receiveDate)}</div>
                   </div>
@@ -1889,9 +1889,9 @@ function HistoryView({ orders }) {
                     {Object.entries(bySupplier).map(([supplier, items]) => (
                       <button key={supplier}
                         onClick={(e) => { e.stopPropagation(); printSupplierPDF({ supplier, items, weekKey:o.weekKey, orderDate:fmtDate(o.orderDate), receiveDate:fmtDate(o.receiveDate) }); }}
-                        style={{ background:"#0f172a", border:"1px solid #334155", borderRadius:6, padding:"4px 10px", color:"#94a3b8", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", gap:4, transition:"all 0.15s" }}
-                        onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.color="#f97316"; }}
-                        onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#94a3b8"; }}>
+                        style={{ background:"#080c14", border:"1px solid #334155", borderRadius:6, padding:"4px 10px", color:"#94a3b8", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", gap:4, transition:"all 0.15s" }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#94a3b8"; }}>
                         🖨 {supplier} ({items.length})
                       </button>
                     ))}
@@ -1971,7 +1971,7 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orde
   const barColor = (avg, peak) => {
     const ratio = peak > 0 ? avg / peak : 1;
     if (ratio > 0.8) return "#ef4444";
-    if (ratio > 0.5) return "#f97316";
+    if (ratio > 0.5) return "#e2e8f0";
     return "#22c55e";
   };
 
@@ -1979,8 +1979,8 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orde
   const Badge = ({ bg, color, children }) => <span style={{ background:bg, color, borderRadius:5, padding:"2px 7px", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap" }}>{children}</span>;
   const TabPill = ({ id, label, count }) => (
     <button onClick={() => setActiveTab(id)} style={{
-      background: activeTab===id ? "#f97316" : "transparent",
-      border: `1px solid ${activeTab===id ? "#f97316" : "#334155"}`,
+      background: activeTab===id ? "#e2e8f0" : "transparent",
+      border: `1px solid ${activeTab===id ? "#e2e8f0" : "#1e2d45"}`,
       borderRadius: 7, padding: "5px 16px", color: activeTab===id ? "#fff" : "#64748b",
       fontSize: 13, fontWeight: activeTab===id ? 600 : 400, cursor:"pointer", fontFamily:"'DM Sans',sans-serif",
       display:"flex", alignItems:"center", gap:6,
@@ -1996,13 +1996,13 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orde
         <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Usage Tracking</h2>
         <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Compare stock levels week over week</p>
       </div>
-      <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}>
+      <div style={{ background:"#0f1a2e", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}>
         <div style={{ fontSize:40, marginBottom:16 }}>📊</div>
         <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:600, marginBottom:8 }}>Not enough data yet</div>
         <div style={{ color:"#64748b", fontSize:13, maxWidth:380, margin:"0 auto", lineHeight:1.7 }}>
           MOE needs at least 2 weeks of stock counts to calculate usage. Keep entering stock levels each week and this view will fill in automatically.
         </div>
-        <div style={{ marginTop:24, background:"#0f172a", borderRadius:8, padding:"10px 20px", display:"inline-block" }}>
+        <div style={{ marginTop:24, background:"#080c14", borderRadius:8, padding:"10px 20px", display:"inline-block" }}>
           <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>
             {weeks.length === 0 ? "No snapshots yet" : `${weeks.length} snapshot recorded — need 2+`}
           </span>
@@ -2028,13 +2028,13 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orde
         <>
           <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items or sections..."
-              style={{ flex:1, minWidth:200, background:"#1e293b", border:"1px solid #334155", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none" }}
-              onFocus={e => e.target.style.borderColor="#f97316"}
-              onBlur={e => e.target.style.borderColor="#334155"} />
+              style={{ flex:1, minWidth:200, background:"#0f1a2e", border:"1px solid #334155", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none" }}
+              onFocus={e => e.target.style.borderColor="#e2e8f0"}
+              onBlur={e => e.target.style.borderColor="#1e2d45"} />
             {[["usage","Highest use"],["sitting","Lowest use"],["name","Name"]].map(([k,l]) => (
               <button key={k} onClick={() => setSortBy(k)} style={{
-                background: sortBy===k ? "#334155" : "transparent",
-                border:`1px solid ${sortBy===k ? "#475569" : "#334155"}`,
+                background: sortBy===k ? "#1e2d45" : "transparent",
+                border:`1px solid ${sortBy===k ? "#475569" : "#1e2d45"}`,
                 borderRadius:7, padding:"7px 14px", color: sortBy===k ? "#f1f5f9" : "#64748b",
                 fontSize:12, cursor:"pointer", fontFamily:"'DM Sans',sans-serif",
               }}>{l}</button>
@@ -2043,7 +2043,7 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orde
 
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:10, marginBottom:20 }}>
             {[
-              { label:"Weeks tracked",   value:weeks.length,                                                               color:"#93c5fd", bg:"#1e3a5f", border:"#1e40af" },
+              { label:"Weeks tracked",   value:weeks.length,                                                               color:"#a5b4fc", bg:"#0f2040", border:"#1a3070" },
               { label:"Items tracked",   value:rows.length,                                                                color:"#4ade80", bg:"#14532d", border:"#16a34a" },
               { label:"Not moving",      value:sittingItems.length,                                                        color:"#fbbf24", bg:"#422006", border:"#d97706" },
               { label:"Par suggestions", value:activeSuggestions.length,                                                   color:"#fca5a5", bg:"#7f1d1d", border:"#b91c1c" },
@@ -2056,18 +2056,18 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orde
           </div>
 
           {filtered.length === 0 ? (
-            <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:10, padding:32, textAlign:"center", color:"#475569" }}>No items match</div>
+            <div style={{ background:"#0f1a2e", border:"1px solid #334155", borderRadius:10, padding:32, textAlign:"center", color:"#475569" }}>No items match</div>
           ) : (
-            <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, overflow:"hidden" }}>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 70px 70px 70px 80px 110px", background:"#0f172a", padding:"8px 16px", gap:8 }}>
-                {[["Item","#475569"],["Avg/wk","#475569"],["Peak","#475569"],["Ordered","#f97316"],["Min","#475569"],["Trend","#475569"]].map(([h,c]) => (
+            <div style={{ background:"#0f1a2e", border:"1px solid #334155", borderRadius:12, overflow:"hidden" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 70px 70px 70px 80px 110px", background:"#080c14", padding:"8px 16px", gap:8 }}>
+                {[["Item","#475569"],["Avg/wk","#475569"],["Peak","#475569"],["Ordered","#e2e8f0"],["Min","#475569"],["Trend","#475569"]].map(([h,c]) => (
                   <span key={h} style={{ color:c, fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
                 ))}
               </div>
               {filtered.map((row, idx) => {
                 const pct = row.peak > 0 ? Math.round((row.avg / row.peak) * 100) : 0;
                 return (
-                  <div key={row.id} style={{ display:"grid", gridTemplateColumns:"1fr 70px 70px 70px 80px 110px", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#1e293b":"#172033", borderTop:"1px solid #0f172a" }}>
+                  <div key={row.id} style={{ display:"grid", gridTemplateColumns:"1fr 70px 70px 70px 80px 110px", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #0f172a" }}>
                     <div>
                       <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:500 }}>{row.name}</div>
                       <Sub>{String(row.section||"").replace(/[^\w\s]/g,"").trim()} · {row.weeks}wk</Sub>
@@ -2077,7 +2077,7 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orde
                     <span style={{ color:"#22c55e", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{row.ordered > 0 ? row.ordered : "—"}</span>
                     <span style={{ color:"#94a3b8", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{row.min}</span>
                     <div>
-                      <div style={{ background:"#0f172a", borderRadius:4, height:6, overflow:"hidden" }}>
+                      <div style={{ background:"#080c14", borderRadius:4, height:6, overflow:"hidden" }}>
                         <div style={{ width:`${pct}%`, height:"100%", background:barColor(row.avg,row.peak), borderRadius:4 }} />
                       </div>
                       <Sub style={{ marginTop:3 }}>{pct}% of peak</Sub>
@@ -2106,13 +2106,13 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orde
 
       {activeTab === "suggestions" && (
         <>
-          <div style={{ background:"#0f172a", border:"1px solid #334155", borderRadius:10, padding:"12px 16px", marginBottom:20 }}>
-            <span style={{ color:"#93c5fd", fontSize:12 }}>How it works: </span>
+          <div style={{ background:"#080c14", border:"1px solid #334155", borderRadius:10, padding:"12px 16px", marginBottom:20 }}>
+            <span style={{ color:"#a5b4fc", fontSize:12 }}>How it works: </span>
             <span style={{ color:"#64748b", fontSize:12 }}>MOE analyzes peak weekly usage and suggests a reorder point with a 20% safety buffer. Max stock is set to 2.5× average usage. Requires 3+ weeks of data per item.</span>
           </div>
 
           {activeSuggestions.length === 0 ? (
-            <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}>
+            <div style={{ background:"#0f1a2e", border:"1px solid #334155", borderRadius:12, padding:48, textAlign:"center" }}>
               <div style={{ fontSize:36, marginBottom:12 }}>✅</div>
               <div style={{ color:"#4ade80", fontSize:16, fontWeight:600 }}>All par levels look good</div>
               <div style={{ color:"#64748b", fontSize:13, marginTop:6 }}>
@@ -2124,7 +2124,7 @@ function UsageView({ inventory, usageLog, computeUsage, applyParSuggestion, orde
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
               {activeSuggestions.map(s => (
-                <div key={s.id} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:10, padding:"14px 16px", display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
+                <div key={s.id} style={{ background:"#0f1a2e", border:"1px solid #334155", borderRadius:10, padding:"14px 16px", display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
                   <div style={{ flex:1, minWidth:180 }}>
                     <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:600, marginBottom:4 }}>{s.name}</div>
                     <Sub>{String(s.section||"").replace(/[^\w\s]/g,"").trim()} · {s.weeks} weeks · avg {s.avg}/wk · peak {s.peak}/wk</Sub>
@@ -2217,7 +2217,7 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
     saveSettings({ ...settings, orderDay: vendors[0]?.orderDay ?? 3, vendors });
   };
 
-  const inputStyle = { background:"#0f172a", border:"1px solid #334155", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", width:"100%", boxSizing:"border-box" };
+  const inputStyle = { background:"#080c14", border:"1px solid #334155", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", width:"100%", boxSizing:"border-box" };
   const selectStyle = { ...inputStyle, cursor:"pointer" };
   const labelStyle = { display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" };
 
@@ -2230,16 +2230,16 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
 
       <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:16 }}>
         {vendors.map((vendor, idx) => (
-          <div key={vendor.id} style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:12, padding:18 }}>
+          <div key={vendor.id} style={{ background:"#0f1a2e", border:"1px solid #334155", borderRadius:12, padding:18 }}>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-              <span style={{ color:"#f97316", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", letterSpacing:"1px", textTransform:"uppercase" }}>
+              <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", letterSpacing:"1px", textTransform:"uppercase" }}>
                 Vendor {idx + 1}
               </span>
               {vendors.length > 1 && (
                 <button onClick={() => removeVendor(vendor.id)}
                   style={{ background:"transparent", border:"1px solid #334155", borderRadius:6, color:"#64748b", cursor:"pointer", fontSize:11, padding:"3px 8px" }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#64748b"; }}>
+                  onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#64748b"; }}>
                   Remove
                 </button>
               )}
@@ -2252,8 +2252,8 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
                   <div style={{ display:"flex", gap:8 }}>
                     <select value={vendor.name} onChange={e => updateVendor(vendor.id, "name", e.target.value)}
                       style={{ ...selectStyle, flex:1 }}
-                      onFocus={e => e.target.style.borderColor="#f97316"}
-                      onBlur={e => e.target.style.borderColor="#334155"}>
+                      onFocus={e => e.target.style.borderColor="#e2e8f0"}
+                      onBlur={e => e.target.style.borderColor="#1e2d45"}>
                       <option value="">— Select supplier —</option>
                       {supplierOptions.map(s => (
                         <option key={s} value={s}>{s}</option>
@@ -2264,16 +2264,16 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
                       <input autoFocus placeholder="Type vendor name..."
                         onChange={e => updateVendor(vendor.id, "name", e.target.value)}
                         style={{ ...inputStyle, flex:1 }}
-                        onFocus={e => e.target.style.borderColor="#f97316"}
-                        onBlur={e => e.target.style.borderColor="#334155"} />
+                        onFocus={e => e.target.style.borderColor="#e2e8f0"}
+                        onBlur={e => e.target.style.borderColor="#1e2d45"} />
                     )}
                   </div>
                 ) : (
                   <input value={vendor.name} onChange={e => updateVendor(vendor.id, "name", e.target.value)}
                     placeholder="e.g. Anacapri, Pepsi, Market..."
                     style={inputStyle}
-                    onFocus={e => e.target.style.borderColor="#f97316"}
-                    onBlur={e => e.target.style.borderColor="#334155"} />
+                    onFocus={e => e.target.style.borderColor="#e2e8f0"}
+                    onBlur={e => e.target.style.borderColor="#1e2d45"} />
                 )}
               </div>
             </div>
@@ -2293,8 +2293,8 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
                         if (si === 0) updateVendor(vendor.id, "orderDay", parseInt(e.target.value));
                       }}
                       style={selectStyle}
-                      onFocus={e => e.target.style.borderColor="#f97316"}
-                      onBlur={e => e.target.style.borderColor="#334155"}>
+                      onFocus={e => e.target.style.borderColor="#e2e8f0"}
+                      onBlur={e => e.target.style.borderColor="#1e2d45"}>
                       {DAYS.map((d,i) => <option key={d} value={i}>{d}</option>)}
                     </select>
                   </div>
@@ -2308,13 +2308,13 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
                         if (si === 0) updateVendor(vendor.id, "deliveryDay", parseInt(e.target.value));
                       }}
                       style={selectStyle}
-                      onFocus={e => e.target.style.borderColor="#f97316"}
-                      onBlur={e => e.target.style.borderColor="#334155"}>
+                      onFocus={e => e.target.style.borderColor="#e2e8f0"}
+                      onBlur={e => e.target.style.borderColor="#1e2d45"}>
                       {DAYS.map((d,i) => <option key={d} value={i}>{d}</option>)}
                     </select>
                   </div>
                   <div style={{ display:"flex", gap:6, paddingBottom:1 }}>
-                    <div style={{ background:"#0f172a", borderRadius:6, padding:"6px 8px", fontSize:10, color:"#475569", whiteSpace:"nowrap" }}>
+                    <div style={{ background:"#080c14", borderRadius:6, padding:"6px 8px", fontSize:10, color:"#475569", whiteSpace:"nowrap" }}>
                       📅 {DAYS[sched.orderDay]?.slice(0,3)} → 📦 {DAYS[sched.deliveryDay]?.slice(0,3)}
                     </div>
                     {(vendor.schedules || []).length > 1 && (
@@ -2324,7 +2324,7 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
                       }}
                         style={{ background:"none", border:"1px solid #334155", borderRadius:6, color:"#475569", cursor:"pointer", fontSize:12, padding:"0 8px", height:32 }}
                         onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
-                        onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#475569"; }}>
+                        onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
                         ✕
                       </button>
                     )}
@@ -2338,8 +2338,8 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
                   updateVendor(vendor.id, "schedules", [...current, { orderDay: 1, deliveryDay: 2 }]);
                 }}
                   style={{ background:"none", border:"1px dashed #334155", borderRadius:7, color:"#475569", cursor:"pointer", fontSize:12, padding:"6px 14px", display:"flex", alignItems:"center", gap:5, transition:"all 0.15s" }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.color="#f97316"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#475569"; }}>
+                  onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
                   ＋ Add another order day
                 </button>
               )}
@@ -2349,7 +2349,7 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
               <div style={{ position:"relative", width:40, height:22, flexShrink:0 }}>
                 <input type="checkbox" checked={vendor.autoReset} onChange={e => updateVendor(vendor.id, "autoReset", e.target.checked)}
                   style={{ opacity:0, width:"100%", height:"100%", position:"absolute", cursor:"pointer", zIndex:1, margin:0 }} />
-                <div style={{ position:"absolute", inset:0, borderRadius:11, background: vendor.autoReset ? "#f97316" : "#334155", transition:"background 0.2s" }}>
+                <div style={{ position:"absolute", inset:0, borderRadius:11, background: vendor.autoReset ? "#e2e8f0" : "#1e2d45", transition:"background 0.2s" }}>
                   <div style={{ position:"absolute", top:2, left: vendor.autoReset ? 20 : 2, width:18, height:18, borderRadius:"50%", background:"#fff", transition:"left 0.2s" }} />
                 </div>
               </div>
@@ -2366,13 +2366,13 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
         {vendors.length < 8 && (
           <button onClick={addVendor}
             style={{ background:"none", border:"1px dashed #334155", borderRadius:8, color:"#475569", cursor:"pointer", fontSize:13, padding:"10px 20px", display:"flex", alignItems:"center", gap:6, transition:"all 0.15s" }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.color="#f97316"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor="#334155"; e.currentTarget.style.color="#475569"; }}>
+            onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
             ＋ Add Vendor
           </button>
         )}
         <button onClick={handleSave}
-          style={{ background:"linear-gradient(135deg,#f97316,#ef4444)", border:"none", borderRadius:8, padding:"10px 24px", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+          style={{ background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:"10px 24px", color:"#080c14", fontSize:14, fontWeight:600, cursor:"pointer" }}>
           Save Settings
         </button>
       </div>
@@ -2383,8 +2383,8 @@ function SettingsView({ settings, saveSettings, inventory = [] }) {
 // ─── SECTION HEADER ───────────────────────────────────────────────────────────
 function SectionHeader({ label }) {
   return (
-    <div style={{ background:"#0f172a", padding:"8px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none" }}>
-      <span style={{ color:"#f97316", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>{label}</span>
+    <div style={{ background:"#080c14", padding:"8px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #334155", borderBottom:"none" }}>
+      <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>{label}</span>
     </div>
   );
 }
