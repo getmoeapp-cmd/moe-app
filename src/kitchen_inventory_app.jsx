@@ -389,8 +389,9 @@ export default function App() {
 
   const flash = () => { setSaveFlash("✓ Saved"); setTimeout(() => setSaveFlash(""), 2000); };
 
-  // Load connected vendors for this merchant
+  // Load connected vendors for this merchant — only when logged in
   useEffect(() => {
+    if (!user) return;
     const loadConnections = async () => {
       const all = await globalGet("connections") || {};
       setConnections(
@@ -402,10 +403,11 @@ export default function App() {
     loadConnections();
     const iv = setInterval(loadConnections, 30000);
     return () => clearInterval(iv);
-  }, [user.email]);
+  }, [user]);
 
   // Submit order lines to a connected vendor portal
   const submitOrderToVendor = async (vendorId, vendorName, orderLines, weekKey) => {
+    if (!user) return;
     const vOrders = await globalGet(`vendor_orders_${vendorId}`) || [];
     vOrders.push({
       id: `vord_${Date.now()}`,
@@ -420,7 +422,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!group) return;
+    if (!group || !user) return;
     const load = async () => {
       // Helper: try Supabase first, fall back to local storage
       const loadKey = async (sbKey, localKeyFn, fallback) => {
