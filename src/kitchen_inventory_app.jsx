@@ -300,6 +300,7 @@ function MoeApp() {
   const [usageLog, setUsageLog]     = useState({});
   const [subscription, setSubscription] = useState(null); // { plan, status, trialStart, trialEnd, subscribedAt }
   const [team, setTeam]                 = useState([]); // [{ id, email, name, role, addedAt }]
+  const [wasteLog, setWasteLog]         = useState([]); // [{ id, itemId, itemName, qty, unit, reason, loggedBy, date, weekKey }]
 
   const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
 
@@ -335,13 +336,9 @@ function MoeApp() {
       const ul = await load("usageLog", {});
       const sub = await load("subscription", null);
       const tm = await load("team", []);
-      setStock(st);
-      setVendors(vd);
-      setHistory(hi);
-      setInventory(inv);
-      setUsageLog(ul);
-      setSubscription(sub);
-      setTeam(tm);
+      const wl = await load("wasteLog", []);
+      setStock(st); setVendors(vd); setHistory(hi); setInventory(inv);
+      setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl);
     };
     init();
   }, [user, group]);
@@ -363,6 +360,7 @@ function MoeApp() {
         if (data_key === "usageLog")     setUsageLog(value);
         if (data_key === "subscription") setSubscription(value);
         if (data_key === "team")         setTeam(value);
+        if (data_key === "wasteLog")    setWasteLog(value);
       } catch {}
     }).subscribe();
     return () => { sb.removeChannel(channel); };
@@ -433,6 +431,9 @@ function MoeApp() {
   // ── Save team ──────────────────────────────────────────────────────────
   const saveTeam = useCallback((newTeam) => { setTeam(newTeam); save("team", newTeam); showFlash(); }, [save]);
 
+  // ── Save waste log ────────────────────────────────────────────────────
+  const saveWasteLog = useCallback((newLog) => { setWasteLog(newLog); save("wasteLog", newLog); }, [save]);
+
   // ── Apply par suggestion — update an item's max_stock in inventory ──────
   const applyParSuggestion = (itemId, newMaxStock) => {
     const newInv = inventory.map(s => ({
@@ -498,6 +499,7 @@ function MoeApp() {
         <div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
           {[
             { key:"inventory", label:"Inventory", icon:"📋", desc:"Count stock by location" },
+            { key:"waste",     label:"Waste Log", icon:"🗑️", desc:"Track what's going in the trash" },
             ...((user.role === "owner" || user.role === "manager") ? [
               { key:"orders",    label:"Orders",    icon:"📦", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length },
               { key:"history",   label:"History",   icon:"📚", desc:"Past orders by week" },
@@ -570,6 +572,7 @@ function MoeApp() {
       {/* Main content */}
       <main style={{ maxWidth:1200, margin:"0 auto", padding:"20px 16px" }}>
         {view === "inventory" && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
+        {view === "waste" && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} />}
         {view === "orders" && (user.role === "owner" || user.role === "manager") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} />}
         {view === "history" && (user.role === "owner" || user.role === "manager") && <HistoryView history={history} />}
         {view === "insights" && (user.role === "owner" || user.role === "manager") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
@@ -2864,4 +2867,325 @@ export default function Router() {
 
   if (route === "app") return <MoeApp />;
   return <LandingPage />;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WASTE LOG — Track items going in the trash
+// ═══════════════════════════════════════════════════════════════════════════════
+function WasteLogView({ inventory, wasteLog, saveWasteLog, userName }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [qty, setQty] = useState(1);
+  const [reason, setReason] = useState("expired");
+  const [note, setNote] = useState("");
+  const [viewMode, setViewMode] = useState("log"); // "log" | "summary"
+  const [filterWeek, setFilterWeek] = useState("all");
+
+  const allItems = flatItems(inventory);
+  const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2, "0")}`;
+
+  const reasons = [
+    { key: "expired", label: "Expired", icon: "📅" },
+    { key: "spoiled", label: "Spoiled", icon: "🤢" },
+    { key: "damaged", label: "Damaged", icon: "💥" },
+    { key: "overproduced", label: "Over-produced", icon: "📈" },
+    { key: "dropped", label: "Dropped / Spilled", icon: "💧" },
+    { key: "other", label: "Other", icon: "📝" },
+  ];
+
+  // Add waste entry
+  const logWaste = () => {
+    if (!selectedItem || qty < 1) return;
+    const entry = {
+      id: Date.now(),
+      itemId: selectedItem.id,
+      itemName: selectedItem.name,
+      qty,
+      unit: selectedItem.order_unit,
+      reason,
+      note: note.trim(),
+      loggedBy: userName,
+      date: new Date().toISOString(),
+      weekKey: wk,
+      vendor: selectedItem.vendor || "",
+      section: selectedItem.section || "",
+    };
+    saveWasteLog([entry, ...wasteLog]);
+    setSelectedItem(null); setQty(1); setReason("expired"); setNote(""); setShowAdd(false); setSearch("");
+  };
+
+  const removeEntry = (id) => saveWasteLog(wasteLog.filter(e => e.id !== id));
+
+  // Filter items for search
+  const filteredItems = allItems.filter(i =>
+    i.name.toLowerCase().includes(search.toLowerCase()) ||
+    (i.section || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Get all week keys from log
+  const weekKeys = [...new Set(wasteLog.map(e => e.weekKey))].sort().reverse();
+
+  // Filter log entries
+  const displayLog = filterWeek === "all" ? wasteLog : wasteLog.filter(e => e.weekKey === filterWeek);
+
+  // Summary stats
+  const summaryData = {};
+  const targetEntries = filterWeek === "all" ? wasteLog : wasteLog.filter(e => e.weekKey === filterWeek);
+  targetEntries.forEach(e => {
+    if (!summaryData[e.itemId]) summaryData[e.itemId] = { name: e.itemName, unit: e.unit, vendor: e.vendor, totalQty: 0, reasons: {}, entries: 0 };
+    summaryData[e.itemId].totalQty += e.qty;
+    summaryData[e.itemId].entries++;
+    summaryData[e.itemId].reasons[e.reason] = (summaryData[e.itemId].reasons[e.reason] || 0) + e.qty;
+  });
+  const summaryRows = Object.values(summaryData).sort((a, b) => b.totalQty - a.totalQty);
+  const totalWasted = targetEntries.reduce((s, e) => s + e.qty, 0);
+  const totalEntries = targetEntries.length;
+
+  // Reason breakdown
+  const reasonTotals = {};
+  targetEntries.forEach(e => { reasonTotals[e.reason] = (reasonTotals[e.reason] || 0) + e.qty; });
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>🗑️ Waste Log</h2>
+          <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Track what's going in the trash to reduce waste over time</p>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          {[{ key:"log", label:"Log" }, { key:"summary", label:"Summary" }].map(tab => (
+            <button key={tab.key} onClick={() => setViewMode(tab.key)}
+              style={{ background:viewMode===tab.key?"#e2e8f0":"transparent", border:`1px solid ${viewMode===tab.key?"#e2e8f0":"#1e2d45"}`, borderRadius:8, padding:"7px 16px", color:viewMode===tab.key?"#080c14":"#64748b", fontSize:13, fontWeight:viewMode===tab.key?600:400, cursor:"pointer" }}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats cards */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10, marginBottom:20 }}>
+        {[
+          { label:"This week", value:wasteLog.filter(e => e.weekKey === wk).reduce((s,e) => s+e.qty, 0), color:"#fca5a5", bg:"#450a0a", border:"#7f1d1d" },
+          { label:"Total entries", value:totalEntries, color:"#a5b4fc", bg:"#0f2040", border:"#1e40af" },
+          { label:"Total wasted", value:totalWasted, color:"#fbbf24", bg:"#422006", border:"#d97706" },
+          { label:"Top reason", value: Object.entries(reasonTotals).sort((a,b) => b[1]-a[1])[0]?.[0] || "—", color:"#94a3b8", bg:"#0f1a2e", border:"#1e2d45" },
+        ].map(c => (
+          <div key={c.label} style={{ background:c.bg, border:`1px solid ${c.border}`, borderRadius:10, padding:"12px 16px" }}>
+            <div style={{ color:c.color, fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{c.value}</div>
+            <div style={{ color:c.color, fontSize:11, opacity:0.8, marginTop:2 }}>{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Week filter + add button */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:16, flexWrap:"wrap" }}>
+        <select value={filterWeek} onChange={e => setFilterWeek(e.target.value)}
+          style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", cursor:"pointer" }}>
+          <option value="all">All weeks</option>
+          <option value={wk}>This week ({wk})</option>
+          {weekKeys.filter(w => w !== wk).map(w => <option key={w} value={w}>{w}</option>)}
+        </select>
+        {!showAdd && (
+          <button onClick={() => setShowAdd(true)}
+            style={{ background:"linear-gradient(135deg,#ef4444,#dc2626)", border:"none", borderRadius:8, padding:"8px 18px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+            + Log Waste
+          </button>
+        )}
+      </div>
+
+      {/* Add waste form */}
+      {showAdd && (
+        <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:20, marginBottom:20 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+            <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:600 }}>Log Wasted Item</span>
+            <button onClick={() => { setShowAdd(false); setSelectedItem(null); setSearch(""); }}
+              style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:16 }}>✕</button>
+          </div>
+
+          {/* Item search */}
+          {!selectedItem ? (
+            <div>
+              <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Search Item</label>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Start typing item name..."
+                autoFocus style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box", marginBottom:8 }} />
+              {search.length > 0 && (
+                <div style={{ maxHeight:200, overflowY:"auto", borderRadius:8, border:"1px solid #1e2d45" }}>
+                  {filteredItems.slice(0, 15).map((item, idx) => (
+                    <div key={item.id} onClick={() => { setSelectedItem(item); setSearch(""); }}
+                      style={{ padding:"10px 14px", cursor:"pointer", background:idx%2===0?"#0f1a2e":"#0a1220", borderBottom:"1px solid #080c14", display:"flex", alignItems:"center", justifyContent:"space-between" }}
+                      onMouseEnter={e => e.currentTarget.style.background="#1e2d45"}
+                      onMouseLeave={e => e.currentTarget.style.background=idx%2===0?"#0f1a2e":"#0a1220"}>
+                      <div>
+                        <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500 }}>{item.name}</div>
+                        <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{(item.section || "").replace(/[^\w\s]/g,"").trim()}</div>
+                      </div>
+                      <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{item.order_unit}</span>
+                    </div>
+                  ))}
+                  {filteredItems.length === 0 && <div style={{ padding:"14px", color:"#475569", textAlign:"center", fontSize:13 }}>No items found</div>}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Selected item */}
+              <div style={{ background:"#080c14", borderRadius:8, padding:"10px 14px", marginBottom:14, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                <div>
+                  <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{selectedItem.name}</div>
+                  <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{selectedItem.order_unit}{selectedItem.vendor ? ` · ${selectedItem.vendor}` : ""}</div>
+                </div>
+                <button onClick={() => setSelectedItem(null)} style={{ background:"none", border:"1px solid #1e2d45", borderRadius:6, color:"#64748b", cursor:"pointer", fontSize:11, padding:"3px 8px" }}>Change</button>
+              </div>
+
+              {/* Quantity */}
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
+                <div>
+                  <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Quantity Wasted</label>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <button onClick={() => setQty(Math.max(1, qty-1))} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+                    <input type="number" value={qty} min={1} onChange={e => setQty(Math.max(1, parseInt(e.target.value)||1))}
+                      style={{ width:60, background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"6px", color:"#f1f5f9", fontSize:16, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
+                    <button onClick={() => setQty(qty+1)} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+                    <span style={{ color:"#475569", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{selectedItem.order_unit}</span>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Reason</label>
+                  <select value={reason} onChange={e => setReason(e.target.value)}
+                    style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", cursor:"pointer", boxSizing:"border-box" }}>
+                    {reasons.map(r => <option key={r.key} value={r.key}>{r.icon} {r.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Note */}
+              <div style={{ marginBottom:16 }}>
+                <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Note (optional)</label>
+                <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. left out overnight, past date by 2 days..."
+                  style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box" }} />
+              </div>
+
+              <div style={{ display:"flex", gap:10 }}>
+                <button onClick={logWaste}
+                  style={{ background:"linear-gradient(135deg,#ef4444,#dc2626)", border:"none", borderRadius:8, padding:"10px 20px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                  Log Waste
+                </button>
+                <button onClick={() => { setShowAdd(false); setSelectedItem(null); setSearch(""); }}
+                  style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 16px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── LOG VIEW ── */}
+      {viewMode === "log" && (
+        <>
+          {displayLog.length === 0 ? (
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:32, textAlign:"center" }}>
+              <div style={{ fontSize:36, marginBottom:12 }}>🗑️</div>
+              <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No waste logged yet</div>
+              <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Tap "Log Waste" to start tracking what's being thrown away</div>
+            </div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              {displayLog.map(entry => {
+                const r = reasons.find(r => r.key === entry.reason) || { icon:"📝", label:entry.reason };
+                return (
+                  <div key={entry.id} style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:10, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:12, flex:1, minWidth:200 }}>
+                      <span style={{ fontSize:20 }}>{r.icon}</span>
+                      <div>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{entry.itemName}</span>
+                          <span style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:5, padding:"1px 7px", color:"#fca5a5", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{entry.qty} {entry.unit}</span>
+                        </div>
+                        <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>
+                          {r.label}{entry.note ? ` — ${entry.note}` : ""} · {entry.loggedBy} · {new Date(entry.date).toLocaleDateString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
+                        </div>
+                      </div>
+                    </div>
+                    <button onClick={() => removeEntry(entry.id)}
+                      style={{ background:"none", border:"none", color:"#334155", cursor:"pointer", fontSize:14, flexShrink:0 }}
+                      onMouseEnter={e => e.currentTarget.style.color="#ef4444"}
+                      onMouseLeave={e => e.currentTarget.style.color="#334155"}>✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── SUMMARY VIEW ── */}
+      {viewMode === "summary" && (
+        <>
+          {/* Reason breakdown */}
+          {Object.keys(reasonTotals).length > 0 && (
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 20px", marginBottom:16 }}>
+              <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:12, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Waste by Reason</div>
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+                {Object.entries(reasonTotals).sort((a,b) => b[1]-a[1]).map(([key, total]) => {
+                  const r = reasons.find(r => r.key === key) || { icon:"📝", label:key };
+                  const pct = totalWasted > 0 ? Math.round((total / totalWasted) * 100) : 0;
+                  return (
+                    <div key={key} style={{ background:"#080c14", borderRadius:8, padding:"10px 14px", minWidth:100, flex:1 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+                        <span style={{ fontSize:14 }}>{r.icon}</span>
+                        <span style={{ color:"#94a3b8", fontSize:12, fontWeight:600 }}>{r.label}</span>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
+                        <span style={{ color:"#fca5a5", fontSize:20, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{total}</span>
+                        <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{pct}%</span>
+                      </div>
+                      <div style={{ background:"#1e2d45", borderRadius:3, height:4, marginTop:6, overflow:"hidden" }}>
+                        <div style={{ width:`${pct}%`, height:"100%", background:"#ef4444", borderRadius:3 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Top wasted items */}
+          {summaryRows.length === 0 ? (
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:32, textAlign:"center" }}>
+              <div style={{ fontSize:36, marginBottom:12 }}>📊</div>
+              <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No waste data to summarize</div>
+            </div>
+          ) : (
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"2fr 80px 80px 1fr", background:"#080c14", padding:"8px 16px", gap:8 }}>
+                {["Item", "Wasted", "Times", "Top Reason"].map(h => (
+                  <span key={h} style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
+                ))}
+              </div>
+              {summaryRows.map((row, idx) => {
+                const topReason = Object.entries(row.reasons).sort((a,b) => b[1]-a[1])[0];
+                const r = reasons.find(r => r.key === topReason?.[0]) || { icon:"📝", label:topReason?.[0] || "—" };
+                return (
+                  <div key={row.name} style={{ display:"grid", gridTemplateColumns:"2fr 80px 80px 1fr", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #080c14" }}>
+                    <div>
+                      <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500 }}>{row.name}</div>
+                      {row.vendor && <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{row.vendor}</div>}
+                    </div>
+                    <span style={{ color:"#fca5a5", fontSize:14, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{row.totalQty} <span style={{ fontSize:10, color:"#475569" }}>{row.unit}</span></span>
+                    <span style={{ color:"#a5b4fc", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{row.entries}x</span>
+                    <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                      <span style={{ fontSize:12 }}>{r.icon}</span>
+                      <span style={{ color:"#94a3b8", fontSize:12 }}>{r.label}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
