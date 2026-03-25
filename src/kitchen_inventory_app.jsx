@@ -507,6 +507,19 @@ function MoeApp() {
   }
 
   // Show pricing page if trial expired and no active subscription
+  // But ONLY after data has loaded — otherwise we'd flash the pricing page
+  if (!dataLoaded && !isDemo) {
+    return (
+      <div style={{ minHeight:"100vh", background:"#080c14", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',sans-serif" }}>
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+        <div style={{ textAlign:"center" }}>
+          <MoeLogo size="lg" />
+          <div style={{ color:"#475569", fontSize:13, fontFamily:"'DM Mono',monospace", marginTop:16 }}>Loading your data...</div>
+        </div>
+      </div>
+    );
+  }
+
   if (!hasAccess && !isDemo) {
     return <PricingPage subscription={subscription} user={user} onLogout={() => setUser(null)}
       onSelectPlan={(plan) => {
@@ -678,8 +691,8 @@ function LoginScreen({ onLogin, error, setError }) {
   const [mode, setMode] = useState("signin"); // "signin" or "register"
   const [show, setShow] = useState(false);
 
-  // Sign In fields
-  const [email, setEmail] = useState("");
+  // Sign In fields — restore last email from localStorage
+  const [email, setEmail] = useState(() => { try { return localStorage.getItem("moe_last_email") || ""; } catch { return ""; } });
   const [pass, setPass] = useState("");
 
   // Registration fields
@@ -743,15 +756,17 @@ function LoginScreen({ onLogin, error, setError }) {
   const handleLoginWithAccounts = async () => {
     await loadSupabase();
     const emailLower = email.toLowerCase().trim();
+    const rememberEmail = () => { try { localStorage.setItem("moe_last_email", emailLower); } catch {} };
 
     // Check hardcoded demo users first
     const u = USERS[emailLower];
-    if (u && u.password === pass) { onLogin({ ...u, email: emailLower }); return; }
+    if (u && u.password === pass) { rememberEmail(); onLogin({ ...u, email: emailLower }); return; }
 
     // Check registered owner accounts
     const accounts = await sbGet("__moe_accounts__", "accounts") || {};
     const acct = accounts[emailLower];
     if (acct && acct.password === pass) {
+      rememberEmail();
       onLogin({ name: `${acct.ownerFirst} ${acct.ownerLast}`, role: acct.role, group: acct.group, email: acct.email, business: acct.business });
       return;
     }
@@ -762,6 +777,7 @@ function LoginScreen({ onLogin, error, setError }) {
       if (Array.isArray(teamData)) {
         const member = teamData.find(m => m.email.toLowerCase() === emailLower && m.password === pass);
         if (member) {
+          rememberEmail();
           onLogin({ name: member.name, role: member.role || "employee", group: ownerAcct.group, email: member.email, business: ownerAcct.business });
           return;
         }
