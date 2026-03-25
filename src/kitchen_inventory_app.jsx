@@ -318,7 +318,11 @@ function MoeApp() {
   const [team, setTeam]                 = useState([]); // [{ id, email, name, role, addedAt }]
   const [wasteLog, setWasteLog]         = useState([]);
   const [priceHistory, setPriceHistory] = useState({});
-  const [dataLoaded, setDataLoaded]     = useState(false); // { [itemId]: [{ price, date, weekKey, vendor, source }] } // [{ id, itemId, itemName, qty, unit, reason, loggedBy, date, weekKey }]
+  const [dataLoaded, setDataLoaded]     = useState(false);
+  const [permissions, setPermissions]   = useState({
+    manager: ["inventory", "waste", "orders", "history", "insights", "prices", "backend", "settings"],
+    employee: ["inventory", "waste", "history"],
+  }); // { [itemId]: [{ price, date, weekKey, vendor, source }] } // [{ id, itemId, itemName, qty, unit, reason, loggedBy, date, weekKey }]
 
   const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
 
@@ -357,8 +361,10 @@ function MoeApp() {
       const tm = await load("team", []);
       const wl = await load("wasteLog", []);
       const ph = await load("priceHistory", {});
+      const perms = await load("permissions", null);
       setStock(st); setVendors(vd); setHistory(hi); setInventory(inv);
       setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl); setPriceHistory(ph);
+      if (perms) setPermissions(perms);
       setDataLoaded(true);
     };
     init();
@@ -383,6 +389,7 @@ function MoeApp() {
         if (data_key === "team")         setTeam(value);
         if (data_key === "wasteLog")    setWasteLog(value);
         if (data_key === "priceHistory") setPriceHistory(value);
+        if (data_key === "permissions") setPermissions(value);
       } catch {}
     }).subscribe();
     return () => { sb.removeChannel(channel); };
@@ -452,13 +459,22 @@ function MoeApp() {
   const saveVendors = (newVendors) => { setVendors(newVendors); save("vendors", newVendors); showFlash(); };
 
   // ── Save team ──────────────────────────────────────────────────────────
-  const saveTeam = useCallback((newTeam) => { setTeam(newTeam); save("team", newTeam); showFlash(); }, [save]);
+  const saveTeam = useCallback((newTeam) => {
+    setTeam(newTeam);
+    const g = groupRef.current;
+    try { localStorage.setItem(`moe_${g}_team`, JSON.stringify(newTeam)); } catch {}
+    sbSet(g, "team", newTeam);
+    showFlash("✓ Team updated");
+  }, []);
 
   // ── Save waste log ────────────────────────────────────────────────────
   const saveWasteLog = useCallback((newLog) => { setWasteLog(newLog); save("wasteLog", newLog); }, [save]);
 
   // ── Save price history ────────────────────────────────────────────────
   const savePriceHistory = useCallback((newPH) => { setPriceHistory(newPH); save("priceHistory", newPH); }, [save]);
+
+  // ── Save permissions ──────────────────────────────────────────────────
+  const savePermissions = useCallback((newPerms) => { setPermissions(newPerms); save("permissions", newPerms); showFlash("✓ Permissions updated"); }, [save]);
 
   // ── Apply par suggestion — update an item's max_stock in inventory ──────
   const applyParSuggestion = (itemId, newMaxStock) => {
@@ -503,8 +519,28 @@ function MoeApp() {
   // Get current plan limits
   const currentPlan = PLANS[subscription?.plan] || PLANS.pro;
 
+  // ── Permission check ──────────────────────────────────────────────────
+  const canAccess = (feature) => {
+    if (user.role === "owner") return true; // Owner always has full access
+    const rolePerms = permissions[user.role] || [];
+    return rolePerms.includes(feature);
+  };
+
   const todayVendors = vendorsOrderingToday(vendors);
   const weekNum = getWeekNumber();
+
+  // All features that can be toggled
+  const ALL_FEATURES = [
+    { key: "inventory", label: "Inventory", icon: "📋" },
+    { key: "waste", label: "Waste Log", icon: "🗑️" },
+    { key: "orders", label: "Orders", icon: "📦" },
+    { key: "history", label: "History", icon: "📚" },
+    { key: "insights", label: "Insights", icon: "📊" },
+    { key: "prices", label: "Price Tracker", icon: "💲" },
+    { key: "backend", label: "Backend", icon: "🔧" },
+    { key: "settings", label: "Settings", icon: "⚙️" },
+    { key: "import", label: "Import Items", icon: "📤" },
+  ];
 
   return (
     <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif" }}>
@@ -525,18 +561,16 @@ function MoeApp() {
         </div>
         <div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
           {[
-            { key:"inventory", label:"Inventory", icon:"📋", desc:"Count stock by location" },
-            { key:"waste",     label:"Waste Log", icon:"🗑️", desc:"Track what's going in the trash" },
-            ...((user.role === "owner" || user.role === "manager") ? [
-              { key:"orders",    label:"Orders",    icon:"📦", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length },
-              { key:"history",   label:"History",   icon:"📚", desc:"Past orders by week" },
-              { key:"insights", label:"Insights", icon:"📊", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing },
-              { key:"prices",  label:"Price Tracker", icon:"💲", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing },
-              { key:"backend",  label:"Backend",  icon:"🔧", desc:"Add & edit items" },
-              { key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors & team" },
-            ] : []),
+            ...(canAccess("inventory") ? [{ key:"inventory", label:"Inventory", icon:"📋", desc:"Count stock by location" }] : []),
+            ...(canAccess("waste") ? [{ key:"waste", label:"Waste Log", icon:"🗑️", desc:"Track what's going in the trash" }] : []),
+            ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"📦", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
+            ...(canAccess("history") ? [{ key:"history", label:"History", icon:"📚", desc:"Past orders by week" }] : []),
+            ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"📊", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+            ...(canAccess("prices") ? [{ key:"prices", label:"Price Tracker", icon:"💲", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+            ...(canAccess("backend") ? [{ key:"backend", label:"Backend", icon:"🔧", desc:"Add & edit items" }] : []),
+            ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors & team" }] : []),
+            ...(canAccess("import") ? [{ key:"import", label:"Import Items", icon:"📤", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
             ...(user.role === "owner" ? [
-              { key:"import",   label:"Import Items", icon:"📤", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing },
               { key:"subscription", label:"Subscription", icon:"💳", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
             ] : []),
           ].map(item => {
@@ -599,15 +633,15 @@ function MoeApp() {
 
       {/* Main content */}
       <main style={{ maxWidth:1200, margin:"0 auto", padding:"20px 16px" }}>
-        {view === "inventory" && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
-        {view === "waste" && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
-        {view === "orders" && (user.role === "owner" || user.role === "manager") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} user={user} />}
-        {view === "history" && (user.role === "owner" || user.role === "manager") && <HistoryView history={history} user={user} />}
-        {view === "insights" && (user.role === "owner" || user.role === "manager") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
-        {view === "prices" && (user.role === "owner" || user.role === "manager") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} />}
-        {view === "import" && user.role === "owner" && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
-        {view === "backend" && (user.role === "owner" || user.role === "manager") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
-        {view === "settings" && (user.role === "owner" || user.role === "manager") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} />}
+        {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
+        {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
+        {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} user={user} />}
+        {view === "history" && canAccess("history") && <HistoryView history={history} user={user} />}
+        {view === "insights" && canAccess("insights") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
+        {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} />}
+        {view === "import" && canAccess("import") && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
+        {view === "backend" && canAccess("backend") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
+        {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} allFeatures={ALL_FEATURES} />}
         {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
       </main>
     </div>
@@ -1191,7 +1225,7 @@ function HistoryView({ history, user }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SETTINGS VIEW — Manage vendors & their order days (owner only)
 // ═══════════════════════════════════════════════════════════════════════════════
-function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, currentPlan, isTrialing }) {
+function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, currentPlan, isTrialing, permissions, savePermissions, userRole, allFeatures }) {
   const [activeTab, setActiveTab] = useState("vendors");
   const [localVendors, setLocalVendors] = useState(vendors);
   const [dirty, setDirty] = useState(false);
@@ -1249,7 +1283,8 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
       id: Date.now(), name: empName.trim(), email: empEmail.toLowerCase().trim(),
       password: empPassword, role: empRole, addedAt: new Date().toISOString(),
     };
-    saveTeam([...team, newMember]);
+    const updatedTeam = [...(team || []), newMember];
+    saveTeam(updatedTeam);
     setEmpName(""); setEmpEmail(""); setEmpPassword(""); setEmpRole("employee"); setShowAddEmp(false);
   };
 
@@ -1269,8 +1304,8 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
       </div>
 
       {/* Tabs */}
-      <div style={{ display:"flex", gap:8, marginBottom:20 }}>
-        {[{ key:"vendors", label:"Vendors", icon:"📦" }, { key:"team", label:"Team", icon:"👥" }].map(tab => (
+      <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
+        {[{ key:"vendors", label:"Vendors", icon:"📦" }, { key:"team", label:"Team", icon:"👥" }, { key:"permissions", label:"Permissions", icon:"🔐" }].map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             style={{ background:activeTab===tab.key?"#e2e8f0":"transparent", border:`1px solid ${activeTab===tab.key?"#e2e8f0":"#1e2d45"}`, borderRadius:8, padding:"7px 16px", color:activeTab===tab.key?"#080c14":"#64748b", fontSize:13, fontWeight:activeTab===tab.key?600:400, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
             {tab.icon} {tab.label}
@@ -1452,6 +1487,77 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
               ))}
             </div>
           )}
+        </>
+      )}
+
+      {/* ── PERMISSIONS TAB ── */}
+      {activeTab === "permissions" && (
+        <>
+          <div style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:10, padding:"12px 16px", marginBottom:20 }}>
+            <span style={{ color:"#a5b4fc", fontSize:12 }}>Control what each role can access. </span>
+            <span style={{ color:"#64748b", fontSize:12 }}>
+              {userRole === "owner" ? "As the owner, you can set permissions for managers and employees." : "As a manager, you can set permissions for employees."}
+            </span>
+          </div>
+
+          {/* Manager permissions — only owner can edit */}
+          {userRole === "owner" && (
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:"18px 20px", marginBottom:16 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+                <span style={{ background:"#422006", border:"1px solid #d97706", borderRadius:5, padding:"2px 8px", color:"#fbbf24", fontSize:11, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>MANAGER</span>
+                <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>Manager Access</span>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px, 1fr))", gap:8 }}>
+                {allFeatures.map(f => {
+                  const enabled = (permissions.manager || []).includes(f.key);
+                  const isCore = f.key === "inventory"; // Inventory always on
+                  return (
+                    <button key={f.key} onClick={() => {
+                      if (isCore) return;
+                      const current = permissions.manager || [];
+                      const updated = enabled ? current.filter(k => k !== f.key) : [...current, f.key];
+                      savePermissions({ ...permissions, manager: updated });
+                    }}
+                      style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", borderRadius:8, cursor:isCore?"default":"pointer", background: enabled ? "#052e16" : "#080c14", border:`1px solid ${enabled ? "#16a34a" : "#1e2d45"}`, opacity:isCore?0.6:1 }}>
+                      <span style={{ fontSize:14 }}>{f.icon}</span>
+                      <span style={{ color:enabled?"#4ade80":"#475569", fontSize:12, fontWeight:enabled?600:400 }}>{f.label}</span>
+                      <span style={{ marginLeft:"auto", color:enabled?"#4ade80":"#334155", fontSize:12 }}>{enabled ? "✓" : "—"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Employee permissions — owner and manager can edit */}
+          <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:"18px 20px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+              <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:5, padding:"2px 8px", color:"#a5b4fc", fontSize:11, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>EMPLOYEE</span>
+              <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>Employee Access</span>
+              <span style={{ color:"#475569", fontSize:11, marginLeft:4 }}>Default: Inventory, Waste Log, History</span>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px, 1fr))", gap:8 }}>
+              {allFeatures.map(f => {
+                const enabled = (permissions.employee || []).includes(f.key);
+                const isCore = f.key === "inventory"; // Inventory always on for employees
+                // Manager can only give permissions they themselves have
+                const managerCanGrant = userRole === "owner" || (permissions.manager || []).includes(f.key);
+                return (
+                  <button key={f.key} onClick={() => {
+                    if (isCore || !managerCanGrant) return;
+                    const current = permissions.employee || [];
+                    const updated = enabled ? current.filter(k => k !== f.key) : [...current, f.key];
+                    savePermissions({ ...permissions, employee: updated });
+                  }}
+                    style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", borderRadius:8, cursor:(isCore || !managerCanGrant)?"default":"pointer", background: enabled ? "#052e16" : "#080c14", border:`1px solid ${enabled ? "#16a34a" : "#1e2d45"}`, opacity:(isCore || !managerCanGrant)?0.6:1 }}>
+                    <span style={{ fontSize:14 }}>{f.icon}</span>
+                    <span style={{ color:enabled?"#4ade80":"#475569", fontSize:12, fontWeight:enabled?600:400 }}>{f.label}</span>
+                    <span style={{ marginLeft:"auto", color:enabled?"#4ade80":"#334155", fontSize:12 }}>{enabled ? "✓" : "—"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </>
       )}
     </div>
