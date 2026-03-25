@@ -300,7 +300,8 @@ function MoeApp() {
   const [subscription, setSubscription] = useState(null); // { plan, status, trialStart, trialEnd, subscribedAt }
   const [team, setTeam]                 = useState([]); // [{ id, email, name, role, addedAt }]
   const [wasteLog, setWasteLog]         = useState([]);
-  const [priceHistory, setPriceHistory] = useState({}); // { [itemId]: [{ price, date, weekKey, vendor, source }] } // [{ id, itemId, itemName, qty, unit, reason, loggedBy, date, weekKey }]
+  const [priceHistory, setPriceHistory] = useState({});
+  const [dataLoaded, setDataLoaded]     = useState(false); // { [itemId]: [{ price, date, weekKey, vendor, source }] } // [{ id, itemId, itemName, qty, unit, reason, loggedBy, date, weekKey }]
 
   const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
 
@@ -340,6 +341,7 @@ function MoeApp() {
       const ph = await load("priceHistory", {});
       setStock(st); setVendors(vd); setHistory(hi); setInventory(inv);
       setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl); setPriceHistory(ph);
+      setDataLoaded(true);
     };
     init();
   }, [user, group]);
@@ -455,16 +457,17 @@ function MoeApp() {
 
   // ── Subscription gate (skip for demo accounts) ─────────────────────────
   const isDemo = DEMO_GROUPS.includes(group);
-  const trialDaysLeft = subscription?.trialEnd ? Math.max(0, Math.ceil((new Date(subscription.trialEnd) - new Date()) / 86400000)) : 0;
+  const now = new Date();
+  const trialEndDate = subscription?.trialEnd ? new Date(subscription.trialEnd) : null;
+  const trialDaysLeft = trialEndDate ? Math.max(0, Math.ceil((trialEndDate - now) / 86400000)) : 0;
   const isTrialing = subscription?.status === "trialing" && trialDaysLeft > 0;
   const isActive = subscription?.status === "active";
   const hasAccess = isDemo || isTrialing || isActive;
 
-  // Auto-start trial for new accounts (no subscription yet)
-  if (!isDemo && !subscription && user) {
-    const now = new Date();
-    const trialEnd = new Date(now); trialEnd.setDate(now.getDate() + TRIAL_DAYS);
-    const newSub = { plan: "pro", status: "trialing", trialStart: now.toISOString(), trialEnd: trialEnd.toISOString() };
+  // Auto-start trial for new accounts (only after data loaded from Supabase)
+  if (dataLoaded && !isDemo && !subscription && user) {
+    const trialEnd = new Date(); trialEnd.setDate(trialEnd.getDate() + TRIAL_DAYS);
+    const newSub = { plan: "pro", status: "trialing", trialStart: new Date().toISOString(), trialEnd: trialEnd.toISOString() };
     setSubscription(newSub);
     save("subscription", newSub);
   }
@@ -2002,6 +2005,9 @@ function PlanFeature({ label, included }) {
 function SubscriptionView({ subscription, onSelectPlan, trialDaysLeft, isTrialing, isActive }) {
   const currentPlanKey = subscription?.plan || "pro";
   const currentPlan = PLANS[currentPlanKey];
+  const trialStartDate = subscription?.trialStart ? new Date(subscription.trialStart) : null;
+  const trialEndDate = subscription?.trialEnd ? new Date(subscription.trialEnd) : null;
+  const trialProgress = trialStartDate && trialEndDate ? Math.max(0, Math.min(100, ((new Date() - trialStartDate) / (trialEndDate - trialStartDate)) * 100)) : 0;
 
   return (
     <div>
@@ -2009,6 +2015,25 @@ function SubscriptionView({ subscription, onSelectPlan, trialDaysLeft, isTrialin
         <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>💳 Subscription</h2>
         <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Manage your plan and billing</p>
       </div>
+
+      {/* Trial countdown card */}
+      {isTrialing && (
+        <div style={{ background:"#422006", border:"1px solid #d97706", borderRadius:12, padding:"20px 24px", marginBottom:20 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12, flexWrap:"wrap", gap:8 }}>
+            <div style={{ color:"#fbbf24", fontSize:16, fontWeight:700 }}>Free Trial — {trialDaysLeft} day{trialDaysLeft !== 1 ? "s" : ""} remaining</div>
+            <span style={{ color:"#92400e", fontSize:11, fontFamily:"'DM Mono',monospace" }}>
+              {trialStartDate?.toLocaleDateString("en-US", { month:"short", day:"numeric" })} → {trialEndDate?.toLocaleDateString("en-US", { month:"short", day:"numeric" })}
+            </span>
+          </div>
+          <div style={{ background:"#78350f", borderRadius:6, height:8, overflow:"hidden", marginBottom:10 }}>
+            <div style={{ width:`${trialProgress}%`, height:"100%", background:"linear-gradient(90deg,#fbbf24,#f59e0b)", borderRadius:6, transition:"width 0.5s" }} />
+          </div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <span style={{ color:"#92400e", fontSize:12 }}>{Math.round(trialProgress)}% elapsed</span>
+            <span style={{ color:"#fbbf24", fontSize:12, fontWeight:600 }}>Pro features included during trial</span>
+          </div>
+        </div>
+      )}
 
       {/* Current plan status */}
       <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:"20px 24px", marginBottom:24 }}>
@@ -2030,7 +2055,8 @@ function SubscriptionView({ subscription, onSelectPlan, trialDaysLeft, isTrialin
             <div style={{ color:"#475569", fontSize:13 }}>{currentPlan.label}</div>
           </div>
           <div style={{ textAlign:"right" }}>
-            <div style={{ color:"#f1f5f9", fontSize:28, fontWeight:800 }}>${currentPlan.price}<span style={{ fontSize:14, fontWeight:400, color:"#64748b" }}>/mo</span></div>
+            <div style={{ color:"#f1f5f9", fontSize:28, fontWeight:800 }}>{isTrialing ? "FREE" : `$${currentPlan.price}`}<span style={{ fontSize:14, fontWeight:400, color:"#64748b" }}>{isTrialing ? "" : "/mo"}</span></div>
+            {isTrialing && <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>${currentPlan.price}/mo after trial</div>}
           </div>
         </div>
 
