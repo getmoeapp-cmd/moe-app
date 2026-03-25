@@ -1743,6 +1743,9 @@ function HoverRow({ children, bg, onRemove }) {
 // BACKEND VIEW — Original table layout with click-to-edit
 // ═══════════════════════════════════════════════════════════════════════════════
 function BackendView({ inventory, saveInventory, vendors, stock }) {
+  const [reorderMode, setReorderMode] = useState(false);
+  const [reorderSection, setReorderSection] = useState(null); // which section is being reordered
+
   // ── Helpers that mutate inventory and persist ──
   const saveItemField = (itemId, field, rawVal) => {
     const numFields = ["upu", "max_stock", "reorder"];
@@ -1768,45 +1771,24 @@ function BackendView({ inventory, saveInventory, vendors, stock }) {
     setNewSectionName(""); setShowAddSection(false);
   };
 
-  const deleteSection = (sectionKey) => {
-    saveInventory(inventory.filter(s => s.section !== sectionKey));
-  };
+  const deleteSection = (sectionKey) => saveInventory(inventory.filter(s => s.section !== sectionKey));
+  const saveSectionName = (oldName, newName) => { if (!newName.trim() || newName === oldName) return; saveInventory(inventory.map(s => s.section === oldName ? { ...s, section: newName.trim() } : s)); };
 
-  const saveSectionName = (oldName, newName) => {
-    if (!newName.trim() || newName === oldName) return;
-    saveInventory(inventory.map(s => s.section === oldName ? { ...s, section: newName.trim() } : s));
-  };
-
-  // ── Reorder sections ──
-  const moveSectionUp = (idx) => {
-    if (idx <= 0) return;
+  // ── Reorder helpers ──
+  const moveSection = (idx, dir) => {
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= inventory.length) return;
     const newInv = [...inventory];
-    [newInv[idx - 1], newInv[idx]] = [newInv[idx], newInv[idx - 1]];
+    [newInv[idx], newInv[newIdx]] = [newInv[newIdx], newInv[idx]];
     saveInventory(newInv);
   };
-  const moveSectionDown = (idx) => {
-    if (idx >= inventory.length - 1) return;
-    const newInv = [...inventory];
-    [newInv[idx], newInv[idx + 1]] = [newInv[idx + 1], newInv[idx]];
-    saveInventory(newInv);
-  };
-
-  // ── Reorder items within a section ──
-  const moveItemUp = (sectionKey, itemIdx) => {
-    if (itemIdx <= 0) return;
+  const moveItem = (sectionKey, itemIdx, dir) => {
     saveInventory(inventory.map(s => {
       if (s.section !== sectionKey) return s;
+      const newIdx = itemIdx + dir;
+      if (newIdx < 0 || newIdx >= s.items.length) return s;
       const items = [...s.items];
-      [items[itemIdx - 1], items[itemIdx]] = [items[itemIdx], items[itemIdx - 1]];
-      return { ...s, items };
-    }));
-  };
-  const moveItemDown = (sectionKey, itemIdx) => {
-    saveInventory(inventory.map(s => {
-      if (s.section !== sectionKey) return s;
-      if (itemIdx >= s.items.length - 1) return s;
-      const items = [...s.items];
-      [items[itemIdx], items[itemIdx + 1]] = [items[itemIdx + 1], items[itemIdx]];
+      [items[itemIdx], items[newIdx]] = [items[newIdx], items[itemIdx]];
       return { ...s, items };
     }));
   };
@@ -1816,64 +1798,112 @@ function BackendView({ inventory, saveInventory, vendors, stock }) {
       <style>{`@media (max-width: 768px) { .edit-pencil { display: none !important; } } .edit-cell:hover .edit-pencil { display: inline !important; }`}</style>
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
         <div>
-          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>Backend — Edit Item Details</h2>
-          <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Click any cell to edit · Hover a row to remove it</p>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>{reorderMode ? "Reorder Sections & Items" : "Backend — Edit Item Details"}</h2>
+          <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>{reorderMode ? "Tap arrows to rearrange · Tap a section to reorder its items" : "Click any cell to edit · Hover a row to remove it"}</p>
         </div>
         <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
-          {!showAddSection ? (
-            <button onClick={() => setShowAddSection(true)}
-              style={{ background:"none", border:"1px dashed #1e2d45", borderRadius:8, color:"#475569", cursor:"pointer", fontSize:13, padding:"7px 16px", display:"flex", alignItems:"center", gap:6 }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
-              ＋ Add Section
-            </button>
-          ) : (
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <input autoFocus value={newSectionName} onChange={e => setNewSectionName(e.target.value)} placeholder="Section name..."
-                onKeyDown={e => { if (e.key === "Enter") addSection(); if (e.key === "Escape") { setShowAddSection(false); setNewSectionName(""); } }}
-                style={{ background:"#0f1a2e", border:"1px solid #e2e8f0", borderRadius:7, padding:"7px 12px", color:"#f1f5f9", fontSize:13, outline:"none", width:180 }} />
-              <button onClick={addSection} style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:7, padding:"7px 14px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer" }}>Add</button>
-              <button onClick={() => { setShowAddSection(false); setNewSectionName(""); }} style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:7, padding:"7px 10px", color:"#64748b", fontSize:13, cursor:"pointer" }}>Cancel</button>
-            </div>
+          <button onClick={() => { setReorderMode(!reorderMode); setReorderSection(null); }}
+            style={{ background:reorderMode?"#e2e8f0":"transparent", border:`1px solid ${reorderMode?"#e2e8f0":"#1e2d45"}`, borderRadius:8, color:reorderMode?"#080c14":"#94a3b8", cursor:"pointer", fontSize:13, padding:"7px 16px", fontWeight:reorderMode?600:400 }}>
+            {reorderMode ? "✓ Done" : "↕ Reorder"}
+          </button>
+          {!reorderMode && (
+            <>
+              {!showAddSection ? (
+                <button onClick={() => setShowAddSection(true)}
+                  style={{ background:"none", border:"1px dashed #1e2d45", borderRadius:8, color:"#475569", cursor:"pointer", fontSize:13, padding:"7px 16px", display:"flex", alignItems:"center", gap:6 }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#475569"; }}>
+                  ＋ Add Section
+                </button>
+              ) : (
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <input autoFocus value={newSectionName} onChange={e => setNewSectionName(e.target.value)} placeholder="Section name..."
+                    onKeyDown={e => { if (e.key === "Enter") addSection(); if (e.key === "Escape") { setShowAddSection(false); setNewSectionName(""); } }}
+                    style={{ background:"#0f1a2e", border:"1px solid #e2e8f0", borderRadius:7, padding:"7px 12px", color:"#f1f5f9", fontSize:13, outline:"none", width:180 }} />
+                  <button onClick={addSection} style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:7, padding:"7px 14px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer" }}>Add</button>
+                  <button onClick={() => { setShowAddSection(false); setNewSectionName(""); }} style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:7, padding:"7px 10px", color:"#64748b", fontSize:13, cursor:"pointer" }}>Cancel</button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
 
-      {inventory.map((section, sIdx) => (
-        <BackendSection key={section.section} section={section} sIdx={sIdx} totalSections={inventory.length} stock={stock} vendors={vendors}
+      {/* ── REORDER MODE ── */}
+      {reorderMode && (
+        <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
+          {/* Sections list */}
+          <div style={{ flex:"1 1 280px", minWidth:280 }}>
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Sections</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+              {inventory.map((sec, idx) => (
+                <div key={sec.section} onClick={() => setReorderSection(sec.section)}
+                  style={{ background: reorderSection === sec.section ? "#1e2d45" : "#0f1a2e", border:`1px solid ${reorderSection === sec.section ? "#e2e8f0" : "#1e2d45"}`, borderRadius:10, padding:"10px 14px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", transition:"all 0.15s" }}>
+                  <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                    <button onClick={(e) => { e.stopPropagation(); moveSection(idx, -1); }} disabled={idx===0}
+                      style={{ background:"none", border:"none", color:idx===0?"#1e2d45":"#64748b", cursor:idx===0?"default":"pointer", fontSize:12, padding:0, lineHeight:1 }}>▲</button>
+                    <button onClick={(e) => { e.stopPropagation(); moveSection(idx, 1); }} disabled={idx===inventory.length-1}
+                      style={{ background:"none", border:"none", color:idx===inventory.length-1?"#1e2d45":"#64748b", cursor:idx===inventory.length-1?"default":"pointer", fontSize:12, padding:0, lineHeight:1 }}>▼</button>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:600 }}>{sec.section.replace(/[^\w\s\-&]/g,"").trim()}</div>
+                    <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{sec.items.length} items</div>
+                  </div>
+                  <span style={{ color:"#334155", fontSize:14 }}>›</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Items in selected section */}
+          {reorderSection && (
+            <div style={{ flex:"1 1 320px", minWidth:320 }}>
+              <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>
+                Items in {inventory.find(s => s.section === reorderSection)?.section.replace(/[^\w\s\-&]/g,"").trim()}
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                {(inventory.find(s => s.section === reorderSection)?.items || []).map((item, idx, arr) => (
+                  <div key={item.id} style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                      <button onClick={() => moveItem(reorderSection, idx, -1)} disabled={idx===0}
+                        style={{ background:"none", border:"none", color:idx===0?"#1e2d45":"#64748b", cursor:idx===0?"default":"pointer", fontSize:11, padding:0, lineHeight:1 }}>▲</button>
+                      <button onClick={() => moveItem(reorderSection, idx, 1)} disabled={idx===arr.length-1}
+                        style={{ background:"none", border:"none", color:idx===arr.length-1?"#1e2d45":"#64748b", cursor:idx===arr.length-1?"default":"pointer", fontSize:11, padding:0, lineHeight:1 }}>▼</button>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ color:"#f1f5f9", fontSize:12, fontWeight:500 }}>{item.name}</div>
+                      <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{item.order_unit}{item.vendor ? ` · ${item.vendor}` : ""}</div>
+                    </div>
+                    <span style={{ color:"#334155", fontSize:11, fontFamily:"'DM Mono',monospace" }}>#{idx+1}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── NORMAL TABLE MODE ── */}
+      {!reorderMode && inventory.map((section, sIdx) => (
+        <BackendSection key={section.section} section={section} stock={stock} vendors={vendors}
           saveItemField={saveItemField} addItem={addItem} removeItem={removeItem}
-          saveSectionName={saveSectionName} deleteSection={deleteSection}
-          moveSectionUp={moveSectionUp} moveSectionDown={moveSectionDown}
-          moveItemUp={moveItemUp} moveItemDown={moveItemDown} />
+          saveSectionName={saveSectionName} deleteSection={deleteSection} />
       ))}
     </div>
   );
 }
 
 // ── Section inside BackendView ────────────────────────────────────────────────
-function BackendSection({ section, sIdx, totalSections, stock, vendors, saveItemField, addItem, removeItem, saveSectionName, deleteSection, moveSectionUp, moveSectionDown, moveItemUp, moveItemDown }) {
+function BackendSection({ section, stock, vendors, saveItemField, addItem, removeItem, saveSectionName, deleteSection }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(section.section);
   const [confirmDel, setConfirmDel] = useState(false);
   const commitRename = () => { saveSectionName(section.section, draft); setEditing(false); };
 
-  const arrowBtn = { background:"none", border:"1px solid #1e2d45", borderRadius:4, color:"#475569", cursor:"pointer", fontSize:11, padding:"2px 6px", lineHeight:1 };
-
   return (
     <div style={{ marginBottom:12 }}>
       {/* Section header */}
       <div style={{ background:"#080c14", padding:"6px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #1e2d45", borderBottom:"none", display:"flex", alignItems:"center", gap:8 }}>
-        {/* Section reorder arrows */}
-        <div style={{ display:"flex", flexDirection:"column", gap:2, marginRight:4 }}>
-          <button onClick={() => moveSectionUp(sIdx)} disabled={sIdx === 0}
-            style={{ ...arrowBtn, opacity:sIdx===0?0.3:1 }}
-            onMouseEnter={e => { if(sIdx>0) e.currentTarget.style.color="#e2e8f0"; }}
-            onMouseLeave={e => e.currentTarget.style.color="#475569"}>▲</button>
-          <button onClick={() => moveSectionDown(sIdx)} disabled={sIdx === totalSections - 1}
-            style={{ ...arrowBtn, opacity:sIdx===totalSections-1?0.3:1 }}
-            onMouseEnter={e => { if(sIdx<totalSections-1) e.currentTarget.style.color="#e2e8f0"; }}
-            onMouseLeave={e => e.currentTarget.style.color="#475569"}>▼</button>
-        </div>
         {editing ? (
           <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
             onBlur={commitRename} onKeyDown={e => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") { setEditing(false); setDraft(section.section); } }}
@@ -1898,7 +1928,7 @@ function BackendSection({ section, sIdx, totalSections, stock, vendors, saveItem
           <thead>
             <tr style={{ background:"#080c14" }}>
               {[
-                ["↕","center",36,false], ["Item Name","left",170,true], ["Vendor","left",100,false], ["Order Unit","left",90,false],
+                ["Item Name","left",170,true], ["Vendor","left",100,false], ["Order Unit","left",90,false],
                 ["Units/Pkg","center",60,false], ["Max Stock","center",75,false], ["Reorder Pt","center",75,false],
                 ["Current","center",70,false], ["Needed","center",70,false], ["Order Qty","center",70,false], ["Status","center",80,false],
               ].map(([h, align, w, stickyLeft]) => (
@@ -1915,18 +1945,6 @@ function BackendSection({ section, sIdx, totalSections, stock, vendors, saveItem
               const rowBg = idx % 2 === 0 ? "#0f1a2e" : "#0a1220";
               return (
                 <HoverRow key={item.id} bg={rowBg} onRemove={() => removeItem(item.id)}>
-                  <td style={{ padding:"2px 4px", textAlign:"center" }}>
-                    <div style={{ display:"flex", flexDirection:"column", gap:1 }}>
-                      <button onClick={() => moveItemUp(section.section, idx)} disabled={idx===0}
-                        style={{ background:"none", border:"none", color:idx===0?"#1e2d45":"#475569", cursor:idx===0?"default":"pointer", fontSize:10, padding:0, lineHeight:1 }}
-                        onMouseEnter={e => { if(idx>0) e.currentTarget.style.color="#e2e8f0"; }}
-                        onMouseLeave={e => e.currentTarget.style.color=idx===0?"#1e2d45":"#475569"}>▲</button>
-                      <button onClick={() => moveItemDown(section.section, idx)} disabled={idx===section.items.length-1}
-                        style={{ background:"none", border:"none", color:idx===section.items.length-1?"#1e2d45":"#475569", cursor:idx===section.items.length-1?"default":"pointer", fontSize:10, padding:0, lineHeight:1 }}
-                        onMouseEnter={e => { if(idx<section.items.length-1) e.currentTarget.style.color="#e2e8f0"; }}
-                        onMouseLeave={e => e.currentTarget.style.color=idx===section.items.length-1?"#1e2d45":"#475569"}>▼</button>
-                    </div>
-                  </td>
                   <td style={{ padding:"5px 8px", position:"sticky", left:0, zIndex:1, background:rowBg, boxShadow:"2px 0 8px rgba(0,0,0,0.4)" }}>
                     <EditableCell value={item.name} onSave={v => saveItemField(item.id, "name", v)} width={155} />
                   </td>
