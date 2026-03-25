@@ -2604,6 +2604,9 @@ function LandingPage() {
             <a href="#how-it-works" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>How It Works</a>
             <a href="#pricing" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>Pricing</a>
             <a href="#faq" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>FAQ</a>
+            <button onClick={() => window.__moeNavigate("/app")} style={{ background: "none", border: "none", color: "#64748b", fontSize: 13, fontWeight: 500, cursor: "pointer", padding: "6px 0" }}>
+              Sign In
+            </button>
             <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
               Get Started Free
             </button>
@@ -2851,10 +2854,15 @@ function LandingPage() {
 // ROUTER — getmoe.ai/ → Landing, getmoe.ai/app → MOE App
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function Router() {
+  const isSandbox = window.location.hostname === "localhost" || window.location.pathname.includes("artifact");
+
   const getRoute = () => {
     const p = window.location.pathname;
     const h = window.location.hash;
-    if (p === "/app" || p.startsWith("/app/") || h === "#/app") return "app";
+    // Production: check pathname
+    if (p === "/app" || p.startsWith("/app/")) return "app";
+    // Sandbox fallback: check hash
+    if (h === "#/app" || h === "#app") return "app";
     return "landing";
   };
 
@@ -2868,9 +2876,17 @@ export default function Router() {
   }, []);
 
   window.__moeNavigate = (to) => {
-    try { window.history.pushState({}, "", to); } catch {}
-    window.location.hash = to === "/app" ? "#/app" : "";
-    setRoute(to === "/app" ? "app" : "landing");
+    if (to === "/app") {
+      try { window.history.pushState({}, "", "/app"); } catch {
+        window.location.hash = "#/app";
+      }
+      setRoute("app");
+    } else {
+      try { window.history.pushState({}, "", "/"); } catch {
+        window.location.hash = "";
+      }
+      setRoute("landing");
+    }
   };
 
   if (route === "app") return <MoeApp />;
