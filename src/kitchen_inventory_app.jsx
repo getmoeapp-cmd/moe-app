@@ -2524,34 +2524,38 @@ French Fries, Case, , 12, 3, Freezer`}
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const LANDING_PLANS = [
-  { name: "Starter", price: 299, vendors: "3", items: "100", users: "2", features: ["Inventory tracking", "Order submission & history", "PDF export"], cta: "Start Free Trial" },
-  { name: "Pro", price: 399, vendors: "Unlimited", items: "Unlimited", users: "10", features: ["Everything in Starter", "AI-powered import", "Insights & par suggestions", "Smart reorder recommendations"], popular: true, cta: "Start Free Trial" },
-  { name: "Enterprise", price: 499, vendors: "Unlimited", items: "Unlimited", users: "Unlimited", features: ["Everything in Pro", "Priority support", "Custom onboarding", "Multi-location ready"], cta: "Contact Sales" },
+  { name: "Starter", price: 299, vendors: "3", items: "100", users: "2", features: ["Inventory tracking", "Order submission & history", "PDF export with business name", "Waste log with cost tracking", "Real-time sync across devices"], cta: "Start Free Trial" },
+  { name: "Pro", price: 399, vendors: "Unlimited", items: "Unlimited", users: "10", features: ["Everything in Starter", "AI-powered invoice import", "Insights & smart par suggestions", "Price tracker — flag vendor increases", "Waste log with $ loss estimates"], popular: true, cta: "Start Free Trial" },
+  { name: "Enterprise", price: 499, vendors: "Unlimited", items: "Unlimited", users: "Unlimited", features: ["Everything in Pro", "Priority support", "Custom onboarding", "Multi-location ready", "Dedicated account manager"], cta: "Contact Sales" },
 ];
 
 const STEPS = [
-  { num: "01", title: "Set Up Your Business", desc: "Add your vendors, items, and sections. Or upload an invoice photo and let AI do it for you.", icon: "🏪" },
-  { num: "02", title: "Count Your Stock", desc: "Walk your space and tap to count. Employees can do it from their phones — no training needed.", icon: "📋" },
-  { num: "03", title: "Submit Orders", desc: "MOE calculates what you need based on par levels. One tap to submit, auto-generates a PDF for your vendor.", icon: "📦" },
-  { num: "04", title: "Get Smarter Each Week", desc: "After 3 weeks, MOE analyzes your ordering patterns and recommends better par levels automatically.", icon: "📊" },
+  { num: "01", title: "Set Up in Minutes", desc: "Add vendors and items — or snap a photo of an invoice and let AI do it. Invite your team with one tap.", icon: "🏪" },
+  { num: "02", title: "Count & Order", desc: "Your team counts stock on their phones. MOE calculates exactly what to order and generates a PDF for each vendor.", icon: "📋" },
+  { num: "03", title: "Track Prices & Waste", desc: "Upload invoices to track vendor prices week to week. Log wasted items to see exactly how much you're losing.", icon: "💲" },
+  { num: "04", title: "Get Smarter Every Week", desc: "MOE learns your patterns, recommends better stock levels, flags price increases, and shows you where money is going.", icon: "📊" },
 ];
 
 const FEATURES = [
-  { title: "Vendor-Based Ordering", desc: "Set order days per vendor. MOE shows you who to order from today and auto-calculates quantities.", icon: "📦" },
-  { title: "AI Invoice Import", desc: "Snap a photo of any invoice or order sheet. AI extracts every item, unit, and quantity into your inventory.", icon: "📸" },
-  { title: "Smart Par Suggestions", desc: "After 3 weeks of data, MOE recommends optimal stock levels based on your actual usage patterns.", icon: "🧠" },
-  { title: "Team Access Control", desc: "Owners, managers, and employees each see exactly what they need. No confusion, no mistakes.", icon: "👥" },
-  { title: "Real-Time Sync", desc: "Everyone sees the same inventory in real-time. Count stock on one phone, it updates everywhere instantly.", icon: "⚡" },
-  { title: "One-Tap PDF Orders", desc: "Generate clean, printable order sheets per vendor. Email or text them directly — no more handwritten lists.", icon: "🖨️" },
+  { title: "Vendor-Based Ordering", desc: "Set order days per vendor. MOE shows you who to order from today and auto-calculates exactly how much you need.", icon: "📦" },
+  { title: "AI Invoice Import", desc: "Snap a photo of any invoice or order sheet. AI extracts every item, unit, and quantity — your inventory is set up in seconds.", icon: "📸" },
+  { title: "Price Tracker", desc: "Enter prices each week from your invoices — manually, by photo, or CSV upload. MOE flags every price increase with the exact % change.", icon: "💲" },
+  { title: "Waste Log", desc: "Track what's going in the trash. MOE logs every wasted item with the reason, who logged it, and estimates the dollar loss from your price data.", icon: "🗑️" },
+  { title: "Smart Par Suggestions", desc: "After 3 weeks of order data, MOE recommends optimal stock levels based on your actual usage — with a built-in safety buffer.", icon: "🧠" },
+  { title: "Team Access Control", desc: "Owners see everything. Managers handle orders and backend. Employees just count stock. Everyone has exactly the access they need.", icon: "👥" },
+  { title: "Real-Time Sync", desc: "Count stock on one phone, it updates everywhere instantly. Your whole team works from the same live inventory across all devices.", icon: "⚡" },
+  { title: "PDF Order Sheets", desc: "Generate clean, printable order sheets per vendor — with your business name, who placed the order, and item quantities. Ready to send.", icon: "🖨️" },
 ];
 
 const FAQS = [
-  { q: "How long is the free trial?", a: "14 days with full Pro features. No credit card required to start." },
-  { q: "Can my employees use it?", a: "Yes. Add employees in Settings with their email. They sign in and see only what they need — the inventory count screen." },
-  { q: "Do I need to enter all my items manually?", a: "No. You can upload a CSV, or just take a photo of any invoice or order sheet. Our AI will extract all the items for you." },
-  { q: "What happens after the trial?", a: "Choose a plan that fits. Your data carries over — nothing is lost. Cancel anytime." },
-  { q: "Does it work on phones?", a: "MOE is built mobile-first. Your team counts stock on their phones while walking the floor." },
-  { q: "Can I use it for multiple locations?", a: "Yes. Enterprise plan supports multiple locations, each with their own inventory and team." },
+  { q: "How long is the free trial?", a: "14 days with full Pro features — including AI import, price tracking, and insights. No credit card required." },
+  { q: "Can my employees use it?", a: "Yes. Add employees in Settings with their email and a temporary password. They sign in and see only the inventory count screen. Managers get access to orders, history, insights, and backend." },
+  { q: "Do I need to enter all my items manually?", a: "No. You can upload a CSV file, or just take a photo of any invoice or order sheet. Our AI extracts all the items, units, and quantities for you." },
+  { q: "How does the price tracker work?", a: "Enter your vendor prices each week — manually, by uploading a photo of the invoice, or via CSV. MOE compares this week's prices to last week's and flags every increase with the exact dollar and percentage change." },
+  { q: "What does the waste log track?", a: "Every item your team throws away — the quantity, the reason (expired, spoiled, damaged, etc.), and who logged it. If you've entered prices, MOE estimates the dollar value of the waste too." },
+  { q: "What happens after the trial?", a: "Choose a plan that fits your business. All your data carries over — nothing is lost. Plans start at $299/month and pay for themselves in the first week." },
+  { q: "Does it work on phones?", a: "MOE is built mobile-first. Your team counts stock on their phones while walking the floor. Orders can be submitted from any device." },
+  { q: "Can I use it for multiple locations?", a: "Yes. Enterprise plan supports multiple locations, each with their own inventory, team, and vendor setup." },
 ];
 
 function HexIcon({ size = 48 }) {
@@ -2669,7 +2673,7 @@ function LandingPage() {
         <div style={{ position: "relative", maxWidth: 800, margin: "0 auto", padding: "0 24px" }}>
           <div className="fade-up" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 40, padding: "6px 18px 6px 8px", marginBottom: 32, boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>
             <span style={{ background: "#dcfce7", color: "#16a34a", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>NEW</span>
-            <span style={{ color: "#64748b", fontSize: 13 }}>AI-powered invoice import is here</span>
+            <span style={{ color: "#64748b", fontSize: 13 }}>Now with Price Tracking & Waste Log</span>
           </div>
 
           <h1 className="fade-up fade-up-d1" style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(36px, 6vw, 64px)", fontWeight: 800, lineHeight: 1.08, letterSpacing: "-2px", color: "#0f172a", marginBottom: 24 }}>
@@ -2677,7 +2681,7 @@ function LandingPage() {
           </h1>
 
           <p className="fade-up fade-up-d2" style={{ fontSize: "clamp(16px, 2.5vw, 20px)", color: "#64748b", lineHeight: 1.6, maxWidth: 560, margin: "0 auto 40px" }}>
-            Over-ordering, waste, emergency runs, and guesswork add up fast. MOE tracks your inventory, calculates exactly what you need, and gets smarter every week — so you stop bleeding money.
+            Over-ordering, waste, and rising vendor prices add up fast. MOE tracks your inventory, calculates orders, monitors prices for increases, logs what's going in the trash, and gets smarter every week — so you stop bleeding money.
           </p>
 
           <div className="fade-up fade-up-d3" style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
@@ -2865,7 +2869,7 @@ function LandingPage() {
             Stop losing $500 a week.
           </h2>
           <p style={{ color: "#94a3b8", fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>
-            Over-ordering, waste, and last-minute vendor runs cost the average business $26,000+ a year. MOE pays for itself in the first week — and keeps saving you money every week after.
+            Over-ordering, rising prices you don't notice, and waste you can't track cost the average business $26,000+ a year. MOE catches it all — and pays for itself in the first week.
           </p>
           <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#f1f5f9", color: "#0f172a", border: "none", borderRadius: 14, padding: "18px 44px", fontSize: 18, fontWeight: 800, cursor: "pointer", fontFamily: "'Syne',sans-serif", letterSpacing: "-0.5px" }}>
             Start Your Free Trial
