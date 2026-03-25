@@ -280,113 +280,23 @@ const PLANS = {
 const TRIAL_DAYS = 14;
 const DEMO_GROUPS = ["demo"]; // Demo accounts skip subscription
 
-// ─── PDF GENERATOR (downloadable PDF via jsPDF) ──────────────────────────────
-const loadJsPDF = () => {
-  if (window.jspdf) return Promise.resolve();
-  return new Promise((resolve) => {
-    if (document.getElementById("jspdf-script")) { resolve(); return; }
-    const s = document.createElement("script");
-    s.id = "jspdf-script";
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-    s.onload = resolve;
-    s.onerror = resolve;
-    document.head.appendChild(s);
-  });
-};
-
-const printVendorPDF = async ({ vendorName, items, weekNum, date, businessName, orderedBy }) => {
-  await loadJsPDF();
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
-  const orderItems = items.filter(i => i.qty > 0);
-  const pageW = doc.internal.pageSize.getWidth();
-  const margin = 16;
-  const contentW = pageW - margin * 2;
-  let y = 20;
-
-  // ── Business name
-  if (businessName) {
-    doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(17, 17, 17);
-    doc.text(businessName.toUpperCase(), margin, y);
-    y += 8;
-  }
-
-  // ── Vendor name
-  doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(68, 68, 68);
-  doc.text(vendorName, margin, y);
-  y += 7;
-
-  // ── Order title
-  doc.setFont("helvetica", "normal"); doc.setFontSize(12); doc.setTextColor(17, 17, 17);
-  doc.text(`Order — Week ${weekNum}`, margin, y);
-  y += 6;
-
-  // ── Meta line
-  doc.setFontSize(9); doc.setTextColor(100, 100, 100);
-  doc.text(`${date}  ·  ${orderItems.length} item${orderItems.length !== 1 ? "s" : ""}  ·  Ordered by: ${orderedBy || "—"}`, margin, y);
-  y += 4;
-
-  // ── Divider
-  doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.5);
-  doc.line(margin, y, pageW - margin, y);
-  y += 6;
-
-  // ── Table header
-  const colX = [margin, margin + contentW * 0.55, margin + contentW * 0.78];
-  const colW = [contentW * 0.55, contentW * 0.23, contentW * 0.22];
-
-  doc.setFillColor(30, 41, 59); doc.rect(margin, y - 4, contentW, 8, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
-  doc.text("Item", colX[0] + 3, y);
-  doc.text("Location", colX[1] + 3, y);
-  doc.text("Qty to Order", colX[2] + 3, y);
-  y += 7;
-
-  // ── Table rows
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
-  orderItems.forEach((item, idx) => {
-    // Check for page break
-    if (y > 260) {
-      doc.addPage();
-      y = 20;
-      // Re-draw header
-      doc.setFillColor(30, 41, 59); doc.rect(margin, y - 4, contentW, 8, "F");
-      doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
-      doc.text("Item", colX[0] + 3, y);
-      doc.text("Location", colX[1] + 3, y);
-      doc.text("Qty to Order", colX[2] + 3, y);
-      y += 7;
-      doc.setFont("helvetica", "normal"); doc.setFontSize(9);
-    }
-
-    // Alternating row bg
-    if (idx % 2 === 0) { doc.setFillColor(249, 250, 251); doc.rect(margin, y - 4, contentW, 7, "F"); }
-
-    doc.setTextColor(30, 30, 30);
-    doc.text(item.name, colX[0] + 3, y);
-    doc.setTextColor(100, 100, 100);
-    doc.text((item.section || "").replace(/[^\w\s\-&]/g, "").trim(), colX[1] + 3, y);
-    doc.setFont("helvetica", "bold"); doc.setTextColor(30, 30, 30);
-    doc.text(`${item.qty} ${item.order_unit}`, colX[2] + 3, y);
-    doc.setFont("helvetica", "normal");
-
-    // Row border
-    doc.setDrawColor(229, 231, 235); doc.setLineWidth(0.2);
-    doc.line(margin, y + 2.5, pageW - margin, y + 2.5);
-    y += 7;
-  });
-
-  // ── Footer
-  y += 6;
-  doc.setDrawColor(229, 231, 235); doc.setLineWidth(0.3);
-  doc.line(margin, y, pageW - margin, y);
-  y += 5;
-  doc.setFontSize(8); doc.setTextColor(160, 160, 160);
-  doc.text(`MOE · Make Ordering Easy · Generated ${new Date().toLocaleDateString()}`, margin, y);
-
-  // ── Download
-  const filename = `${(businessName || "order").replace(/[^a-zA-Z0-9]/g, "_")}_${vendorName.replace(/[^a-zA-Z0-9]/g, "_")}_WK${weekNum}.pdf`;
-  doc.save(filename);
+// ─── PDF GENERATOR ────────────────────────────────────────────────────────────
+const printVendorPDF = ({ vendorName, items, weekNum, date, businessName, orderedBy }) => {
+  const win = window.open("", "_blank");
+  const rows = items.filter(i => i.qty > 0).map(item =>
+    `<tr><td>${item.name}</td><td style="text-align:center">${(item.section || "").replace(/[^\w\s\-&]/g,"").trim()}</td><td style="text-align:center;font-weight:700">${item.qty} ${item.order_unit}</td></tr>`
+  ).join("");
+  const totalItems = items.filter(i => i.qty > 0).length;
+  win.document.write(`<html><head><title>${vendorName} — WK${weekNum}</title>
+    <style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}.biz{font-size:24px;font-weight:900;color:#111;margin:0 0 2px;text-transform:uppercase;letter-spacing:1px}.vendor{font-size:22px;font-weight:700;color:#444;margin:0 0 6px}.meta{color:#666;font-size:12px;margin-bottom:24px;padding-bottom:12px;border-bottom:2px solid #e5e7eb}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1e293b;color:#fff;padding:10px 14px;text-align:left}th:last-child{text-align:center}td{padding:10px 14px;border-bottom:1px solid #e5e7eb}tr:nth-child(even) td{background:#f9fafb}.footer{margin-top:20px;color:#999;font-size:11px;border-top:1px solid #e5e7eb;padding-top:12px}@media print{body{padding:16px}}</style></head><body>
+    ${businessName ? `<div class="biz">${businessName}</div>` : ""}
+    <div class="vendor">${vendorName}</div>
+    <h1>Order — Week ${weekNum}</h1>
+    <div class="meta">${date} · ${totalItems} item${totalItems!==1?"s":""} · Ordered by: <strong>${orderedBy || "—"}</strong></div>
+    <table><thead><tr><th>Item</th><th style="text-align:center">Location</th><th style="text-align:center">Qty to Order</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="footer">MOE · Make Ordering Easy · Printed ${new Date().toLocaleDateString()}</div>
+    <script>window.onload=()=>window.print()<\/script></body></html>`);
+  win.document.close();
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -703,34 +613,33 @@ function MoeApp() {
       </div>
 
       {/* Header */}
-      <header style={{ background:"#0f1a2e", borderBottom:"1px solid #1e2d45", padding:"0 16px", display:"flex", alignItems:"center", justifyContent:"space-between", height:56, position:"sticky", top:0, zIndex:101 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-          <button onClick={() => setSidebarOpen(true)} style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4 }}
+      <header style={{ background:"#0f1a2e", borderBottom:"1px solid #1e2d45", padding:"0 12px", display:"flex", alignItems:"center", justifyContent:"space-between", height:52, position:"sticky", top:0, zIndex:101, gap:8, overflow:"hidden" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+          <button onClick={() => setSidebarOpen(true)} style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}
             onMouseEnter={e => e.currentTarget.style.background="#1e2d45"} onMouseLeave={e => e.currentTarget.style.background="none"}>
-            <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
-            <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
-            <span style={{ display:"block", width:20, height:2, background:"#94a3b8", borderRadius:2 }} />
+            <span style={{ display:"block", width:18, height:2, background:"#94a3b8", borderRadius:2 }} />
+            <span style={{ display:"block", width:18, height:2, background:"#94a3b8", borderRadius:2 }} />
+            <span style={{ display:"block", width:18, height:2, background:"#94a3b8", borderRadius:2 }} />
           </button>
-          <MoeLogo size="sm" />
-          <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{view.toUpperCase()}</span>
+          <span style={{ color:"#f1f5f9", fontSize:16, fontWeight:900, fontFamily:"'DM Sans',sans-serif", flexShrink:0 }}>M<span style={{ color:"#94a3b8" }}>OE</span></span>
+          <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap" }}>{view.toUpperCase()}</span>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
           {todayVendors.length > 0 && view !== "orders" && (
-            <button onClick={() => setView("orders")} style={{ background:"#422006", border:"1px solid #d97706", borderRadius:8, padding:"4px 12px", color:"#fbbf24", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600, cursor:"pointer" }}>
-              📦 {todayVendors.length} order{todayVendors.length!==1?"s":""} due
+            <button onClick={() => setView("orders")} style={{ background:"#422006", border:"1px solid #d97706", borderRadius:6, padding:"3px 8px", color:"#fbbf24", fontSize:10, fontFamily:"'DM Mono',monospace", fontWeight:600, cursor:"pointer", whiteSpace:"nowrap" }}>
+              {todayVendors.length} due
             </button>
           )}
-          <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:6, padding:"3px 8px", color:"#a5b4fc", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>WK {weekNum}</span>
-          <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{DAYS_SHORT[getToday()]}</span>
-          {flash && <span style={{ color:"#22c55e", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{flash}</span>}
+          <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:5, padding:"2px 6px", color:"#a5b4fc", fontSize:10, fontFamily:"'DM Mono',monospace", fontWeight:600, whiteSpace:"nowrap" }}>WK{weekNum}</span>
+          {flash && <span style={{ color:"#22c55e", fontSize:11, fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap" }}>{flash}</span>}
         </div>
       </header>
 
       {/* Trial banner */}
       {isTrialing && !isDemo && (
-        <div style={{ background:"#422006", borderBottom:"1px solid #d97706", padding:"8px 16px", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
-          <span style={{ color:"#fbbf24", fontSize:12, fontWeight:600 }}>Free trial — {trialDaysLeft} day{trialDaysLeft !== 1 ? "s" : ""} remaining</span>
-          <button onClick={() => setView("subscription")} style={{ background:"#d97706", border:"none", borderRadius:6, padding:"3px 12px", color:"#fff", fontSize:11, fontWeight:600, cursor:"pointer" }}>Upgrade</button>
+        <div style={{ background:"#422006", borderBottom:"1px solid #d97706", padding:"6px 12px", display:"flex", alignItems:"center", justifyContent:"center", gap:6, flexWrap:"wrap" }}>
+          <span style={{ color:"#fbbf24", fontSize:11, fontWeight:600, whiteSpace:"nowrap" }}>Free trial — {trialDaysLeft} day{trialDaysLeft !== 1 ? "s" : ""} left</span>
+          <button onClick={() => setView("subscription")} style={{ background:"#d97706", border:"none", borderRadius:5, padding:"2px 10px", color:"#fff", fontSize:10, fontWeight:600, cursor:"pointer" }}>Upgrade</button>
         </div>
       )}
 
@@ -881,9 +790,9 @@ function LoginScreen({ onLogin, error, setError }) {
   const lbl = { display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" };
 
   return (
-    <div style={{ minHeight:"100vh", background:"#080c14", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',sans-serif" }}>
+    <div style={{ minHeight:"100vh", background:"#080c14", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',sans-serif", padding:"20px 16px" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      <div style={{ width:420 }}>
+      <div style={{ width:"100%", maxWidth:400 }}>
         <div style={{ textAlign:"center", marginBottom:24 }}>
           <div style={{ display:"flex", justifyContent:"center", marginBottom:8 }}><MoeLogo size="lg" /></div>
           <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", letterSpacing:"2px", marginBottom:4 }}>MAKE ORDERING EASY</div>
