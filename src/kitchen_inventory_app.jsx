@@ -207,8 +207,6 @@ const DEFAULT_INVENTORY = [
 const USERS = {
   "owner@kitchen.com":    { password: "owner123",    role: "owner",    name: "Owner",    group: "demo" },
   "employee@kitchen.com": { password: "employee123", role: "employee", name: "Employee", group: "demo" },
-  "ronnie@kitchen.com":   { password: "ronnie123",   role: "owner",    name: "Ronnie",   group: "tommys" },
-  "roberto@kitchen.com":  { password: "roberto123",  role: "employee", name: "Roberto",  group: "tommys" },
 };
 
 // ─── DEFAULT VENDORS (Tommy's starter) ───────────────────────────────────────
@@ -263,20 +261,21 @@ const PLANS = {
   enterprise: { name: "Enterprise", price: 499, vendors: Infinity, items: Infinity,  users: Infinity, label: "For multi-location businesses" },
 };
 const TRIAL_DAYS = 14;
-const DEMO_GROUPS = ["demo", "tommys"]; // Demo accounts skip subscription
+const DEMO_GROUPS = ["demo"]; // Demo accounts skip subscription
 
 // ─── PDF GENERATOR ────────────────────────────────────────────────────────────
-const printVendorPDF = ({ vendorName, items, weekNum, date }) => {
+const printVendorPDF = ({ vendorName, items, weekNum, date, businessName, orderedBy }) => {
   const win = window.open("", "_blank");
   const rows = items.filter(i => i.qty > 0).map(item =>
     `<tr><td>${item.name}</td><td style="text-align:center">${item.section.replace(/[^\w\s\-&]/g,"").trim()}</td><td style="text-align:center;font-weight:700">${item.qty} ${item.order_unit}</td></tr>`
   ).join("");
   const totalItems = items.filter(i => i.qty > 0).length;
   win.document.write(`<html><head><title>${vendorName} — WK${weekNum}</title>
-    <style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}.vendor{font-size:28px;font-weight:800;margin:0 0 6px}.meta{color:#666;font-size:12px;margin-bottom:24px;padding-bottom:12px;border-bottom:2px solid #e5e7eb}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1e293b;color:#fff;padding:10px 14px;text-align:left}th:last-child{text-align:center}td{padding:10px 14px;border-bottom:1px solid #e5e7eb}tr:nth-child(even) td{background:#f9fafb}.footer{margin-top:20px;color:#999;font-size:11px;border-top:1px solid #e5e7eb;padding-top:12px}@media print{body{padding:16px}}</style></head><body>
+    <style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}.biz{font-size:24px;font-weight:900;color:#111;margin:0 0 2px;text-transform:uppercase;letter-spacing:1px}.vendor{font-size:22px;font-weight:700;color:#444;margin:0 0 6px}.meta{color:#666;font-size:12px;margin-bottom:24px;padding-bottom:12px;border-bottom:2px solid #e5e7eb}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1e293b;color:#fff;padding:10px 14px;text-align:left}th:last-child{text-align:center}td{padding:10px 14px;border-bottom:1px solid #e5e7eb}tr:nth-child(even) td{background:#f9fafb}.footer{margin-top:20px;color:#999;font-size:11px;border-top:1px solid #e5e7eb;padding-top:12px}@media print{body{padding:16px}}</style></head><body>
+    ${businessName ? `<div class="biz">${businessName}</div>` : ""}
     <div class="vendor">📦 ${vendorName}</div>
     <h1>Order — Week ${weekNum}</h1>
-    <div class="meta">${date} · ${totalItems} item${totalItems!==1?"s":""}</div>
+    <div class="meta">${date} · ${totalItems} item${totalItems!==1?"s":""} · Ordered by: <strong>${orderedBy || "—"}</strong></div>
     <table><thead><tr><th>Item</th><th style="text-align:center">Location</th><th style="text-align:center">Qty to Order</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="footer">MOE · Make Ordering Easy · Printed ${new Date().toLocaleDateString()}</div>
     <script>window.onload=()=>window.print()<\/script></body></html>`);
@@ -411,6 +410,7 @@ function MoeApp() {
       date: new Date().toISOString(),
       lines: orderLines,
       totalItems: orderLines.length,
+      orderedBy: user?.name || "",
     };
     const newHistory = [entry, ...history];
     setHistory(newHistory);
@@ -573,8 +573,8 @@ function MoeApp() {
       <main style={{ maxWidth:1200, margin:"0 auto", padding:"20px 16px" }}>
         {view === "inventory" && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
         {view === "waste" && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} />}
-        {view === "orders" && (user.role === "owner" || user.role === "manager") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} />}
-        {view === "history" && (user.role === "owner" || user.role === "manager") && <HistoryView history={history} />}
+        {view === "orders" && (user.role === "owner" || user.role === "manager") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} user={user} />}
+        {view === "history" && (user.role === "owner" || user.role === "manager") && <HistoryView history={history} user={user} />}
         {view === "insights" && (user.role === "owner" || user.role === "manager") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
         {view === "import" && user.role === "owner" && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && (user.role === "owner" || user.role === "manager") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
@@ -891,7 +891,7 @@ function LoginScreen({ onLogin, error, setError }) {
         {mode === "signin" && (
           <div style={{ marginTop:20, background:"#0f1a2e", borderRadius:12, border:"1px solid #1e2d45", padding:"14px 18px" }}>
             <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Demo Credentials</div>
-            <div style={{ color:"#94a3b8", fontSize:12, lineHeight:2 }}><span style={{ color:"#e2e8f0" }}>Owner:</span> owner@kitchen.com / owner123<br /><span style={{ color:"#22c55e" }}>Employee:</span> employee@kitchen.com / employee123<br /><span style={{ color:"#fbbf24" }}>Tommy's Owner:</span> ronnie@kitchen.com / ronnie123<br /><span style={{ color:"#fbbf24" }}>Tommy's Employee:</span> roberto@kitchen.com / roberto123</div>
+            <div style={{ color:"#94a3b8", fontSize:12, lineHeight:2 }}><span style={{ color:"#e2e8f0" }}>Owner:</span> owner@kitchen.com / owner123<br /><span style={{ color:"#22c55e" }}>Employee:</span> employee@kitchen.com / employee123</div>
           </div>
         )}
       </div>
@@ -981,7 +981,7 @@ function InventoryView({ inventory, stock, updateStock, vendors }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ORDERS VIEW — Shows vendors ordering today, submit per vendor
 // ═══════════════════════════════════════════════════════════════════════════════
-function OrdersView({ inventory, stock, vendors, submitOrder }) {
+function OrdersView({ inventory, stock, vendors, submitOrder, user }) {
   const todayVendors = vendorsOrderingToday(vendors);
   const allItems = flatItems(inventory);
   const weekNum = getWeekNumber();
@@ -1039,7 +1039,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder }) {
               </div>
               <div style={{ display:"flex", gap:8, alignItems:"center" }}>
                 {!isSubmitted && needsOrder.length > 0 && (
-                  <button onClick={() => printVendorPDF({ vendorName: vendor.name, items: orderLines, weekNum, date: fmtDate(new Date()) })}
+                  <button onClick={() => printVendorPDF({ vendorName: vendor.name, items: orderLines, weekNum, date: fmtDate(new Date()), businessName: user.business?.name || "", orderedBy: user.name })}
                     style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:7, padding:"6px 14px", color:"#94a3b8", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}
                     onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#94a3b8"; }}>
@@ -1104,7 +1104,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // HISTORY VIEW — Past orders organized by week number, PDF per vendor
 // ═══════════════════════════════════════════════════════════════════════════════
-function HistoryView({ history }) {
+function HistoryView({ history, user }) {
   // Group by year-week
   const byWeek = {};
   history.forEach(entry => {
@@ -1140,7 +1140,7 @@ function HistoryView({ history }) {
                       <div style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>📦 {entry.vendor}</div>
                       <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{entry.day} · {fmtDate(entry.date)} · {entry.totalItems} item{entry.totalItems!==1?"s":""}</div>
                     </div>
-                    <button onClick={() => printVendorPDF({ vendorName: entry.vendor, items: entry.lines, weekNum: entry.weekNumber, date: fmtDate(entry.date) })}
+                    <button onClick={() => printVendorPDF({ vendorName: entry.vendor, items: entry.lines, weekNum: entry.weekNumber, date: fmtDate(entry.date), businessName: user.business?.name || "", orderedBy: entry.orderedBy || user.name })}
                       style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"5px 12px", color:"#94a3b8", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
                       onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#94a3b8"; }}>
