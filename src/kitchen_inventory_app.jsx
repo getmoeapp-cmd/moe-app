@@ -299,7 +299,8 @@ function MoeApp() {
   const [usageLog, setUsageLog]     = useState({});
   const [subscription, setSubscription] = useState(null); // { plan, status, trialStart, trialEnd, subscribedAt }
   const [team, setTeam]                 = useState([]); // [{ id, email, name, role, addedAt }]
-  const [wasteLog, setWasteLog]         = useState([]); // [{ id, itemId, itemName, qty, unit, reason, loggedBy, date, weekKey }]
+  const [wasteLog, setWasteLog]         = useState([]);
+  const [priceHistory, setPriceHistory] = useState({}); // { [itemId]: [{ price, date, weekKey, vendor, source }] } // [{ id, itemId, itemName, qty, unit, reason, loggedBy, date, weekKey }]
 
   const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
 
@@ -336,8 +337,9 @@ function MoeApp() {
       const sub = await load("subscription", null);
       const tm = await load("team", []);
       const wl = await load("wasteLog", []);
+      const ph = await load("priceHistory", {});
       setStock(st); setVendors(vd); setHistory(hi); setInventory(inv);
-      setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl);
+      setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl); setPriceHistory(ph);
     };
     init();
   }, [user, group]);
@@ -360,6 +362,7 @@ function MoeApp() {
         if (data_key === "subscription") setSubscription(value);
         if (data_key === "team")         setTeam(value);
         if (data_key === "wasteLog")    setWasteLog(value);
+        if (data_key === "priceHistory") setPriceHistory(value);
       } catch {}
     }).subscribe();
     return () => { sb.removeChannel(channel); };
@@ -434,6 +437,9 @@ function MoeApp() {
   // ── Save waste log ────────────────────────────────────────────────────
   const saveWasteLog = useCallback((newLog) => { setWasteLog(newLog); save("wasteLog", newLog); }, [save]);
 
+  // ── Save price history ────────────────────────────────────────────────
+  const savePriceHistory = useCallback((newPH) => { setPriceHistory(newPH); save("priceHistory", newPH); }, [save]);
+
   // ── Apply par suggestion — update an item's max_stock in inventory ──────
   const applyParSuggestion = (itemId, newMaxStock) => {
     const newInv = inventory.map(s => ({
@@ -504,6 +510,7 @@ function MoeApp() {
               { key:"orders",    label:"Orders",    icon:"📦", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length },
               { key:"history",   label:"History",   icon:"📚", desc:"Past orders by week" },
               { key:"insights", label:"Insights", icon:"📊", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing },
+              { key:"prices",  label:"Price Tracker", icon:"💲", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing },
               { key:"backend",  label:"Backend",  icon:"🔧", desc:"Add & edit items" },
               { key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors & team" },
             ] : []),
@@ -572,10 +579,11 @@ function MoeApp() {
       {/* Main content */}
       <main style={{ maxWidth:1200, margin:"0 auto", padding:"20px 16px" }}>
         {view === "inventory" && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
-        {view === "waste" && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} />}
+        {view === "waste" && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
         {view === "orders" && (user.role === "owner" || user.role === "manager") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} user={user} />}
         {view === "history" && (user.role === "owner" || user.role === "manager") && <HistoryView history={history} user={user} />}
         {view === "insights" && (user.role === "owner" || user.role === "manager") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
+        {view === "prices" && (user.role === "owner" || user.role === "manager") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} />}
         {view === "import" && user.role === "owner" && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && (user.role === "owner" || user.role === "manager") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
         {view === "settings" && (user.role === "owner" || user.role === "manager") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} />}
@@ -2872,7 +2880,7 @@ export default function Router() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // WASTE LOG — Track items going in the trash
 // ═══════════════════════════════════════════════════════════════════════════════
-function WasteLogView({ inventory, wasteLog, saveWasteLog, userName }) {
+function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistory }) {
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState(null);
@@ -2884,6 +2892,14 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName }) {
 
   const allItems = flatItems(inventory);
   const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2, "0")}`;
+
+  // Get latest price for an item from price tracker
+  const getPrice = (itemId) => {
+    const hist = priceHistory?.[itemId];
+    if (!hist || hist.length === 0) return null;
+    return [...hist].sort((a, b) => new Date(b.date) - new Date(a.date))[0].price;
+  };
+  const getCost = (entry) => { const p = getPrice(entry.itemId); return p ? p * entry.qty : null; };
 
   const reasons = [
     { key: "expired", label: "Expired", icon: "📅" },
@@ -2933,8 +2949,9 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName }) {
   const summaryData = {};
   const targetEntries = filterWeek === "all" ? wasteLog : wasteLog.filter(e => e.weekKey === filterWeek);
   targetEntries.forEach(e => {
-    if (!summaryData[e.itemId]) summaryData[e.itemId] = { name: e.itemName, unit: e.unit, vendor: e.vendor, totalQty: 0, reasons: {}, entries: 0 };
+    if (!summaryData[e.itemId]) summaryData[e.itemId] = { name: e.itemName, unit: e.unit, vendor: e.vendor, totalQty: 0, totalCost: 0, reasons: {}, entries: 0 };
     summaryData[e.itemId].totalQty += e.qty;
+    summaryData[e.itemId].totalCost += getCost(e) || 0;
     summaryData[e.itemId].entries++;
     summaryData[e.itemId].reasons[e.reason] = (summaryData[e.itemId].reasons[e.reason] || 0) + e.qty;
   });
@@ -2966,10 +2983,10 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName }) {
       {/* Stats cards */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10, marginBottom:20 }}>
         {[
-          { label:"This week", value:wasteLog.filter(e => e.weekKey === wk).reduce((s,e) => s+e.qty, 0), color:"#fca5a5", bg:"#450a0a", border:"#7f1d1d" },
-          { label:"Total entries", value:totalEntries, color:"#a5b4fc", bg:"#0f2040", border:"#1e40af" },
-          { label:"Total wasted", value:totalWasted, color:"#fbbf24", bg:"#422006", border:"#d97706" },
-          { label:"Top reason", value: Object.entries(reasonTotals).sort((a,b) => b[1]-a[1])[0]?.[0] || "—", color:"#94a3b8", bg:"#0f1a2e", border:"#1e2d45" },
+          { label:"Est. $ lost", value: "$" + targetEntries.reduce((s, e) => s + (getCost(e) || 0), 0).toFixed(0), color:"#fca5a5", bg:"#450a0a", border:"#7f1d1d" },
+          { label:"This week $", value: "$" + wasteLog.filter(e => e.weekKey === wk).reduce((s, e) => s + (getCost(e) || 0), 0).toFixed(0), color:"#f87171", bg:"#450a0a", border:"#7f1d1d" },
+          { label:"Total units", value:totalWasted, color:"#fbbf24", bg:"#422006", border:"#d97706" },
+          { label:"Items logged", value:totalEntries, color:"#a5b4fc", bg:"#0f2040", border:"#1e40af" },
         ].map(c => (
           <div key={c.label} style={{ background:c.bg, border:`1px solid ${c.border}`, borderRadius:10, padding:"12px 16px" }}>
             <div style={{ color:c.color, fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{c.value}</div>
@@ -3102,6 +3119,7 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName }) {
                         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                           <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{entry.itemName}</span>
                           <span style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:5, padding:"1px 7px", color:"#fca5a5", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{entry.qty} {entry.unit}</span>
+                          {getCost(entry) !== null && <span style={{ color:"#ef4444", fontSize:12, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>−${getCost(entry).toFixed(2)}</span>}
                         </div>
                         <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>
                           {r.label}{entry.note ? ` — ${entry.note}` : ""} · {entry.loggedBy} · {new Date(entry.date).toLocaleDateString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}
@@ -3159,8 +3177,8 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName }) {
             </div>
           ) : (
             <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden" }}>
-              <div style={{ display:"grid", gridTemplateColumns:"2fr 80px 80px 1fr", background:"#080c14", padding:"8px 16px", gap:8 }}>
-                {["Item", "Wasted", "Times", "Top Reason"].map(h => (
+              <div style={{ display:"grid", gridTemplateColumns:"2fr 80px 80px 80px 1fr", background:"#080c14", padding:"8px 16px", gap:8 }}>
+                {["Item", "Wasted", "$ Lost", "Times", "Top Reason"].map(h => (
                   <span key={h} style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
                 ))}
               </div>
@@ -3168,12 +3186,13 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName }) {
                 const topReason = Object.entries(row.reasons).sort((a,b) => b[1]-a[1])[0];
                 const r = reasons.find(r => r.key === topReason?.[0]) || { icon:"📝", label:topReason?.[0] || "—" };
                 return (
-                  <div key={row.name} style={{ display:"grid", gridTemplateColumns:"2fr 80px 80px 1fr", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #080c14" }}>
+                  <div key={row.name} style={{ display:"grid", gridTemplateColumns:"2fr 80px 80px 80px 1fr", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #080c14" }}>
                     <div>
                       <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500 }}>{row.name}</div>
                       {row.vendor && <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{row.vendor}</div>}
                     </div>
                     <span style={{ color:"#fca5a5", fontSize:14, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{row.totalQty} <span style={{ fontSize:10, color:"#475569" }}>{row.unit}</span></span>
+                    <span style={{ color:"#ef4444", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{row.totalCost > 0 ? `$${row.totalCost.toFixed(0)}` : "—"}</span>
                     <span style={{ color:"#a5b4fc", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{row.entries}x</span>
                     <div style={{ display:"flex", alignItems:"center", gap:4 }}>
                       <span style={{ fontSize:12 }}>{r.icon}</span>
@@ -3185,6 +3204,383 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName }) {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRICE TRACKER — Track vendor prices, flag increases, upload invoices
+// ═══════════════════════════════════════════════════════════════════════════════
+function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }) {
+  const [mode, setMode] = useState("dashboard"); // "dashboard" | "enter" | "upload"
+  const [filterVendor, setFilterVendor] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState("");
+  const [parsedPrices, setParsedPrices] = useState([]);
+  const photoRef = React.useRef(null);
+  const fileRef = React.useRef(null);
+
+  const allItems = flatItems(inventory);
+  const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2, "0")}`;
+  const vendorNames = [...new Set(allItems.map(i => (i.vendor || "").trim()).filter(Boolean))].sort();
+
+  // ── Manual price entry ──────────────────────────────────────────────────
+  const [manualPrices, setManualPrices] = useState({});
+  const updateManualPrice = (itemId, price) => setManualPrices(prev => ({ ...prev, [itemId]: price }));
+
+  const saveManualPrices = () => {
+    const newPH = { ...priceHistory };
+    Object.entries(manualPrices).forEach(([id, price]) => {
+      const p = parseFloat(price);
+      if (isNaN(p) || p <= 0) return;
+      const item = allItems.find(i => String(i.id) === String(id));
+      if (!newPH[id]) newPH[id] = [];
+      newPH[id].push({ price: p, date: new Date().toISOString(), weekKey: wk, vendor: item?.vendor || "", source: "manual" });
+    });
+    savePriceHistory(newPH);
+    setManualPrices({});
+    setMode("dashboard");
+  };
+
+  // ── Photo upload — AI extracts prices ───────────────────────────────────
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParseError(""); setParsedPrices([]); setParsing(true);
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const r = new FileReader(); r.onload = () => resolve(r.result.split(",")[1]); r.onerror = () => reject(new Error("Read failed")); r.readAsDataURL(file);
+      });
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514", max_tokens: 4000,
+          messages: [{ role: "user", content: [
+            { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
+            { type: "text", text: `Extract ALL item prices from this invoice/receipt. Return ONLY a JSON array, no markdown. Each object: {"name": "item name", "price": number, "unit": "Case/Each/Lbs/etc"}. Extract every line item you can see with its price. Return ONLY the JSON array.` }
+          ]}]
+        })
+      });
+      const data = await response.json();
+      const text = (data.content || []).map(c => c.text || "").join("");
+      const items = JSON.parse(text.replace(/```json|```/g, "").trim());
+      if (Array.isArray(items) && items.length > 0) setParsedPrices(items.map((p, i) => ({ ...p, id: Date.now() + i, matched: null })));
+      else setParseError("No prices found in image.");
+    } catch (err) { setParseError("Failed to process: " + err.message); }
+    setParsing(false);
+  };
+
+  // ── CSV upload ──────────────────────────────────────────────────────────
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParseError(""); setParsedPrices([]);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const lines = ev.target.result.split(/\r?\n/).filter(l => l.trim());
+        if (lines.length < 2) { setParseError("No data rows found."); return; }
+        const sep = lines[0].includes("\t") ? "\t" : ",";
+        const headers = lines[0].toLowerCase().split(sep).map(h => h.trim().replace(/"/g, ""));
+        let nameCol = headers.findIndex(h => h.match(/item|name|product|description/i));
+        let priceCol = headers.findIndex(h => h.match(/price|cost|amount|total/i));
+        let unitCol = headers.findIndex(h => h.match(/unit|uom|pkg/i));
+        if (nameCol === -1) nameCol = 0;
+        if (priceCol === -1) priceCol = 1;
+        const items = lines.slice(1).map((line, i) => {
+          const cols = line.split(sep).map(c => c.trim().replace(/^"|"$/g, ""));
+          const name = cols[nameCol] || "";
+          const price = parseFloat((cols[priceCol] || "").replace(/[$,]/g, ""));
+          if (!name || isNaN(price)) return null;
+          return { id: Date.now() + i, name, price, unit: cols[unitCol] || "", matched: null };
+        }).filter(Boolean);
+        if (items.length > 0) setParsedPrices(items);
+        else setParseError("No valid price rows found.");
+      } catch (err) { setParseError("Parse error: " + err.message); }
+    };
+    reader.readAsText(file);
+  };
+
+  // ── Match parsed prices to inventory items ──────────────────────────────
+  const matchItem = (parsedIdx, itemId) => {
+    setParsedPrices(prev => prev.map((p, i) => i === parsedIdx ? { ...p, matched: itemId } : p));
+  };
+
+  const saveParsedPrices = (source) => {
+    const newPH = { ...priceHistory };
+    parsedPrices.forEach(p => {
+      if (!p.matched || isNaN(p.price)) return;
+      const item = allItems.find(i => i.id === p.matched);
+      if (!newPH[p.matched]) newPH[p.matched] = [];
+      newPH[p.matched].push({ price: p.price, date: new Date().toISOString(), weekKey: wk, vendor: item?.vendor || "", source });
+    });
+    savePriceHistory(newPH);
+    setParsedPrices([]);
+    setMode("dashboard");
+  };
+
+  // ── Auto-match by name similarity ───────────────────────────────────────
+  React.useEffect(() => {
+    if (parsedPrices.length === 0) return;
+    setParsedPrices(prev => prev.map(p => {
+      if (p.matched) return p;
+      const lower = p.name.toLowerCase();
+      const match = allItems.find(i => i.name.toLowerCase() === lower) || allItems.find(i => lower.includes(i.name.toLowerCase()) || i.name.toLowerCase().includes(lower));
+      return match ? { ...p, matched: match.id } : p;
+    }));
+  }, [parsedPrices.length]);
+
+  // ── Build dashboard data ────────────────────────────────────────────────
+  const flagged = [];
+  const allTracked = [];
+  allItems.forEach(item => {
+    const history = priceHistory[item.id];
+    if (!history || history.length === 0) return;
+    const sorted = [...history].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const current = sorted[0];
+    const previous = sorted[1];
+    const entry = { id: item.id, name: item.name, vendor: item.vendor || "", unit: item.order_unit, currentPrice: current.price, currentDate: current.date, currentWeek: current.weekKey, previousPrice: previous?.price || null, previousDate: previous?.date || null, totalEntries: sorted.length, priceHistory: sorted };
+    if (previous) {
+      entry.change = current.price - previous.price;
+      entry.changePct = ((entry.change / previous.price) * 100).toFixed(1);
+    }
+    allTracked.push(entry);
+    if (entry.change && entry.change > 0) flagged.push(entry);
+  });
+
+  flagged.sort((a, b) => parseFloat(b.changePct) - parseFloat(a.changePct));
+  const filteredTracked = allTracked.filter(e => (filterVendor === "ALL" || e.vendor === filterVendor) && (!search || e.name.toLowerCase().includes(search.toLowerCase())));
+
+  // Items for manual entry
+  const manualItems = allItems.filter(i => (filterVendor === "ALL" || (i.vendor || "") === filterVendor) && (!search || i.name.toLowerCase().includes(search.toLowerCase())));
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>💲 Price Tracker</h2>
+          <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Track vendor prices week to week — flag increases automatically</p>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10, marginBottom:20 }}>
+        {[
+          { label:"Items tracked", value:allTracked.length, color:"#a5b4fc", bg:"#0f2040", border:"#1e40af" },
+          { label:"Price increases", value:flagged.length, color:"#fca5a5", bg:"#450a0a", border:"#7f1d1d" },
+          { label:"Biggest jump", value: flagged[0] ? `+${flagged[0].changePct}%` : "—", color:"#fbbf24", bg:"#422006", border:"#d97706" },
+          { label:"This week", value: allTracked.filter(e => e.currentWeek === wk).length, color:"#4ade80", bg:"#052e16", border:"#16a34a" },
+        ].map(c => (
+          <div key={c.label} style={{ background:c.bg, border:`1px solid ${c.border}`, borderRadius:10, padding:"12px 16px" }}>
+            <div style={{ color:c.color, fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{c.value}</div>
+            <div style={{ color:c.color, fontSize:11, opacity:0.8, marginTop:2 }}>{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Actions */}
+      <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
+        {[
+          { key:"dashboard", label:"Dashboard" },
+          { key:"enter", label:"Enter Prices" },
+          { key:"upload", label:"Upload Invoice" },
+        ].map(tab => (
+          <button key={tab.key} onClick={() => { setMode(tab.key); setParsedPrices([]); setParseError(""); }}
+            style={{ background:mode===tab.key?"#e2e8f0":"transparent", border:`1px solid ${mode===tab.key?"#e2e8f0":"#1e2d45"}`, borderRadius:8, padding:"7px 16px", color:mode===tab.key?"#080c14":"#64748b", fontSize:13, fontWeight:mode===tab.key?600:400, cursor:"pointer" }}>
+            {tab.label}
+          </button>
+        ))}
+        <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
+          {vendorNames.length > 0 && (
+            <select value={filterVendor} onChange={e => setFilterVendor(e.target.value)}
+              style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"7px 12px", color:"#f1f5f9", fontSize:12, outline:"none", cursor:"pointer" }}>
+              <option value="ALL">All Vendors</option>
+              {vendorNames.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          )}
+          {mode === "dashboard" && <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"7px 12px", color:"#f1f5f9", fontSize:12, outline:"none", width:140 }} />}
+        </div>
+      </div>
+
+      {/* ── FLAGGED INCREASES ── */}
+      {mode === "dashboard" && flagged.length > 0 && (
+        <div style={{ marginBottom:20 }}>
+          <div style={{ color:"#fca5a5", fontSize:13, fontWeight:700, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>🚩 Price Increases Detected <span style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:10, padding:"1px 8px", fontSize:11 }}>{flagged.length}</span></div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {flagged.map(e => (
+              <div key={e.id} style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:10, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+                <div style={{ flex:1, minWidth:180 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{e.name}</span>
+                    {e.vendor && <span style={{ background:"#0f2040", border:"1px solid #1e3a5f", borderRadius:4, padding:"1px 6px", color:"#94a3b8", fontSize:9, fontFamily:"'DM Mono',monospace" }}>{e.vendor}</span>}
+                  </div>
+                  <div style={{ color:"#7f1d1d", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:3 }}>{e.unit}</div>
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                  <div style={{ textAlign:"right" }}>
+                    <div style={{ color:"#64748b", fontSize:10, fontFamily:"'DM Mono',monospace" }}>PREVIOUS</div>
+                    <div style={{ color:"#94a3b8", fontSize:15, fontFamily:"'DM Mono',monospace", textDecoration:"line-through" }}>${e.previousPrice.toFixed(2)}</div>
+                  </div>
+                  <span style={{ color:"#475569", fontSize:14 }}>→</span>
+                  <div style={{ textAlign:"right" }}>
+                    <div style={{ color:"#64748b", fontSize:10, fontFamily:"'DM Mono',monospace" }}>CURRENT</div>
+                    <div style={{ color:"#fca5a5", fontSize:15, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>${e.currentPrice.toFixed(2)}</div>
+                  </div>
+                  <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"4px 10px", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap" }}>+{e.changePct}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── DASHBOARD ── */}
+      {mode === "dashboard" && (
+        <>
+          {filteredTracked.length === 0 ? (
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:32, textAlign:"center" }}>
+              <div style={{ fontSize:36, marginBottom:12 }}>💲</div>
+              <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No prices tracked yet</div>
+              <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Enter prices manually or upload an invoice to start tracking</div>
+            </div>
+          ) : (
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"2fr 100px 100px 80px", background:"#080c14", padding:"8px 16px", gap:8 }}>
+                {["Item", "Current", "Previous", "Change"].map(h => (
+                  <span key={h} style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
+                ))}
+              </div>
+              {filteredTracked.sort((a,b) => a.name.localeCompare(b.name)).map((e, idx) => (
+                <div key={e.id} style={{ display:"grid", gridTemplateColumns:"2fr 100px 100px 80px", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #080c14" }}>
+                  <div>
+                    <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500 }}>{e.name}</div>
+                    <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{e.vendor}{e.vendor ? " · " : ""}{e.unit} · {e.totalEntries} entries</div>
+                  </div>
+                  <span style={{ color:"#f1f5f9", fontSize:14, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>${e.currentPrice.toFixed(2)}</span>
+                  <span style={{ color:"#64748b", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{e.previousPrice !== null ? `$${e.previousPrice.toFixed(2)}` : "—"}</span>
+                  {e.change != null ? (
+                    <span style={{ background:e.change > 0 ? "#450a0a" : e.change < 0 ? "#052e16" : "transparent", border:`1px solid ${e.change > 0 ? "#7f1d1d" : e.change < 0 ? "#16a34a" : "#1e2d45"}`, color:e.change > 0 ? "#fca5a5" : e.change < 0 ? "#4ade80" : "#475569", borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"center" }}>
+                      {e.change > 0 ? "+" : ""}{e.changePct}%
+                    </span>
+                  ) : <span style={{ color:"#334155", fontSize:11 }}>—</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── MANUAL ENTRY ── */}
+      {mode === "enter" && (
+        <div>
+          <div style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
+            <span style={{ color:"#a5b4fc", fontSize:12 }}>Enter prices from your latest invoice. </span>
+            <span style={{ color:"#64748b", fontSize:12 }}>Only fill in items that have a price — skip the rest.</span>
+          </div>
+          <div style={{ marginBottom:12 }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items..."
+              style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 14px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box" }} />
+          </div>
+          <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden", maxHeight:500, overflowY:"auto" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"2fr 80px 100px", background:"#080c14", padding:"8px 16px", gap:8, position:"sticky", top:0, zIndex:2 }}>
+              {["Item", "Last Price", "New Price"].map(h => (
+                <span key={h} style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
+              ))}
+            </div>
+            {manualItems.map((item, idx) => {
+              const hist = priceHistory[item.id];
+              const lastPrice = hist?.length > 0 ? [...hist].sort((a,b) => new Date(b.date) - new Date(a.date))[0].price : null;
+              return (
+                <div key={item.id} style={{ display:"grid", gridTemplateColumns:"2fr 80px 100px", padding:"8px 16px", gap:8, alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #080c14" }}>
+                  <div>
+                    <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500 }}>{item.name}</div>
+                    <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{item.order_unit}{item.vendor ? ` · ${item.vendor}` : ""}</div>
+                  </div>
+                  <span style={{ color:"#64748b", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{lastPrice !== null ? `$${lastPrice.toFixed(2)}` : "—"}</span>
+                  <input type="number" step="0.01" min="0" value={manualPrices[item.id] || ""} onChange={e => updateManualPrice(item.id, e.target.value)}
+                    placeholder="$0.00" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"6px 8px", color:"#4ade80", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:600, outline:"none", textAlign:"right", width:"100%", boxSizing:"border-box" }} />
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ marginTop:16, display:"flex", gap:10 }}>
+            <button onClick={saveManualPrices}
+              style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:"10px 24px", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+              Save Prices
+            </button>
+            <button onClick={() => { setMode("dashboard"); setManualPrices({}); }}
+              style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 16px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── UPLOAD INVOICE ── */}
+      {mode === "upload" && parsedPrices.length === 0 && (
+        <div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 }}>
+            <div style={{ background:"#0f1a2e", border:"2px dashed #1e2d45", borderRadius:16, padding:"32px 20px", textAlign:"center", cursor:"pointer" }}
+              onClick={() => photoRef.current?.click()}
+              onMouseEnter={e => e.currentTarget.style.borderColor="#e2e8f0"} onMouseLeave={e => e.currentTarget.style.borderColor="#1e2d45"}>
+              <input ref={photoRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} style={{ display:"none" }} />
+              <div style={{ fontSize:32, marginBottom:8 }}>📸</div>
+              <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600, marginBottom:4 }}>Photo of Invoice</div>
+              <div style={{ color:"#475569", fontSize:12 }}>AI extracts item prices</div>
+            </div>
+            <div style={{ background:"#0f1a2e", border:"2px dashed #1e2d45", borderRadius:16, padding:"32px 20px", textAlign:"center", cursor:"pointer" }}
+              onClick={() => fileRef.current?.click()}
+              onMouseEnter={e => e.currentTarget.style.borderColor="#e2e8f0"} onMouseLeave={e => e.currentTarget.style.borderColor="#1e2d45"}>
+              <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" onChange={handleFileUpload} style={{ display:"none" }} />
+              <div style={{ fontSize:32, marginBottom:8 }}>📄</div>
+              <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600, marginBottom:4 }}>Upload Price List</div>
+              <div style={{ color:"#475569", fontSize:12 }}>CSV with item names & prices</div>
+            </div>
+          </div>
+          {parsing && <div style={{ textAlign:"center", color:"#a5b4fc", fontSize:14, padding:20 }}>Analyzing invoice with AI...</div>}
+          {parseError && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13 }}>{parseError}</div>}
+        </div>
+      )}
+
+      {/* ── MATCH & SAVE PARSED PRICES ── */}
+      {parsedPrices.length > 0 && (
+        <div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12, flexWrap:"wrap", gap:10 }}>
+            <div>
+              <div style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{parsedPrices.length} prices extracted</div>
+              <div style={{ color:"#475569", fontSize:12 }}>{parsedPrices.filter(p => p.matched).length} matched to inventory items — click to fix unmatched</div>
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => { setParsedPrices([]); setMode("dashboard"); }} style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 14px", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>Cancel</button>
+              <button onClick={() => saveParsedPrices("invoice")} style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:"8px 18px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                Save {parsedPrices.filter(p => p.matched).length} Prices
+              </button>
+            </div>
+          </div>
+          <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden", maxHeight:500, overflowY:"auto" }}>
+            {parsedPrices.map((p, idx) => {
+              const matchedItem = p.matched ? allItems.find(i => i.id === p.matched) : null;
+              return (
+                <div key={p.id} style={{ padding:"10px 16px", display:"flex", alignItems:"center", gap:12, background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none", flexWrap:"wrap" }}>
+                  <div style={{ flex:1, minWidth:160 }}>
+                    <div style={{ color:"#f1f5f9", fontSize:13 }}>{p.name}</div>
+                    <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{p.unit || "—"}</div>
+                  </div>
+                  <span style={{ color:"#4ade80", fontSize:15, fontFamily:"'DM Mono',monospace", fontWeight:700, minWidth:70, textAlign:"right" }}>${Number(p.price).toFixed(2)}</span>
+                  {matchedItem ? (
+                    <span style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:6, padding:"3px 10px", color:"#4ade80", fontSize:11, fontFamily:"'DM Mono',monospace" }}>✓ {matchedItem.name}</span>
+                  ) : (
+                    <select onChange={e => { if (e.target.value) matchItem(idx, parseInt(e.target.value)); }}
+                      style={{ background:"#080c14", border:"1px solid #7f1d1d", borderRadius:6, padding:"4px 8px", color:"#fca5a5", fontSize:11, outline:"none", cursor:"pointer", maxWidth:160 }}>
+                      <option value="">Match to item...</option>
+                      {allItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                    </select>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
     </div>
   );
