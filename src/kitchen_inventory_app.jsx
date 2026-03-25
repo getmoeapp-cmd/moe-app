@@ -219,7 +219,24 @@ const DEFAULT_VENDORS = [
 const SUPABASE_URL  = "https://fsvlxosbbevzyvegbqry.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdmx4b3NiYmV2enl2ZWdicXJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0NzQ2MjgsImV4cCI6MjA4OTA1MDYyOH0.AcnnB4QecNHEu3-N_VS6aPHrpt9kq464arjNc2DNugU";
 let _sb = null;
-const getSB = () => { if (_sb) return _sb; if (window.supabase) { _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON); } return _sb; };
+const getSB = () => {
+  if (_sb) return _sb;
+  if (typeof window !== "undefined" && window.supabase) { _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON); }
+  return _sb;
+};
+
+// Load Supabase client script
+const loadSupabase = () => {
+  if (typeof window === "undefined" || document.getElementById("sb-script")) return Promise.resolve();
+  return new Promise((resolve) => {
+    const s = document.createElement("script");
+    s.id = "sb-script";
+    s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";
+    s.onload = resolve;
+    s.onerror = resolve;
+    document.head.appendChild(s);
+  });
+};
 const sbGet = async (grp, key) => { const sb = getSB(); if (!sb) return null; try { const { data, error } = await sb.from("moe_data").select("data_value").eq("group_id", grp).eq("data_key", key).single(); if (error || !data) return null; return JSON.parse(data.data_value); } catch { return null; } };
 const sbSet = async (grp, key, value) => { const sb = getSB(); if (!sb) return; try { await sb.from("moe_data").upsert({ group_id: grp, data_key: key, data_value: JSON.stringify(value) }, { onConflict: "group_id,data_key" }); } catch {} };
 
@@ -330,6 +347,7 @@ function MoeApp() {
   useEffect(() => {
     if (!user) return;
     const init = async () => {
+      await loadSupabase();
       const st = await load("stock", {});
       const vd = await load("vendors", DEFAULT_VENDORS);
       const hi = await load("history", []);
@@ -649,6 +667,7 @@ function LoginScreen({ onLogin, error, setError }) {
 
   const handleRegister = async () => {
     setRegError("");
+    await loadSupabase();
     // Validate
     if (!reg.ownerFirst.trim() || !reg.ownerLast.trim()) return setRegError("First and last name required.");
     if (!reg.ownerEmail.trim() || !reg.ownerEmail.includes("@")) return setRegError("Valid email required.");
@@ -688,6 +707,7 @@ function LoginScreen({ onLogin, error, setError }) {
 
   // Also check registered accounts and team members on login
   const handleLoginWithAccounts = async () => {
+    await loadSupabase();
     const emailLower = email.toLowerCase().trim();
 
     // Check hardcoded demo users first
