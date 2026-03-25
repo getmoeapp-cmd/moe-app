@@ -280,23 +280,113 @@ const PLANS = {
 const TRIAL_DAYS = 14;
 const DEMO_GROUPS = ["demo"]; // Demo accounts skip subscription
 
-// ─── PDF GENERATOR ────────────────────────────────────────────────────────────
-const printVendorPDF = ({ vendorName, items, weekNum, date, businessName, orderedBy }) => {
-  const win = window.open("", "_blank");
-  const rows = items.filter(i => i.qty > 0).map(item =>
-    `<tr><td>${item.name}</td><td style="text-align:center">${item.section.replace(/[^\w\s\-&]/g,"").trim()}</td><td style="text-align:center;font-weight:700">${item.qty} ${item.order_unit}</td></tr>`
-  ).join("");
-  const totalItems = items.filter(i => i.qty > 0).length;
-  win.document.write(`<html><head><title>${vendorName} — WK${weekNum}</title>
-    <style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}.biz{font-size:24px;font-weight:900;color:#111;margin:0 0 2px;text-transform:uppercase;letter-spacing:1px}.vendor{font-size:22px;font-weight:700;color:#444;margin:0 0 6px}.meta{color:#666;font-size:12px;margin-bottom:24px;padding-bottom:12px;border-bottom:2px solid #e5e7eb}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1e293b;color:#fff;padding:10px 14px;text-align:left}th:last-child{text-align:center}td{padding:10px 14px;border-bottom:1px solid #e5e7eb}tr:nth-child(even) td{background:#f9fafb}.footer{margin-top:20px;color:#999;font-size:11px;border-top:1px solid #e5e7eb;padding-top:12px}@media print{body{padding:16px}}</style></head><body>
-    ${businessName ? `<div class="biz">${businessName}</div>` : ""}
-    <div class="vendor">📦 ${vendorName}</div>
-    <h1>Order — Week ${weekNum}</h1>
-    <div class="meta">${date} · ${totalItems} item${totalItems!==1?"s":""} · Ordered by: <strong>${orderedBy || "—"}</strong></div>
-    <table><thead><tr><th>Item</th><th style="text-align:center">Location</th><th style="text-align:center">Qty to Order</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="footer">MOE · Make Ordering Easy · Printed ${new Date().toLocaleDateString()}</div>
-    <script>window.onload=()=>window.print()<\/script></body></html>`);
-  win.document.close();
+// ─── PDF GENERATOR (downloadable PDF via jsPDF) ──────────────────────────────
+const loadJsPDF = () => {
+  if (window.jspdf) return Promise.resolve();
+  return new Promise((resolve) => {
+    if (document.getElementById("jspdf-script")) { resolve(); return; }
+    const s = document.createElement("script");
+    s.id = "jspdf-script";
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    s.onload = resolve;
+    s.onerror = resolve;
+    document.head.appendChild(s);
+  });
+};
+
+const printVendorPDF = async ({ vendorName, items, weekNum, date, businessName, orderedBy }) => {
+  await loadJsPDF();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
+  const orderItems = items.filter(i => i.qty > 0);
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 16;
+  const contentW = pageW - margin * 2;
+  let y = 20;
+
+  // ── Business name
+  if (businessName) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(17, 17, 17);
+    doc.text(businessName.toUpperCase(), margin, y);
+    y += 8;
+  }
+
+  // ── Vendor name
+  doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(68, 68, 68);
+  doc.text(vendorName, margin, y);
+  y += 7;
+
+  // ── Order title
+  doc.setFont("helvetica", "normal"); doc.setFontSize(12); doc.setTextColor(17, 17, 17);
+  doc.text(`Order — Week ${weekNum}`, margin, y);
+  y += 6;
+
+  // ── Meta line
+  doc.setFontSize(9); doc.setTextColor(100, 100, 100);
+  doc.text(`${date}  ·  ${orderItems.length} item${orderItems.length !== 1 ? "s" : ""}  ·  Ordered by: ${orderedBy || "—"}`, margin, y);
+  y += 4;
+
+  // ── Divider
+  doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.5);
+  doc.line(margin, y, pageW - margin, y);
+  y += 6;
+
+  // ── Table header
+  const colX = [margin, margin + contentW * 0.55, margin + contentW * 0.78];
+  const colW = [contentW * 0.55, contentW * 0.23, contentW * 0.22];
+
+  doc.setFillColor(30, 41, 59); doc.rect(margin, y - 4, contentW, 8, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
+  doc.text("Item", colX[0] + 3, y);
+  doc.text("Location", colX[1] + 3, y);
+  doc.text("Qty to Order", colX[2] + 3, y);
+  y += 7;
+
+  // ── Table rows
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  orderItems.forEach((item, idx) => {
+    // Check for page break
+    if (y > 260) {
+      doc.addPage();
+      y = 20;
+      // Re-draw header
+      doc.setFillColor(30, 41, 59); doc.rect(margin, y - 4, contentW, 8, "F");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
+      doc.text("Item", colX[0] + 3, y);
+      doc.text("Location", colX[1] + 3, y);
+      doc.text("Qty to Order", colX[2] + 3, y);
+      y += 7;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+    }
+
+    // Alternating row bg
+    if (idx % 2 === 0) { doc.setFillColor(249, 250, 251); doc.rect(margin, y - 4, contentW, 7, "F"); }
+
+    doc.setTextColor(30, 30, 30);
+    doc.text(item.name, colX[0] + 3, y);
+    doc.setTextColor(100, 100, 100);
+    doc.text((item.section || "").replace(/[^\w\s\-&]/g, "").trim(), colX[1] + 3, y);
+    doc.setFont("helvetica", "bold"); doc.setTextColor(30, 30, 30);
+    doc.text(`${item.qty} ${item.order_unit}`, colX[2] + 3, y);
+    doc.setFont("helvetica", "normal");
+
+    // Row border
+    doc.setDrawColor(229, 231, 235); doc.setLineWidth(0.2);
+    doc.line(margin, y + 2.5, pageW - margin, y + 2.5);
+    y += 7;
+  });
+
+  // ── Footer
+  y += 6;
+  doc.setDrawColor(229, 231, 235); doc.setLineWidth(0.3);
+  doc.line(margin, y, pageW - margin, y);
+  y += 5;
+  doc.setFontSize(8); doc.setTextColor(160, 160, 160);
+  doc.text(`MOE · Make Ordering Easy · Generated ${new Date().toLocaleDateString()}`, margin, y);
+
+  // ── Download
+  const filename = `${(businessName || "order").replace(/[^a-zA-Z0-9]/g, "_")}_${vendorName.replace(/[^a-zA-Z0-9]/g, "_")}_WK${weekNum}.pdf`;
+  doc.save(filename);
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1687,6 +1777,40 @@ function BackendView({ inventory, saveInventory, vendors, stock }) {
     saveInventory(inventory.map(s => s.section === oldName ? { ...s, section: newName.trim() } : s));
   };
 
+  // ── Reorder sections ──
+  const moveSectionUp = (idx) => {
+    if (idx <= 0) return;
+    const newInv = [...inventory];
+    [newInv[idx - 1], newInv[idx]] = [newInv[idx], newInv[idx - 1]];
+    saveInventory(newInv);
+  };
+  const moveSectionDown = (idx) => {
+    if (idx >= inventory.length - 1) return;
+    const newInv = [...inventory];
+    [newInv[idx], newInv[idx + 1]] = [newInv[idx + 1], newInv[idx]];
+    saveInventory(newInv);
+  };
+
+  // ── Reorder items within a section ──
+  const moveItemUp = (sectionKey, itemIdx) => {
+    if (itemIdx <= 0) return;
+    saveInventory(inventory.map(s => {
+      if (s.section !== sectionKey) return s;
+      const items = [...s.items];
+      [items[itemIdx - 1], items[itemIdx]] = [items[itemIdx], items[itemIdx - 1]];
+      return { ...s, items };
+    }));
+  };
+  const moveItemDown = (sectionKey, itemIdx) => {
+    saveInventory(inventory.map(s => {
+      if (s.section !== sectionKey) return s;
+      if (itemIdx >= s.items.length - 1) return s;
+      const items = [...s.items];
+      [items[itemIdx], items[itemIdx + 1]] = [items[itemIdx + 1], items[itemIdx]];
+      return { ...s, items };
+    }));
+  };
+
   return (
     <div>
       <style>{`@media (max-width: 768px) { .edit-pencil { display: none !important; } } .edit-cell:hover .edit-pencil { display: inline !important; }`}</style>
@@ -1715,26 +1839,41 @@ function BackendView({ inventory, saveInventory, vendors, stock }) {
         </div>
       </div>
 
-      {inventory.map(section => (
-        <BackendSection key={section.section} section={section} stock={stock} vendors={vendors}
+      {inventory.map((section, sIdx) => (
+        <BackendSection key={section.section} section={section} sIdx={sIdx} totalSections={inventory.length} stock={stock} vendors={vendors}
           saveItemField={saveItemField} addItem={addItem} removeItem={removeItem}
-          saveSectionName={saveSectionName} deleteSection={deleteSection} />
+          saveSectionName={saveSectionName} deleteSection={deleteSection}
+          moveSectionUp={moveSectionUp} moveSectionDown={moveSectionDown}
+          moveItemUp={moveItemUp} moveItemDown={moveItemDown} />
       ))}
     </div>
   );
 }
 
 // ── Section inside BackendView ────────────────────────────────────────────────
-function BackendSection({ section, stock, vendors, saveItemField, addItem, removeItem, saveSectionName, deleteSection }) {
+function BackendSection({ section, sIdx, totalSections, stock, vendors, saveItemField, addItem, removeItem, saveSectionName, deleteSection, moveSectionUp, moveSectionDown, moveItemUp, moveItemDown }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(section.section);
   const [confirmDel, setConfirmDel] = useState(false);
   const commitRename = () => { saveSectionName(section.section, draft); setEditing(false); };
 
+  const arrowBtn = { background:"none", border:"1px solid #1e2d45", borderRadius:4, color:"#475569", cursor:"pointer", fontSize:11, padding:"2px 6px", lineHeight:1 };
+
   return (
     <div style={{ marginBottom:12 }}>
       {/* Section header */}
       <div style={{ background:"#080c14", padding:"6px 16px", borderRadius:"10px 10px 0 0", border:"1px solid #1e2d45", borderBottom:"none", display:"flex", alignItems:"center", gap:8 }}>
+        {/* Section reorder arrows */}
+        <div style={{ display:"flex", flexDirection:"column", gap:2, marginRight:4 }}>
+          <button onClick={() => moveSectionUp(sIdx)} disabled={sIdx === 0}
+            style={{ ...arrowBtn, opacity:sIdx===0?0.3:1 }}
+            onMouseEnter={e => { if(sIdx>0) e.currentTarget.style.color="#e2e8f0"; }}
+            onMouseLeave={e => e.currentTarget.style.color="#475569"}>▲</button>
+          <button onClick={() => moveSectionDown(sIdx)} disabled={sIdx === totalSections - 1}
+            style={{ ...arrowBtn, opacity:sIdx===totalSections-1?0.3:1 }}
+            onMouseEnter={e => { if(sIdx<totalSections-1) e.currentTarget.style.color="#e2e8f0"; }}
+            onMouseLeave={e => e.currentTarget.style.color="#475569"}>▼</button>
+        </div>
         {editing ? (
           <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
             onBlur={commitRename} onKeyDown={e => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") { setEditing(false); setDraft(section.section); } }}
@@ -1759,7 +1898,7 @@ function BackendSection({ section, stock, vendors, saveItemField, addItem, remov
           <thead>
             <tr style={{ background:"#080c14" }}>
               {[
-                ["Item Name","left",170,true], ["Vendor","left",100,false], ["Order Unit","left",90,false],
+                ["↕","center",36,false], ["Item Name","left",170,true], ["Vendor","left",100,false], ["Order Unit","left",90,false],
                 ["Units/Pkg","center",60,false], ["Max Stock","center",75,false], ["Reorder Pt","center",75,false],
                 ["Current","center",70,false], ["Needed","center",70,false], ["Order Qty","center",70,false], ["Status","center",80,false],
               ].map(([h, align, w, stickyLeft]) => (
@@ -1776,6 +1915,18 @@ function BackendSection({ section, stock, vendors, saveItemField, addItem, remov
               const rowBg = idx % 2 === 0 ? "#0f1a2e" : "#0a1220";
               return (
                 <HoverRow key={item.id} bg={rowBg} onRemove={() => removeItem(item.id)}>
+                  <td style={{ padding:"2px 4px", textAlign:"center" }}>
+                    <div style={{ display:"flex", flexDirection:"column", gap:1 }}>
+                      <button onClick={() => moveItemUp(section.section, idx)} disabled={idx===0}
+                        style={{ background:"none", border:"none", color:idx===0?"#1e2d45":"#475569", cursor:idx===0?"default":"pointer", fontSize:10, padding:0, lineHeight:1 }}
+                        onMouseEnter={e => { if(idx>0) e.currentTarget.style.color="#e2e8f0"; }}
+                        onMouseLeave={e => e.currentTarget.style.color=idx===0?"#1e2d45":"#475569"}>▲</button>
+                      <button onClick={() => moveItemDown(section.section, idx)} disabled={idx===section.items.length-1}
+                        style={{ background:"none", border:"none", color:idx===section.items.length-1?"#1e2d45":"#475569", cursor:idx===section.items.length-1?"default":"pointer", fontSize:10, padding:0, lineHeight:1 }}
+                        onMouseEnter={e => { if(idx<section.items.length-1) e.currentTarget.style.color="#e2e8f0"; }}
+                        onMouseLeave={e => e.currentTarget.style.color=idx===section.items.length-1?"#1e2d45":"#475569"}>▼</button>
+                    </div>
+                  </td>
                   <td style={{ padding:"5px 8px", position:"sticky", left:0, zIndex:1, background:rowBg, boxShadow:"2px 0 8px rgba(0,0,0,0.4)" }}>
                     <EditableCell value={item.name} onSave={v => saveItemField(item.id, "name", v)} width={155} />
                   </td>
