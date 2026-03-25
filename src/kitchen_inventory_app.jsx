@@ -286,7 +286,7 @@ const printVendorPDF = ({ vendorName, items, weekNum, date }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════════
-export default function App() {
+function MoeApp() {
   const [user, setUser]         = useState(null);
   const [stock, setStock]       = useState({});
   const [vendors, setVendors]   = useState(DEFAULT_VENDORS);
@@ -304,17 +304,22 @@ export default function App() {
   const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
 
   // ── Persistence ──────────────────────────────────────────────────────────
+  const groupRef = React.useRef(group);
+  React.useEffect(() => { groupRef.current = group; }, [group]);
+
   const save = useCallback((key, value) => {
-    try { localStorage.setItem(`moe_${group}_${key}`, JSON.stringify(value)); } catch {}
-    sbSet(group, key, value);
-  }, [group]);
+    const g = groupRef.current;
+    try { localStorage.setItem(`moe_${g}_${key}`, JSON.stringify(value)); } catch {}
+    sbSet(g, key, value);
+  }, []);
 
   const load = useCallback(async (key, fallback) => {
-    const sbVal = await sbGet(group, key);
-    if (sbVal !== null) { try { localStorage.setItem(`moe_${group}_${key}`, JSON.stringify(sbVal)); } catch {} return sbVal; }
-    try { const raw = localStorage.getItem(`moe_${group}_${key}`); if (raw) { const v = JSON.parse(raw); sbSet(group, key, v); return v; } } catch {}
+    const g = groupRef.current;
+    const sbVal = await sbGet(g, key);
+    if (sbVal !== null) { try { localStorage.setItem(`moe_${g}_${key}`, JSON.stringify(sbVal)); } catch {} return sbVal; }
+    try { const raw = localStorage.getItem(`moe_${g}_${key}`); if (raw) { const v = JSON.parse(raw); sbSet(g, key, v); return v; } } catch {}
     return fallback;
-  }, [group]);
+  }, []);
 
   // ── Save inventory ────────────────────────────────────────────────────────
   const saveInventory = useCallback((newInv) => { setInventory(newInv); save("inventory", newInv); showFlash(); }, [save]);
@@ -426,7 +431,7 @@ export default function App() {
   const saveVendors = (newVendors) => { setVendors(newVendors); save("vendors", newVendors); showFlash(); };
 
   // ── Save team ──────────────────────────────────────────────────────────
-  const saveTeam = (newTeam) => { setTeam(newTeam); save("team", newTeam); showFlash(); };
+  const saveTeam = useCallback((newTeam) => { setTeam(newTeam); save("team", newTeam); showFlash(); }, [save]);
 
   // ── Apply par suggestion — update an item's max_stock in inventory ──────
   const applyParSuggestion = (itemId, newMaxStock) => {
@@ -2455,4 +2460,408 @@ French Fries, Case, , 12, 3, Freezer`}
       )}
     </div>
   );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LANDING PAGE (served at getmoe.ai/)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const PLANS = [
+  { name: "Starter", price: 299, vendors: "3", items: "100", users: "2", features: ["Inventory tracking", "Order submission & history", "PDF export"], cta: "Start Free Trial" },
+  { name: "Pro", price: 399, vendors: "Unlimited", items: "Unlimited", users: "10", features: ["Everything in Starter", "AI-powered import", "Insights & par suggestions", "Smart reorder recommendations"], popular: true, cta: "Start Free Trial" },
+  { name: "Enterprise", price: 499, vendors: "Unlimited", items: "Unlimited", users: "Unlimited", features: ["Everything in Pro", "Priority support", "Custom onboarding", "Multi-location ready"], cta: "Contact Sales" },
+];
+
+const STEPS = [
+  { num: "01", title: "Set Up Your Business", desc: "Add your vendors, items, and sections. Or upload an invoice photo and let AI do it for you.", icon: "🏪" },
+  { num: "02", title: "Count Your Stock", desc: "Walk your space and tap to count. Employees can do it from their phones — no training needed.", icon: "📋" },
+  { num: "03", title: "Submit Orders", desc: "MOE calculates what you need based on par levels. One tap to submit, auto-generates a PDF for your vendor.", icon: "📦" },
+  { num: "04", title: "Get Smarter Each Week", desc: "After 3 weeks, MOE analyzes your ordering patterns and recommends better par levels automatically.", icon: "📊" },
+];
+
+const FEATURES = [
+  { title: "Vendor-Based Ordering", desc: "Set order days per vendor. MOE shows you who to order from today and auto-calculates quantities.", icon: "📦" },
+  { title: "AI Invoice Import", desc: "Snap a photo of any invoice or order sheet. AI extracts every item, unit, and quantity into your inventory.", icon: "📸" },
+  { title: "Smart Par Suggestions", desc: "After 3 weeks of data, MOE recommends optimal stock levels based on your actual usage patterns.", icon: "🧠" },
+  { title: "Team Access Control", desc: "Owners, managers, and employees each see exactly what they need. No confusion, no mistakes.", icon: "👥" },
+  { title: "Real-Time Sync", desc: "Everyone sees the same inventory in real-time. Count stock on one phone, it updates everywhere instantly.", icon: "⚡" },
+  { title: "One-Tap PDF Orders", desc: "Generate clean, printable order sheets per vendor. Email or text them directly — no more handwritten lists.", icon: "🖨️" },
+];
+
+const FAQS = [
+  { q: "How long is the free trial?", a: "14 days with full Pro features. No credit card required to start." },
+  { q: "Can my employees use it?", a: "Yes. Add employees in Settings with their email. They sign in and see only what they need — the inventory count screen." },
+  { q: "Do I need to enter all my items manually?", a: "No. You can upload a CSV, or just take a photo of any invoice or order sheet. Our AI will extract all the items for you." },
+  { q: "What happens after the trial?", a: "Choose a plan that fits. Your data carries over — nothing is lost. Cancel anytime." },
+  { q: "Does it work on phones?", a: "MOE is built mobile-first. Your team counts stock on their phones while walking the floor." },
+  { q: "Can I use it for multiple locations?", a: "Yes. Enterprise plan supports multiple locations, each with their own inventory and team." },
+];
+
+function HexIcon({ size = 48 }) {
+  const r = size / 2;
+  const hex = (cx, cy, rad) => {
+    const pts = [];
+    for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - 30); pts.push(`${(cx + rad * Math.cos(a)).toFixed(2)},${(cy + rad * Math.sin(a)).toFixed(2)}`); }
+    return pts.join(" ");
+  };
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <polygon points={hex(r, r, r * 0.95)} fill="none" stroke="#e2e8f0" strokeWidth="1" />
+      <polygon points={hex(r, r, r * 0.6)} fill="none" stroke="#cbd5e1" strokeWidth="0.8" />
+      <polygon points={hex(r, r, r * 0.3)} fill="#0f172a" />
+    </svg>
+  );
+}
+
+function MoeLogoLanding({ size = "lg" }) {
+  const configs = { md: { vw: 130, vh: 44, hx: 22, hy: 22, oR: 20, mR: 13, iR: 7, d: 2.2, tx: 44, ty: 28, fs: 24 }, lg: { vw: 200, vh: 64, hx: 32, hy: 32, oR: 29, mR: 19, iR: 10, d: 3, tx: 64, ty: 42, fs: 34 } };
+  const c = configs[size] || configs.lg;
+  const hex = (cx, cy, r) => { const pts = []; for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - 30); pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`); } return pts.join(" "); };
+  const spokes = Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 180 * (60 * i - 30); return { x1: (c.hx + c.oR * Math.cos(a)).toFixed(2), y1: (c.hy + c.oR * Math.sin(a)).toFixed(2), x2: (c.hx + c.mR * Math.cos(a)).toFixed(2), y2: (c.hy + c.mR * Math.sin(a)).toFixed(2) }; });
+  const dots = Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 180 * (60 * i - 30); return { cx: (c.hx + c.oR * Math.cos(a)).toFixed(2), cy: (c.hy + c.oR * Math.sin(a)).toFixed(2) }; });
+  return (
+    <svg width={c.vw} height={c.vh} viewBox={`0 0 ${c.vw} ${c.vh}`} style={{ display: "block" }}>
+      <polygon points={hex(c.hx, c.hy, c.oR)} fill="none" stroke="#94a3b8" strokeWidth="0.8" opacity="0.4" />
+      {spokes.map((l, i) => <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#94a3b8" strokeWidth="0.7" opacity="0.3" />)}
+      {dots.map((p, i) => <circle key={i} cx={p.cx} cy={p.cy} r={c.d} fill="#64748b" opacity="0.5" />)}
+      <polygon points={hex(c.hx, c.hy, c.mR)} fill="none" stroke="#475569" strokeWidth="1" opacity="0.5" />
+      <polygon points={hex(c.hx, c.hy, c.iR)} fill="#0f172a" />
+      <circle cx={c.hx} cy={c.hy} r={c.iR * 0.4} fill="#f8fafc" opacity="0.3" />
+      <text x={c.tx} y={c.ty} fontFamily="'Syne',sans-serif" fontWeight="800" fontSize={c.fs} letterSpacing="-1" fill="#0f172a">M<tspan fill="#475569">OE</tspan></text>
+    </svg>
+  );
+}
+
+function LandingPage() {
+  const [openFaq, setOpenFaq] = useState(null);
+  const [scrolled, setScrolled] = useState(false);
+  const [visible, setVisible] = useState({});
+  const sectionRefs = useRef({});
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) setVisible(prev => ({ ...prev, [e.target.dataset.section]: true }));
+      });
+    }, { threshold: 0.15 });
+    Object.values(sectionRefs.current).forEach(el => { if (el) obs.observe(el); });
+    return () => obs.disconnect();
+  }, []);
+
+  const regSection = (id) => (el) => { sectionRefs.current[id] = el; if (el) el.dataset.section = id; };
+  const isVis = (id) => visible[id];
+
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif", background: "#f8fafc", color: "#1e293b", overflowX: "hidden" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+      <style>{`
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+        .fade-up { opacity: 0; animation: fadeUp 0.7s ease forwards; }
+        .fade-up-d1 { animation-delay: 0.1s; }
+        .fade-up-d2 { animation-delay: 0.2s; }
+        .fade-up-d3 { animation-delay: 0.3s; }
+        .fade-up-d4 { animation-delay: 0.4s; }
+        .vis .fade-up { opacity: 0; animation: fadeUp 0.7s ease forwards; }
+        .cta-btn { transition: all 0.2s; }
+        .cta-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(15,23,42,0.2); }
+        .feature-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(15,23,42,0.08); }
+        .plan-card:hover { transform: translateY(-4px); box-shadow: 0 16px 50px rgba(15,23,42,0.1); }
+      `}</style>
+
+      {/* ═══ NAV ═══ */}
+      <nav style={{
+        position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
+        background: scrolled ? "rgba(248,250,252,0.92)" : "transparent",
+        backdropFilter: scrolled ? "blur(20px)" : "none",
+        borderBottom: scrolled ? "1px solid #e2e8f0" : "1px solid transparent",
+        transition: "all 0.3s",
+      }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px", height: 72, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <MoeLogoLanding size="md" />
+          <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+            <a href="#features" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>Features</a>
+            <a href="#how-it-works" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>How It Works</a>
+            <a href="#pricing" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>Pricing</a>
+            <a href="#faq" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>FAQ</a>
+            <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+              Get Started Free
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* ═══ HERO ═══ */}
+      <section style={{ paddingTop: 160, paddingBottom: 100, textAlign: "center", position: "relative", overflow: "hidden" }}>
+        {/* Subtle grid background */}
+        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 50% 0%, #e2e8f0 0%, transparent 60%)", opacity: 0.4 }} />
+        <div style={{ position: "absolute", inset: 0, backgroundImage: "linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px)", backgroundSize: "60px 60px", opacity: 0.3 }} />
+
+        <div style={{ position: "relative", maxWidth: 800, margin: "0 auto", padding: "0 24px" }}>
+          <div className="fade-up" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 40, padding: "6px 18px 6px 8px", marginBottom: 32, boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>
+            <span style={{ background: "#dcfce7", color: "#16a34a", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>NEW</span>
+            <span style={{ color: "#64748b", fontSize: 13 }}>AI-powered invoice import is here</span>
+          </div>
+
+          <h1 className="fade-up fade-up-d1" style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(36px, 6vw, 64px)", fontWeight: 800, lineHeight: 1.08, letterSpacing: "-2px", color: "#0f172a", marginBottom: 24 }}>
+            Your business is losing<br /><span style={{ color: "#dc2626" }}>$500 a week</span> on bad orders.
+          </h1>
+
+          <p className="fade-up fade-up-d2" style={{ fontSize: "clamp(16px, 2.5vw, 20px)", color: "#64748b", lineHeight: 1.6, maxWidth: 560, margin: "0 auto 40px" }}>
+            Over-ordering, waste, emergency runs, and guesswork add up fast. MOE tracks your inventory, calculates exactly what you need, and gets smarter every week — so you stop bleeding money.
+          </p>
+
+          <div className="fade-up fade-up-d3" style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
+            <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 12, padding: "16px 36px", fontSize: 17, fontWeight: 700, cursor: "pointer", letterSpacing: "-0.3px" }}>
+              Start 14-Day Free Trial
+            </button>
+            <button className="cta-btn" style={{ background: "#fff", color: "#0f172a", border: "2px solid #e2e8f0", borderRadius: 12, padding: "14px 32px", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
+              See How It Works ↓
+            </button>
+          </div>
+
+          <p className="fade-up fade-up-d4" style={{ color: "#94a3b8", fontSize: 13, marginTop: 16 }}>No credit card required · 14 days free · Cancel anytime</p>
+        </div>
+
+        {/* Floating stats */}
+        <div className="fade-up fade-up-d4" style={{ maxWidth: 700, margin: "60px auto 0", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, padding: "0 24px" }}>
+          {[
+            { value: "$500+", label: "Saved per week on average", sub: "Less waste, fewer emergency orders" },
+            { value: "$26K", label: "Average annual savings", sub: "Pays for itself 4x over" },
+            { value: "30s", label: "To submit a vendor order", sub: "Down from 20+ minutes" },
+          ].map(s => (
+            <div key={s.label} style={{ background: "#fff", borderRadius: 16, padding: "24px 16px", border: "1px solid #e2e8f0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 32, fontWeight: 800, color: "#0f172a", letterSpacing: "-1px" }}>{s.value}</div>
+              <div style={{ color: "#475569", fontSize: 13, fontWeight: 600, marginTop: 4 }}>{s.label}</div>
+              <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 2 }}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ═══ SOCIAL PROOF BAR ═══ */}
+      <section style={{ background: "#fff", borderTop: "1px solid #f1f5f9", borderBottom: "1px solid #f1f5f9", padding: "24px 0" }}>
+        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", gap: 40, flexWrap: "wrap", padding: "0 24px" }}>
+          <span style={{ color: "#94a3b8", fontSize: 13, fontWeight: 500 }}>Trusted by businesses that order and stock</span>
+          {["Restaurants", "Retail Shops", "Salons", "Auto Shops", "Warehouses"].map(t => (
+            <span key={t} style={{ color: "#cbd5e1", fontSize: 14, fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", fontFamily: "'DM Mono',monospace" }}>{t}</span>
+          ))}
+        </div>
+      </section>
+
+      {/* ═══ FEATURES ═══ */}
+      <section id="features" ref={regSection("features")} style={{ padding: "100px 24px", maxWidth: 1200, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 60, opacity: isVis("features") ? 1 : 0, transform: isVis("features") ? "translateY(0)" : "translateY(30px)", transition: "all 0.7s" }}>
+          <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, letterSpacing: "2px", textTransform: "uppercase", fontFamily: "'DM Mono',monospace" }}>Features</span>
+          <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 800, color: "#0f172a", marginTop: 12, letterSpacing: "-1px" }}>Everything your business needs</h2>
+          <p style={{ color: "#64748b", fontSize: 16, marginTop: 12, maxWidth: 500, margin: "12px auto 0" }}>Built for any business that orders supplies and tracks inventory — restaurants, retail, salons, shops, warehouses, and more.</p>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20 }}>
+          {FEATURES.map((f, idx) => (
+            <div key={f.title} className="feature-card"
+              style={{ background: "#fff", borderRadius: 16, padding: "32px 28px", border: "1px solid #f1f5f9", transition: "all 0.3s", cursor: "default",
+                opacity: isVis("features") ? 1 : 0, transform: isVis("features") ? "translateY(0)" : "translateY(20px)", transitionDelay: `${idx * 0.08}s` }}>
+              <div style={{ fontSize: 32, marginBottom: 16 }}>{f.icon}</div>
+              <h3 style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>{f.title}</h3>
+              <p style={{ color: "#64748b", fontSize: 14, lineHeight: 1.7 }}>{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ═══ HOW IT WORKS ═══ */}
+      <section id="how-it-works" ref={regSection("hiw")} style={{ background: "#0f172a", padding: "100px 24px" }}>
+        <div style={{ maxWidth: 1000, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 64, opacity: isVis("hiw") ? 1 : 0, transform: isVis("hiw") ? "translateY(0)" : "translateY(30px)", transition: "all 0.7s" }}>
+            <span style={{ color: "#475569", fontSize: 12, fontWeight: 700, letterSpacing: "2px", textTransform: "uppercase", fontFamily: "'DM Mono',monospace" }}>How It Works</span>
+            <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 800, color: "#f1f5f9", marginTop: 12, letterSpacing: "-1px" }}>Up and running in minutes</h2>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 24 }}>
+            {STEPS.map((step, idx) => (
+              <div key={step.num}
+                style={{ background: "#1e293b", borderRadius: 16, padding: "32px 24px", border: "1px solid #334155", position: "relative",
+                  opacity: isVis("hiw") ? 1 : 0, transform: isVis("hiw") ? "translateY(0)" : "translateY(20px)", transition: "all 0.6s", transitionDelay: `${idx * 0.12}s` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                  <span style={{ fontSize: 28 }}>{step.icon}</span>
+                  <span style={{ color: "#475569", fontSize: 32, fontWeight: 800, fontFamily: "'Syne',sans-serif" }}>{step.num}</span>
+                </div>
+                <h3 style={{ color: "#f1f5f9", fontSize: 17, fontWeight: 700, marginBottom: 8, fontFamily: "'Syne',sans-serif" }}>{step.title}</h3>
+                <p style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.7 }}>{step.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ QUOTE / PAIN POINT ═══ */}
+      <section ref={regSection("quote")} style={{ padding: "80px 24px", background: "#fff" }}>
+        <div style={{ maxWidth: 700, margin: "0 auto", textAlign: "center", opacity: isVis("quote") ? 1 : 0, transition: "all 0.8s" }}>
+          <div style={{ fontSize: 48, marginBottom: 20 }}>💬</div>
+          <blockquote style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(20px, 3vw, 28px)", fontWeight: 700, color: "#0f172a", lineHeight: 1.4, letterSpacing: "-0.5px", fontStyle: "normal" }}>
+            "I was over-ordering $600 a week and didn't even realize it. MOE showed me exactly where the waste was and cut it to almost zero in the first month."
+          </blockquote>
+          <div style={{ marginTop: 24, color: "#64748b", fontSize: 14 }}>
+            <strong style={{ color: "#0f172a" }}>Small Business Owner</strong> · Queens, NY
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ PRICING ═══ */}
+      <section id="pricing" ref={regSection("pricing")} style={{ padding: "100px 24px", background: "#f8fafc" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 60, opacity: isVis("pricing") ? 1 : 0, transform: isVis("pricing") ? "translateY(0)" : "translateY(30px)", transition: "all 0.7s" }}>
+            <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, letterSpacing: "2px", textTransform: "uppercase", fontFamily: "'DM Mono',monospace" }}>Pricing</span>
+            <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 800, color: "#0f172a", marginTop: 12, letterSpacing: "-1px" }}>Simple pricing, no surprises</h2>
+            <p style={{ color: "#64748b", fontSize: 16, marginTop: 12 }}>Every plan pays for itself in the first week. Start with a 14-day free trial — no credit card required.</p>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
+            {PLANS.map((plan, idx) => (
+              <div key={plan.name} className="plan-card"
+                style={{ background: plan.popular ? "#0f172a" : "#fff", borderRadius: 20, padding: "36px 28px", border: plan.popular ? "2px solid #334155" : "1px solid #e2e8f0", position: "relative", transition: "all 0.3s",
+                  opacity: isVis("pricing") ? 1 : 0, transform: isVis("pricing") ? "translateY(0)" : "translateY(20px)", transitionDelay: `${idx * 0.1}s` }}>
+                {plan.popular && (
+                  <div style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", background: "#f1f5f9", color: "#0f172a", borderRadius: 20, padding: "4px 16px", fontSize: 12, fontWeight: 700, letterSpacing: "0.5px" }}>
+                    MOST POPULAR
+                  </div>
+                )}
+                <div style={{ color: plan.popular ? "#94a3b8" : "#64748b", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>{plan.name}</div>
+                <div style={{ fontSize: 44, fontWeight: 800, color: plan.popular ? "#f1f5f9" : "#0f172a", fontFamily: "'Syne',sans-serif", letterSpacing: "-2px" }}>
+                  ${plan.price}<span style={{ fontSize: 16, fontWeight: 400, color: plan.popular ? "#64748b" : "#94a3b8" }}>/mo</span>
+                </div>
+
+                <div style={{ display: "flex", gap: 12, margin: "20px 0", flexWrap: "wrap" }}>
+                  {[["Vendors", plan.vendors], ["Items", plan.items], ["Users", plan.users]].map(([l, v]) => (
+                    <span key={l} style={{ background: plan.popular ? "#1e293b" : "#f8fafc", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: plan.popular ? "#94a3b8" : "#64748b", fontFamily: "'DM Mono',monospace" }}>
+                      <strong style={{ color: plan.popular ? "#f1f5f9" : "#0f172a" }}>{v}</strong> {l}
+                    </span>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "20px 0 28px" }}>
+                  {plan.features.map(f => (
+                    <div key={f} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ color: "#22c55e", fontSize: 16, flexShrink: 0 }}>✓</span>
+                      <span style={{ color: plan.popular ? "#cbd5e1" : "#475569", fontSize: 14 }}>{f}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{
+                  width: "100%", padding: "14px", borderRadius: 12, border: "none", fontSize: 15, fontWeight: 700, cursor: "pointer",
+                  background: plan.popular ? "#f1f5f9" : "#0f172a",
+                  color: plan.popular ? "#0f172a" : "#fff",
+                }}>
+                  {plan.cta}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ FAQ ═══ */}
+      <section id="faq" ref={regSection("faq")} style={{ padding: "100px 24px", background: "#fff" }}>
+        <div style={{ maxWidth: 700, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 48, opacity: isVis("faq") ? 1 : 0, transform: isVis("faq") ? "translateY(0)" : "translateY(30px)", transition: "all 0.7s" }}>
+            <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, letterSpacing: "2px", textTransform: "uppercase", fontFamily: "'DM Mono',monospace" }}>FAQ</span>
+            <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(28px, 4vw, 36px)", fontWeight: 800, color: "#0f172a", marginTop: 12, letterSpacing: "-1px" }}>Questions? Answers.</h2>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {FAQS.map((faq, idx) => {
+              const isOpen = openFaq === idx;
+              return (
+                <div key={idx} onClick={() => setOpenFaq(isOpen ? null : idx)}
+                  style={{ background: "#f8fafc", borderRadius: 12, border: "1px solid #f1f5f9", padding: "18px 24px", cursor: "pointer", transition: "all 0.2s",
+                    opacity: isVis("faq") ? 1 : 0, transform: isVis("faq") ? "translateY(0)" : "translateY(10px)", transitionDelay: `${idx * 0.06}s` }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ color: "#0f172a", fontSize: 15, fontWeight: 600 }}>{faq.q}</span>
+                    <span style={{ color: "#94a3b8", fontSize: 20, transform: isOpen ? "rotate(45deg)" : "none", transition: "transform 0.2s", flexShrink: 0, marginLeft: 16 }}>+</span>
+                  </div>
+                  {isOpen && <p style={{ color: "#64748b", fontSize: 14, lineHeight: 1.7, marginTop: 12 }}>{faq.a}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ CTA ═══ */}
+      <section style={{ padding: "100px 24px", background: "#0f172a", textAlign: "center" }}>
+        <div style={{ maxWidth: 600, margin: "0 auto" }}>
+          <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 800, color: "#f1f5f9", letterSpacing: "-1px", marginBottom: 16 }}>
+            Stop losing $500 a week.
+          </h2>
+          <p style={{ color: "#94a3b8", fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>
+            Over-ordering, waste, and last-minute vendor runs cost the average business $26,000+ a year. MOE pays for itself in the first week — and keeps saving you money every week after.
+          </p>
+          <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#f1f5f9", color: "#0f172a", border: "none", borderRadius: 14, padding: "18px 44px", fontSize: 18, fontWeight: 800, cursor: "pointer", fontFamily: "'Syne',sans-serif", letterSpacing: "-0.5px" }}>
+            Start Your Free Trial
+          </button>
+          <p style={{ color: "#475569", fontSize: 13, marginTop: 16 }}>14 days free · No credit card · Set up in 5 minutes</p>
+        </div>
+      </section>
+
+      {/* ═══ FOOTER ═══ */}
+      <footer style={{ background: "#0f172a", borderTop: "1px solid #1e293b", padding: "48px 24px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 24 }}>
+          <div>
+            <MoeLogoLanding size="md" />
+            <p style={{ color: "#475569", fontSize: 12, marginTop: 8 }}>Make Ordering Easy</p>
+          </div>
+          <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
+            <a href="#features" style={{ color: "#64748b", textDecoration: "none", fontSize: 13 }}>Features</a>
+            <a href="#pricing" style={{ color: "#64748b", textDecoration: "none", fontSize: 13 }}>Pricing</a>
+            <a href="#faq" style={{ color: "#64748b", textDecoration: "none", fontSize: 13 }}>FAQ</a>
+            <a href="#" style={{ color: "#64748b", textDecoration: "none", fontSize: 13 }}>Privacy</a>
+            <a href="#" style={{ color: "#64748b", textDecoration: "none", fontSize: 13 }}>Terms</a>
+          </div>
+          <div style={{ color: "#334155", fontSize: 12 }}>© {new Date().getFullYear()} MOE. All rights reserved.</div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ROUTER — getmoe.ai/ → Landing, getmoe.ai/app → MOE App
+// ═══════════════════════════════════════════════════════════════════════════════
+export default function Router() {
+  const getRoute = () => {
+    const p = window.location.pathname;
+    const h = window.location.hash;
+    if (p === "/app" || p.startsWith("/app/") || h === "#/app") return "app";
+    return "landing";
+  };
+
+  const [route, setRoute] = useState(getRoute);
+
+  useEffect(() => {
+    const onNav = () => setRoute(getRoute());
+    window.addEventListener("popstate", onNav);
+    window.addEventListener("hashchange", onNav);
+    return () => { window.removeEventListener("popstate", onNav); window.removeEventListener("hashchange", onNav); };
+  }, []);
+
+  window.__moeNavigate = (to) => {
+    try { window.history.pushState({}, "", to); } catch {}
+    window.location.hash = to === "/app" ? "#/app" : "";
+    setRoute(to === "/app" ? "app" : "landing");
+  };
+
+  if (route === "app") return <MoeApp />;
+  return <LandingPage />;
 }
