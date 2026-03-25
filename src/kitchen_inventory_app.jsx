@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MOE — Make Ordering Easy
@@ -2466,7 +2466,7 @@ French Fries, Case, , 12, 3, Freezer`}
 // LANDING PAGE (served at getmoe.ai/)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const PLANS = [
+const LANDING_PLANS = [
   { name: "Starter", price: 299, vendors: "3", items: "100", users: "2", features: ["Inventory tracking", "Order submission & history", "PDF export"], cta: "Start Free Trial" },
   { name: "Pro", price: 399, vendors: "Unlimited", items: "Unlimited", users: "10", features: ["Everything in Starter", "AI-powered import", "Insights & par suggestions", "Smart reorder recommendations"], popular: true, cta: "Start Free Trial" },
   { name: "Enterprise", price: 499, vendors: "Unlimited", items: "Unlimited", users: "Unlimited", features: ["Everything in Pro", "Priority support", "Custom onboarding", "Multi-location ready"], cta: "Contact Sales" },
@@ -2727,7 +2727,7 @@ function LandingPage() {
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
-            {PLANS.map((plan, idx) => (
+            {LANDING_PLANS.map((plan, idx) => (
               <div key={plan.name} className="plan-card"
                 style={{ background: plan.popular ? "#0f172a" : "#fff", borderRadius: 20, padding: "36px 28px", border: plan.popular ? "2px solid #334155" : "1px solid #e2e8f0", position: "relative", transition: "all 0.3s",
                   opacity: isVis("pricing") ? 1 : 0, transform: isVis("pricing") ? "translateY(0)" : "translateY(20px)", transitionDelay: `${idx * 0.1}s` }}>
