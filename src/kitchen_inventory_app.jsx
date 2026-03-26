@@ -1041,10 +1041,9 @@ function InventoryView({ inventory, stock, updateStock, vendors }) {
                       <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                         <span style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", marginRight:2 }}>Current Stock</span>
                         <button onClick={() => updateStock(item.id, Math.max(0, s-1))} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
-                        <input type="number" value={s === 0 ? "" : s} min={0} inputMode="numeric" pattern="[0-9]*"
+                        <input type="number" value={s} min={0} inputMode="numeric" pattern="[0-9]*"
                           onChange={e => updateStock(item.id, e.target.value === "" ? 0 : e.target.value)}
-                          onFocus={e => { if (s === 0) e.target.value = ""; e.target.select(); }}
-                          onBlur={e => { if (e.target.value === "") updateStock(item.id, 0); }}
+                          onFocus={e => e.target.select()}
                           style={{ width:52, background:"#080c14", border:"1px solid #475569", borderRadius:8, padding:"6px", color:"#f1f5f9", fontSize:15, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
                         <button onClick={() => updateStock(item.id, s+1)} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
                       </div>
