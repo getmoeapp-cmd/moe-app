@@ -1643,7 +1643,6 @@ function HoverRow({ children, bg, onRemove }) {
   const childArray = React.Children.toArray(children);
   const firstTd = childArray[0]; const restTds = childArray.slice(1);
   const enhancedFirstTd = React.cloneElement(firstTd, {
-    style: { ...firstTd.props.style, position:"relative" },
     children: (<div style={{ display:"flex", alignItems:"center", gap:4 }}><div style={{ flex:1 }}>{firstTd.props.children}</div>
       {hovered && <button onClick={handleRemove} title={confirm ? "Click again to confirm" : "Remove item"} style={{ background:confirm?"#7f1d1d":"transparent", border:`1px solid ${confirm?"#ef4444":"#475569"}`, borderRadius:4, color:confirm?"#fca5a5":"#64748b", cursor:"pointer", fontSize:10, padding:"2px 6px", whiteSpace:"nowrap", flexShrink:0, lineHeight:1.4 }}>{confirm ? "confirm ✕" : "✕"}</button>}
     </div>),
