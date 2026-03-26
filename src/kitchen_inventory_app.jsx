@@ -1041,7 +1041,10 @@ function InventoryView({ inventory, stock, updateStock, vendors }) {
                       <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                         <span style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", marginRight:2 }}>Current Stock</span>
                         <button onClick={() => updateStock(item.id, Math.max(0, s-1))} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
-                        <input type="number" value={s} min={0} onChange={e => updateStock(item.id, e.target.value)} onFocus={e => e.target.select()}
+                        <input type="number" value={s === 0 ? "" : s} min={0} inputMode="numeric" pattern="[0-9]*"
+                          onChange={e => updateStock(item.id, e.target.value === "" ? 0 : e.target.value)}
+                          onFocus={e => { if (s === 0) e.target.value = ""; e.target.select(); }}
+                          onBlur={e => { if (e.target.value === "") updateStock(item.id, 0); }}
                           style={{ width:52, background:"#080c14", border:"1px solid #475569", borderRadius:8, padding:"6px", color:"#f1f5f9", fontSize:15, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
                         <button onClick={() => updateStock(item.id, s+1)} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
                       </div>
@@ -1832,16 +1835,16 @@ function BackendSection({ section, stock, vendors, saveItemField, addItem, remov
       </div>
 
       {/* Table */}
-      <div style={{ maxHeight:400, overflowY:"auto", overflowX:"auto", position:"relative" }}>
-        <table style={{ width:"100%", tableLayout:"fixed", borderCollapse:"collapse", background:"#0f1a2e", border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px" }}>
+      <div style={{ overflowX:"auto", overflowY:"auto", maxHeight:400, position:"relative", borderRadius:"0 0 12px 12px", border:"1px solid #1e2d45", borderTop:"none" }}>
+        <table style={{ minWidth:950, borderCollapse:"separate", borderSpacing:0, background:"#0f1a2e" }}>
           <thead>
             <tr style={{ background:"#080c14" }}>
               {[
-                ["Item Name","left",170,true], ["Vendor","left",100,false], ["Order Unit","left",90,false],
-                ["Units/Pkg","center",60,false], ["Max Stock","center",75,false], ["Reorder Pt","center",75,false],
+                ["Item Name","left",180,true], ["Vendor","left",100,false], ["Order Unit","left",90,false],
+                ["Units/Pkg","center",65,false], ["Max Stock","center",75,false], ["Reorder Pt","center",75,false],
                 ["Current","center",70,false], ["Needed","center",70,false], ["Order Qty","center",70,false], ["Status","center",80,false],
               ].map(([h, align, w, stickyLeft]) => (
-                <th key={h} style={{ position:"sticky", top:0, left:stickyLeft?0:undefined, zIndex:stickyLeft?4:2, background:"#080c14", color:"#e2e8f0", fontSize:10, fontWeight:600, padding:"8px 8px", textAlign:align, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase", whiteSpace:"nowrap", minWidth:w, width:w, boxShadow:stickyLeft?"2px 0 8px rgba(0,0,0,0.4)":undefined }}>{h}</th>
+                <th key={h} style={{ position:"sticky", top:0, left:stickyLeft?0:undefined, zIndex:stickyLeft?4:2, background:"#080c14", color:"#e2e8f0", fontSize:10, fontWeight:600, padding:"8px 8px", textAlign:align, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase", whiteSpace:"nowrap", minWidth:w, width:w, boxShadow:stickyLeft?"3px 0 6px rgba(0,0,0,0.5)":undefined, borderBottom:"1px solid #1e2d45" }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -1854,7 +1857,7 @@ function BackendSection({ section, stock, vendors, saveItemField, addItem, remov
               const rowBg = idx % 2 === 0 ? "#0f1a2e" : "#0a1220";
               return (
                 <HoverRow key={item.id} bg={rowBg} onRemove={() => removeItem(item.id)}>
-                  <td style={{ padding:"5px 8px", position:"sticky", left:0, zIndex:1, background:rowBg, boxShadow:"2px 0 8px rgba(0,0,0,0.4)" }}>
+                  <td style={{ padding:"5px 8px", position:"sticky", left:0, zIndex:3, background:rowBg, boxShadow:"3px 0 6px rgba(0,0,0,0.5)", minWidth:180, width:180 }}>
                     <EditableCell value={item.name} onSave={v => saveItemField(item.id, "name", v)} width={155} />
                   </td>
                   <td style={{ padding:"5px 8px" }}>
