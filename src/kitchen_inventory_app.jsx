@@ -3490,8 +3490,21 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }
   const fileRef = React.useRef(null);
 
   const allItems = flatItems(inventory);
-  const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2, "0")}`;
+  const currentWk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2, "0")}`;
+  const [selectedWeek, setSelectedWeek] = useState(currentWk);
+  const wk = selectedWeek; // Use selected week for all price entries
   const vendorNames = [...new Set(allItems.map(i => (i.vendor || "").trim()).filter(Boolean))].sort();
+
+  // Build list of past weeks for the picker (current + past 12 weeks)
+  const weekOptions = [];
+  for (let i = 0; i < 13; i++) {
+    const d = new Date(); d.setDate(d.getDate() - (i * 7));
+    const yr = d.getFullYear();
+    const jan1 = new Date(yr, 0, 1);
+    const weekNum = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+    const key = `${yr}-WK${String(weekNum).padStart(2, "0")}`;
+    if (!weekOptions.some(w => w.key === key)) weekOptions.push({ key, label: i === 0 ? `This week (WK${weekNum})` : `WK${weekNum} — ${d.toLocaleDateString("en-US", { month:"short", day:"numeric" })}` });
+  }
 
   // ── Manual price entry ──────────────────────────────────────────────────
   const [manualPrices, setManualPrices] = useState({});
@@ -3648,7 +3661,7 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }
       </div>
 
       {/* Actions */}
-      <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
+      <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap", alignItems:"center" }}>
         {[
           { key:"dashboard", label:"Dashboard" },
           { key:"enter", label:"Enter Prices" },
@@ -3659,7 +3672,7 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }
             {tab.label}
           </button>
         ))}
-        <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
+        <div style={{ marginLeft:"auto", display:"flex", gap:8, flexWrap:"wrap" }}>
           {vendorNames.length > 0 && (
             <select value={filterVendor} onChange={e => setFilterVendor(e.target.value)}
               style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"7px 12px", color:"#f1f5f9", fontSize:12, outline:"none", cursor:"pointer" }}>
@@ -3670,6 +3683,22 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }
           {mode === "dashboard" && <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"7px 12px", color:"#f1f5f9", fontSize:12, outline:"none", width:140 }} />}
         </div>
       </div>
+
+      {/* Week picker — shown when entering or uploading prices */}
+      {(mode === "enter" || mode === "upload") && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, flexWrap:"wrap" }}>
+          <span style={{ color:"#94a3b8", fontSize:12, fontWeight:600 }}>Prices for:</span>
+          <select value={selectedWeek} onChange={e => setSelectedWeek(e.target.value)}
+            style={{ background:"#0f1a2e", border:`1px solid ${selectedWeek !== currentWk ? "#d97706" : "#1e2d45"}`, borderRadius:8, padding:"7px 12px", color: selectedWeek !== currentWk ? "#fbbf24" : "#f1f5f9", fontSize:12, outline:"none", cursor:"pointer", fontFamily:"'DM Mono',monospace" }}>
+            {weekOptions.map(w => <option key={w.key} value={w.key}>{w.label}</option>)}
+          </select>
+          {selectedWeek !== currentWk && (
+            <span style={{ background:"#422006", border:"1px solid #d97706", borderRadius:6, padding:"3px 10px", color:"#fbbf24", fontSize:11, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>
+              Past week
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── FLAGGED INCREASES ── */}
       {mode === "dashboard" && flagged.length > 0 && (
