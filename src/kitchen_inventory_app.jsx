@@ -3174,6 +3174,7 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
   const [search, setSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState(null);
   const [qty, setQty] = useState(1);
+  const [wasteUnit, setWasteUnit] = useState("items");
   const [reason, setReason] = useState("expired");
   const [note, setNote] = useState("");
   const [viewMode, setViewMode] = useState("log"); // "log" | "summary"
@@ -3207,7 +3208,7 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
       itemId: selectedItem.id,
       itemName: selectedItem.name,
       qty,
-      unit: selectedItem.order_unit,
+      unit: wasteUnit,
       reason,
       note: note.trim(),
       loggedBy: userName,
@@ -3217,7 +3218,7 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
       section: selectedItem.section || "",
     };
     saveWasteLog([entry, ...wasteLog]);
-    setSelectedItem(null); setQty(1); setReason("expired"); setNote(""); setShowAdd(false); setSearch("");
+    setSelectedItem(null); setQty(1); setWasteUnit("items"); setReason("expired"); setNote(""); setShowAdd(false); setSearch("");
   };
 
   const removeEntry = (id) => saveWasteLog(wasteLog.filter(e => e.id !== id));
@@ -3344,16 +3345,19 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
                 <button onClick={() => setSelectedItem(null)} style={{ background:"none", border:"1px solid #1e2d45", borderRadius:6, color:"#64748b", cursor:"pointer", fontSize:11, padding:"3px 8px" }}>Change</button>
               </div>
 
-              {/* Quantity */}
+              {/* Quantity + Unit + Reason */}
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
                 <div>
                   <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Quantity Wasted</label>
-                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                     <button onClick={() => setQty(Math.max(1, qty-1))} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
                     <input type="number" value={qty} min={1} onChange={e => setQty(Math.max(1, parseInt(e.target.value)||1))}
-                      style={{ width:60, background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"6px", color:"#f1f5f9", fontSize:16, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
+                      style={{ width:50, background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"6px", color:"#f1f5f9", fontSize:16, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
                     <button onClick={() => setQty(qty+1)} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
-                    <span style={{ color:"#475569", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{selectedItem.order_unit}</span>
+                    <select value={wasteUnit} onChange={e => setWasteUnit(e.target.value)}
+                      style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"6px 8px", color:"#f1f5f9", fontSize:12, outline:"none", cursor:"pointer", fontFamily:"'DM Mono',monospace" }}>
+                      {["items","lbs","oz","pieces","slices","cups","each","bags","boxes","bottles","cans","gallons","cases"].map(u => <option key={u} value={u}>{u}</option>)}
+                    </select>
                   </div>
                 </div>
                 <div>
