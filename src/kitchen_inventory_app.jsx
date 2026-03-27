@@ -558,7 +558,7 @@ function MoeApp() {
   return (
     <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif", overflowX:"hidden", width:"100%" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      <style>{`*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { overflow-x: hidden; }`}</style>
+      <style>{`*, *::before, *::after { box-sizing: border-box; } html, body { margin: 0; padding: 0; width: 100%; overflow-x: hidden; -webkit-text-size-adjust: 100%; } body { background: #080c14; } #root { width: 100%; overflow-x: hidden; } input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; } input[type="number"] { -moz-appearance: textfield; } input, select, textarea, button { font-size: 16px; }`}</style>
 
       {/* Sidebar overlay */}
       {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200 }} />}
@@ -1046,7 +1046,7 @@ function InventoryView({ inventory, stock, updateStock, vendors }) {
                         <input type="number" value={s} min={0} inputMode="numeric" pattern="[0-9]*"
                           onChange={e => updateStock(item.id, e.target.value === "" ? 0 : e.target.value)}
                           onFocus={e => e.target.select()}
-                          style={{ width:52, background:"#080c14", border:"1px solid #475569", borderRadius:8, padding:"6px", color:"#f1f5f9", fontSize:15, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
+                          style={{ width:52, background:"#080c14", border:"1px solid #475569", borderRadius:8, padding:"6px", color:"#f1f5f9", fontSize:16, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
                         <button onClick={() => updateStock(item.id, s+1)} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
                       </div>
                       <div>{orderQty > 0 ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"4px 10px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>Order {orderQty}</span> : null}</div>
