@@ -556,9 +556,18 @@ function MoeApp() {
   ];
 
   return (
-    <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif", overflowX:"hidden", width:"100%" }}>
+    <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif", overflowX:"hidden", width:"100%", maxWidth:"100vw" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      <style>{`*, *::before, *::after { box-sizing: border-box; } html, body { margin: 0; padding: 0; width: 100%; overflow-x: hidden; -webkit-text-size-adjust: 100%; } body { background: #080c14; } #root { width: 100%; overflow-x: hidden; } input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; } input[type="number"] { -moz-appearance: textfield; } input, select, textarea, button { font-size: 16px; }`}</style>
+      <style>{`
+        *, *::before, *::after { box-sizing: border-box; }
+        html { width: 100%; overflow-x: hidden; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        body { margin: 0; padding: 0; width: 100%; max-width: 100vw; overflow-x: hidden; background: #080c14; }
+        #root { width: 100%; max-width: 100vw; overflow-x: hidden; }
+        input, select, textarea, button { font-size: 16px !important; }
+        input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="number"] { -moz-appearance: textfield; }
+        @viewport { width: device-width; }
+      `}</style>
 
       {/* Sidebar overlay */}
       {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200 }} />}
