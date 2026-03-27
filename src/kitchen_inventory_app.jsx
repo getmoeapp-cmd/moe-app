@@ -2911,7 +2911,7 @@ function LandingPage() {
             <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 12, padding: "16px 36px", fontSize: 17, fontWeight: 700, cursor: "pointer", letterSpacing: "-0.3px" }}>
               Start 14-Day Free Trial
             </button>
-            <button className="cta-btn" style={{ background: "#fff", color: "#0f172a", border: "2px solid #e2e8f0", borderRadius: 12, padding: "14px 32px", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
+            <button className="cta-btn" onClick={() => document.getElementById("how-it-works")?.scrollIntoView({ behavior:"smooth" })} style={{ background: "#fff", color: "#0f172a", border: "2px solid #e2e8f0", borderRadius: 12, padding: "14px 32px", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
               See How It Works ↓
             </button>
           </div>
