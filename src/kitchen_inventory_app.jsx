@@ -2832,7 +2832,7 @@ function LandingPage() {
 
   const faqs = [
     { q: "What kind of businesses is MOE for?", a: "Any small business that orders supplies and tracks inventory — restaurants, salons, retail shops, contractors, fitness studios, medical offices, and more." },
-    { q: "How long does setup take?", a: "Under 5 minutes. Create your account, use AI Import to generate your item list, and you\u2019re ready to go." },
+    { q: "How long does setup take?", a: "Under 5 minutes. Create your account, use AI Import to generate your item list, and you're ready to go." },
     { q: "Is my data secure?", a: "Yes. MOE uses Supabase for secure cloud storage with row-level security. Your data is encrypted and only accessible to your team." },
     { q: "Can I cancel anytime?", a: "Absolutely. No contracts, no cancellation fees. Your 14-day trial is completely free with no credit card required." },
     { q: "Can my team use it too?", a: "Yes. MOE supports role-based access for Owners, Managers, and Employees. Everyone sees what they need." },
@@ -2993,9 +2993,9 @@ function LandingPage() {
           <div className="prob-grid fade-up" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 48 }}>
             {[
               ["📋","Spreadsheets from hell","Manual tracking across tabs, notebooks, and sticky notes leads to errors that snowball into wasted money.","var(--rose)"],
-              ["🗑️","Invisible waste","Without tracking what gets tossed and why, you can\u2019t fix the problem. Thousands go in the trash silently.","var(--amber)"],
-              ["📈","Supplier price creep","Vendors quietly raise prices week over week. Without tracking, you don\u2019t catch it until margins are crushed.","var(--rose)"],
-              ["🤷","Ordering by gut feeling","Guessing how much to order means you\u2019re always over-stocked or running out. Both cost you real money.","var(--amber)"],
+              ["🗑️","Invisible waste","Without tracking what gets tossed and why, you can't fix the problem. Thousands go in the trash silently.","var(--amber)"],
+              ["📈","Supplier price creep","Vendors quietly raise prices week over week. Without tracking, you don't catch it until margins are crushed.","var(--rose)"],
+              ["🤷","Ordering by gut feeling","Guessing how much to order means you're always over-stocked or running out. Both cost you real money.","var(--amber)"],
             ].map(([emoji,title,desc,color]) => (
               <div key={title} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: 32, position: "relative", overflow: "hidden", transition: "all 0.3s" }}>
                 <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 3, background: color }} />
@@ -3018,13 +3018,13 @@ function LandingPage() {
           </div>
 
           {[
-            { tag: "Inventory", tagCls: "rgba(56,189,248,0.12)", tagCol: "var(--accent)", title: "Know exactly what you have — and what you need", desc: "Track every item in real-time. Set par levels, see what\u2019s running low, and generate orders in one click.", bullets: ["Real-time stock tracking","Smart par level suggestions","One-click order generation"],
+            { tag: "Inventory", tagCls: "rgba(56,189,248,0.12)", tagCol: "var(--accent)", title: "Know exactly what you have — and what you need", desc: "Track every item in real-time. Set par levels, see what's running low, and generate orders in one click.", bullets: ["Real-time stock tracking","Smart par level suggestions","One-click order generation"],
               mock: [["Mozzarella (5lb)","12 units","blu"],["Flour (50lb bag)","8 units","grn"],["Olive Oil (gal)","2 units ⚠","red"],["Pepperoni (10lb)","6 units","grn"]], mockTitle: "Live Inventory" },
             { tag: "Waste Log", tagCls: "rgba(251,113,133,0.12)", tagCol: "var(--rose)", title: "See where your money goes to die", desc: "Log every item that hits the trash with reason codes and cost estimates. Spot the patterns, fix the leaks.", bullets: ["Reason-coded waste tracking","Automatic cost estimation","Weekly trend analysis"],
-              mock: [["Total waste cost","-$127.40","red"],["vs. last week","↓ 34%","grn"],["Expired produce","$68.20","red"],["Over-prepped","$41.00","red"]], mockTitle: "This Week\u2019s Waste" },
+              mock: [["Total waste cost","-$127.40","red"],["vs. last week","↓ 34%","grn"],["Expired produce","$68.20","red"],["Over-prepped","$41.00","red"]], mockTitle: "This Week's Waste" },
             { tag: "Price Tracker", tagCls: "rgba(251,191,36,0.12)", tagCol: "var(--amber)", title: "Catch price hikes before they eat your margin", desc: "Upload invoices or CSVs and MOE flags any price that jumped week-over-week.", bullets: ["Invoice photo & CSV upload","Week-over-week price flagging","Supplier comparison tools"],
               mock: [["Chicken breast (/lb)","$3.89 → $4.42 ↑14%","red"],["Heavy cream (qt)","$4.10 → $4.55 ↑11%","red"],["Romaine lettuce","$2.20 → $2.15 ↓2%","grn"],["Tomatoes (case)","$24.00 — stable","grn"]], mockTitle: "Price Alerts" },
-            { tag: "AI Import", tagCls: "rgba(52,211,153,0.12)", tagCol: "var(--green)", title: "Build your inventory in minutes, not hours", desc: "Just snap a photo of your invoice and MOE\u2019s AI builds your full item list.", bullets: ["AI-generated item lists","Pre-set categories & units","Edit anything after import"],
+            { tag: "AI Import", tagCls: "rgba(52,211,153,0.12)", tagCol: "var(--green)", title: "Build your inventory in minutes, not hours", desc: "Just snap a photo of your invoice and MOE's AI builds your full item list.", bullets: ["AI-generated item lists","Pre-set categories & units","Edit anything after import"],
               mock: [["✓ Dough & Flour (6 items)","Added","blu"],["✓ Cheese & Dairy (8 items)","Added","blu"],["✓ Meats & Proteins (10 items)","Added","blu"],["✓ Produce & Vegetables (12 items)","Added","blu"]], mockTitle: "AI Import" },
           ].map((feat, idx) => (
             <div key={feat.tag} className="feat-row fade-up" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "center", marginBottom: 80 }}>
@@ -3047,11 +3047,11 @@ function LandingPage() {
         </div>
       </section>
 
-      {/* ═══ WHO IT\u2019S FOR ═══ */}
+      {/* ═══ WHO IT'S FOR ═══ */}
       <section id="audience" style={{ padding: "100px 0", background: "var(--card)", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
         <div className="ctn">
           <div className="fade-up" style={{ textAlign: "center", marginBottom: 48 }}>
-            <div className="slbl">Who It\u2019s For</div>
+            <div className="slbl">Who It's For</div>
             <h2 className="stitle">Built for any business with inventory</h2>
             <p className="ssub" style={{ margin: "0 auto" }}>If you order supplies, track stock, or deal with waste — MOE was built for you.</p>
           </div>
@@ -3079,7 +3079,7 @@ function LandingPage() {
         <div className="ctn">
           <div className="fade-up" style={{ textAlign: "center", marginBottom: 56 }}>
             <div className="slbl">Simple Pricing</div>
-            <h2 className="stitle">Start free. Upgrade when you\u2019re ready.</h2>
+            <h2 className="stitle">Start free. Upgrade when you're ready.</h2>
             <p className="ssub" style={{ margin: "0 auto" }}>Every plan starts with a 14-day free trial. No credit card required.</p>
           </div>
           <div className="price-grid fade-up" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 24, alignItems: "start" }}>
