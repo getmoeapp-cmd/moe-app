@@ -3174,7 +3174,7 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
   const [search, setSearch] = useState("");
   const [selectedItem, setSelectedItem] = useState(null);
   const [qty, setQty] = useState(1);
-  const [wasteUnit, setWasteUnit] = useState("items");
+  const [wasteUnit, setWasteUnit] = useState("each");
   const [reason, setReason] = useState("expired");
   const [note, setNote] = useState("");
   const [viewMode, setViewMode] = useState("log"); // "log" | "summary"
@@ -3218,7 +3218,7 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
       section: selectedItem.section || "",
     };
     saveWasteLog([entry, ...wasteLog]);
-    setSelectedItem(null); setQty(1); setWasteUnit("items"); setReason("expired"); setNote(""); setShowAdd(false); setSearch("");
+    setSelectedItem(null); setQty(1); setWasteUnit("each"); setReason("expired"); setNote(""); setShowAdd(false); setSearch("");
   };
 
   const removeEntry = (id) => saveWasteLog(wasteLog.filter(e => e.id !== id));
@@ -3356,7 +3356,7 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
                     <button onClick={() => setQty(qty+1)} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
                     <select value={wasteUnit} onChange={e => setWasteUnit(e.target.value)}
                       style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"6px 8px", color:"#f1f5f9", fontSize:12, outline:"none", cursor:"pointer", fontFamily:"'DM Mono',monospace" }}>
-                      {["items","lbs","oz","pieces","slices","cups","each","bags","boxes","bottles","cans","gallons","cases"].map(u => <option key={u} value={u}>{u}</option>)}
+                      {["lbs","oz","qt","gal","each","slices","pies","case"].map(u => <option key={u} value={u}>{u}</option>)}
                     </select>
                   </div>
                 </div>
