@@ -985,13 +985,14 @@ function LoginScreen({ onLogin, error, setError }) {
 function InventoryView({ inventory, stock, updateStock, vendors }) {
   const todayVendors = vendorsOrderingToday(vendors);
   const allItems = flatItems(inventory);
-  const urgentCount = allItems.filter(i => (stock[i.id] ?? 0) < i.reorder).length;
+  const hasStockData = Object.values(stock).some(v => v > 0);
+  const urgentCount = hasStockData ? allItems.filter(i => (stock[i.id] ?? 0) < i.reorder).length : 0;
 
   return (
-    <div>
+    <div style={{ overflow:"hidden" }}>
       {/* Order day notification */}
       {todayVendors.length > 0 && (
-        <div style={{ background:"#422006", border:"1px solid #d97706", borderRadius:12, padding:"12px 18px", marginBottom:20, display:"flex", alignItems:"center", gap:12 }}>
+        <div style={{ background:"#422006", border:"1px solid #d97706", borderRadius:12, padding:"12px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:12 }}>
           <span style={{ fontSize:20 }}>📦</span>
           <div>
             <div style={{ color:"#fbbf24", fontWeight:600, fontSize:14 }}>Order day! {todayVendors.map(v => v.name).join(", ")} ordering today</div>
@@ -1000,16 +1001,16 @@ function InventoryView({ inventory, stock, updateStock, vendors }) {
         </div>
       )}
 
-      {/* Urgent items banner */}
+      {/* Urgent items banner — only show when stock has been counted */}
       {urgentCount > 0 && (
-        <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:12, padding:"12px 18px", marginBottom:20, display:"flex", alignItems:"center", gap:12 }}>
+        <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:12, padding:"12px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:12 }}>
           <span style={{ fontSize:18 }}>🔴</span>
           <div style={{ color:"#fca5a5", fontWeight:600, fontSize:13 }}>{urgentCount} item{urgentCount!==1?"s":""} below reorder point</div>
         </div>
       )}
 
       <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 4px" }}>Inventory Count</h2>
-      <p style={{ color:"#475569", fontSize:13, margin:"0 0 20px" }}>Walk the kitchen, count by location</p>
+      <p style={{ color:"#475569", fontSize:13, margin:"0 0 16px" }}>Walk the kitchen, count by location</p>
 
       {inventory.map(section => {
         const sectionItems = section.items;
