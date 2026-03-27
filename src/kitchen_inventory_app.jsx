@@ -2817,332 +2817,365 @@ function MoeLogoLanding({ size = "lg", dark = false }) {
 }
 
 function LandingPage() {
+  const [menuOpen, setMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState(null);
-  const [scrolled, setScrolled] = useState(false);
-  const [visible, setVisible] = useState({});
-  const [mobileMenu, setMobileMenu] = useState(false);
-  const sectionRefs = useRef({});
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 40);
-    window.addEventListener("scroll", onScroll);
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
 
   useEffect(() => {
     const obs = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
-        if (e.isIntersecting) setVisible(prev => ({ ...prev, [e.target.dataset.section]: true }));
-      });
-    }, { threshold: 0.15 });
-    Object.values(sectionRefs.current).forEach(el => { if (el) obs.observe(el); });
+      entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add("visible"); });
+    }, { threshold: 0.1 });
+    document.querySelectorAll(".fade-up").forEach(el => obs.observe(el));
     return () => obs.disconnect();
   }, []);
 
-  const regSection = (id) => (el) => { sectionRefs.current[id] = el; if (el) el.dataset.section = id; };
-  const isVis = (id) => visible[id];
+  const faqToggle = (idx) => setOpenFaq(openFaq === idx ? null : idx);
+
+  const faqs = [
+    { q: "What kind of businesses is MOE for?", a: "Any small business that orders supplies and tracks inventory — restaurants, salons, retail shops, contractors, fitness studios, medical offices, and more." },
+    { q: "How long does setup take?", a: "Under 5 minutes. Create your account, use AI Import to generate your item list, and you\u2019re ready to go." },
+    { q: "Is my data secure?", a: "Yes. MOE uses Supabase for secure cloud storage with row-level security. Your data is encrypted and only accessible to your team." },
+    { q: "Can I cancel anytime?", a: "Absolutely. No contracts, no cancellation fees. Your 14-day trial is completely free with no credit card required." },
+    { q: "Can my team use it too?", a: "Yes. MOE supports role-based access for Owners, Managers, and Employees. Everyone sees what they need." },
+    { q: "Do I need to install anything?", a: "No. MOE runs entirely in your browser — desktop, tablet, or phone. No downloads needed." },
+  ];
+
+  const checkSvg = <svg width="14" height="14" fill="none" stroke="#34d399" strokeWidth="2.5"><path d="M2 7l3.5 3.5 7-7"/></svg>;
+  const bulletSvg = <svg width="16" height="16" fill="none" stroke="#34d399" strokeWidth="2.5"><path d="M2 8.5l4 4 8-8"/></svg>;
+  const arrowSvg = <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 8h10M9 4l4 4-4 4"/></svg>;
+  const plusSvg = <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 3v12M3 9h12"/></svg>;
+
+  const css = `
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+    .lp * { box-sizing: border-box; margin: 0; padding: 0; }
+    .lp { --bg: #060a12; --card: #0c1220; --card-h: #111827; --surface: #141c2e; --border: rgba(148,163,184,0.1); --border-b: rgba(148,163,184,0.2); --t1: #f1f5f9; --t2: #94a3b8; --t3: #64748b; --accent: #38bdf8; --glow: rgba(56,189,248,0.15); --green: #34d399; --amber: #fbbf24; --rose: #fb7185; --r: 12px; --rl: 20px; --ff: 'DM Sans',sans-serif; --fm: 'Space Mono',monospace; font-family: var(--ff); background: var(--bg); color: var(--t1); line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+    .lp a { color: inherit; text-decoration: none; }
+    .lp .ctn { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+    .lp .fade-up { opacity: 0; transform: translateY(30px); transition: opacity 0.7s, transform 0.7s; }
+    .lp .fade-up.visible { opacity: 1; transform: translateY(0); }
+    .lp .slbl { font-family: var(--fm); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent); margin-bottom: 16px; }
+    .lp .stitle { font-size: clamp(1.8rem,4vw,2.6rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; margin-bottom: 20px; }
+    .lp .ssub { font-size: 1.05rem; color: var(--t2); max-width: 560px; line-height: 1.7; }
+    .lp .btn-p { display: inline-flex; align-items: center; gap: 8px; padding: 16px 36px; background: var(--accent); color: var(--bg); font-weight: 700; font-size: 1rem; border-radius: 10px; border: none; cursor: pointer; transition: all 0.25s; box-shadow: 0 0 30px var(--glow); }
+    .lp .btn-p:hover { transform: translateY(-2px); box-shadow: 0 0 50px var(--glow); }
+    .lp .btn-s { display: inline-flex; align-items: center; gap: 8px; padding: 16px 36px; background: transparent; color: var(--t1); font-weight: 600; font-size: 1rem; border-radius: 10px; border: 1px solid var(--border-b); cursor: pointer; transition: all 0.25s; }
+    .lp .btn-s:hover { border-color: var(--t2); background: rgba(255,255,255,0.03); }
+    .lp .mock-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--surface); border-radius: 8px; margin-bottom: 8px; font-size: 0.85rem; }
+    .lp .mock-row .lb { color: var(--t2); }
+    .lp .mock-row .vl { font-family: var(--fm); font-weight: 700; font-size: 0.85rem; }
+    .lp .mock-row .vl.red { color: var(--rose); }
+    .lp .mock-row .vl.grn { color: var(--green); }
+    .lp .mock-row .vl.blu { color: var(--accent); }
+    .lp .mock-hdr { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--t3); margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    @media (max-width: 768px) {
+      .lp .desk-nav { display: none !important; }
+      .lp .mob-toggle { display: flex !important; }
+      .lp .prob-grid, .lp .feat-row { grid-template-columns: 1fr !important; }
+      .lp .feat-row .feat-vis { order: 0 !important; min-height: 240px !important; }
+      .lp .aud-grid, .lp .price-grid { grid-template-columns: 1fr !important; }
+      .lp .price-grid { max-width: 400px; margin: 0 auto; }
+      .lp .price-card.feat { transform: none !important; }
+      .lp .proof-inner { flex-direction: column !important; gap: 24px !important; }
+      .lp .hero-acts { flex-direction: column; align-items: center; }
+      .lp .hero-acts .btn-p, .lp .hero-acts .btn-s { width: 100%; justify-content: center; }
+      .lp .save-bar { gap: 24px !important; }
+      .lp .save-bar .snum { font-size: 1.6rem !important; }
+    }
+  `;
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif", background: "#f8fafc", color: "#1e293b", overflowX: "hidden" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      <style>{`
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        html { scroll-behavior: smooth; }
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-        .fade-up { opacity: 0; animation: fadeUp 0.7s ease forwards; }
-        .fade-up-d1 { animation-delay: 0.1s; }
-        .fade-up-d2 { animation-delay: 0.2s; }
-        .fade-up-d3 { animation-delay: 0.3s; }
-        .fade-up-d4 { animation-delay: 0.4s; }
-        .vis .fade-up { opacity: 0; animation: fadeUp 0.7s ease forwards; }
-        .cta-btn { transition: all 0.2s; }
-        .cta-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(15,23,42,0.2); }
-        .feature-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(15,23,42,0.08); }
-        .plan-card:hover { transform: translateY(-4px); box-shadow: 0 16px 50px rgba(15,23,42,0.1); }
-      `}</style>
+    <div className="lp" style={{ minHeight: "100vh" }}>
+      <style>{css}</style>
 
       {/* ═══ NAV ═══ */}
-      <nav style={{
-        position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-        background: scrolled || mobileMenu ? "rgba(248,250,252,0.97)" : "transparent",
-        backdropFilter: scrolled || mobileMenu ? "blur(20px)" : "none",
-        borderBottom: scrolled ? "1px solid #e2e8f0" : "1px solid transparent",
-        transition: "all 0.3s",
-      }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 16px", height: 60, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <MoeLogoLanding size="md" />
-          {/* Desktop nav */}
-          <div className="landing-nav-desktop" style={{ display: "flex", alignItems: "center", gap: 28 }}>
-            <a href="#features" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>Features</a>
-            <a href="#how-it-works" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>How It Works</a>
-            <a href="#pricing" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>Pricing</a>
-            <a href="#faq" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>FAQ</a>
-            <button onClick={() => window.__moeNavigate("/app")} style={{ background: "none", border: "none", color: "#64748b", fontSize: 13, fontWeight: 500, cursor: "pointer", padding: "6px 0" }}>Sign In</button>
-            <button className="cta-btn" onClick={() => window.__moeNavigate("/quiz")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Get Started Free</button>
-          </div>
-          {/* Mobile: CTA + hamburger */}
-          <div className="landing-nav-mobile" style={{ display: "none", alignItems: "center", gap: 8 }}>
-            <button className="cta-btn" onClick={() => window.__moeNavigate("/quiz")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Get Started</button>
-            <button onClick={() => setMobileMenu(!mobileMenu)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ display: "block", width: 20, height: 2, background: "#475569", borderRadius: 2 }} />
-              <span style={{ display: "block", width: 20, height: 2, background: "#475569", borderRadius: 2 }} />
-              <span style={{ display: "block", width: 20, height: 2, background: "#475569", borderRadius: 2 }} />
-            </button>
+      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "16px 0", background: "rgba(6,10,18,0.8)", backdropFilter: "blur(20px)", borderBottom: "1px solid var(--border)" }}>
+        <div className="ctn" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <a href="#" style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, fontSize: "1.25rem", letterSpacing: "-0.02em" }}>
+            <svg viewBox="0 0 40 40" fill="none" width="36" height="36">
+              <polygon points="20,2.5 36.5,11.25 36.5,28.75 20,37.5 3.5,28.75 3.5,11.25" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.35"/>
+              <polygon points="20,8 31,14 31,26 20,32 9,26 9,14" fill="none" stroke="#38bdf8" strokeWidth="1.2" opacity="0.5"/>
+              <polygon points="20,13 25.5,16.5 25.5,23.5 20,27 14.5,23.5 14.5,16.5" fill="#38bdf8" opacity="0.12"/>
+              <line x1="20" y1="2.5" x2="20" y2="8" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+              <line x1="36.5" y1="11.25" x2="31" y2="14" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+              <line x1="36.5" y1="28.75" x2="31" y2="26" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+              <line x1="20" y1="37.5" x2="20" y2="32" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+              <line x1="3.5" y1="28.75" x2="9" y2="26" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+              <line x1="3.5" y1="11.25" x2="9" y2="14" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+              <circle cx="20" cy="2.5" r="1.8" fill="#38bdf8" opacity="0.5"/>
+              <circle cx="36.5" cy="11.25" r="1.8" fill="#38bdf8" opacity="0.5"/>
+              <circle cx="36.5" cy="28.75" r="1.8" fill="#38bdf8" opacity="0.5"/>
+              <circle cx="20" cy="37.5" r="1.8" fill="#38bdf8" opacity="0.5"/>
+              <circle cx="3.5" cy="28.75" r="1.8" fill="#38bdf8" opacity="0.5"/>
+              <circle cx="3.5" cy="11.25" r="1.8" fill="#38bdf8" opacity="0.5"/>
+              <text x="20" y="24.5" textAnchor="middle" fill="#38bdf8" fontFamily="DM Sans,sans-serif" fontWeight="700" fontSize="13">M</text>
+            </svg>
+            MOE
+          </a>
+          <button className="mob-toggle" onClick={() => setMenuOpen(!menuOpen)} style={{ display: "none", background: "none", border: "none", color: "var(--t1)", cursor: "pointer", alignItems: "center" }}>
+            <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+          </button>
+          <div className="desk-nav" style={{ display: "flex", gap: 32, alignItems: "center" }}>
+            <a href="#features" style={{ fontSize: "0.875rem", color: "var(--t2)", fontWeight: 500 }}>Features</a>
+            <a href="#pricing" style={{ fontSize: "0.875rem", color: "var(--t2)", fontWeight: 500 }}>Pricing</a>
+            <a href="#faq" style={{ fontSize: "0.875rem", color: "var(--t2)", fontWeight: 500 }}>FAQ</a>
+            <button onClick={() => window.__moeNavigate("/app")} style={{ fontSize: "0.875rem", color: "var(--t2)", fontWeight: 500, background: "none", border: "none", cursor: "pointer" }}>Sign In</button>
+            <button onClick={() => window.__moeNavigate("/quiz")} style={{ background: "var(--accent)", color: "var(--bg)", padding: "10px 22px", borderRadius: 8, fontWeight: 600, fontSize: "0.875rem", border: "none", cursor: "pointer" }}>Start Free Trial</button>
           </div>
         </div>
-        {/* Mobile dropdown */}
-        {mobileMenu && (
-          <div className="landing-nav-mobile" style={{ display: "none", flexDirection: "column", padding: "8px 16px 16px", background: "rgba(248,250,252,0.97)", borderTop: "1px solid #e2e8f0" }}>
-            {[["#features","Features"],["#how-it-works","How It Works"],["#pricing","Pricing"],["#faq","FAQ"]].map(([href, label]) => (
-              <a key={href} href={href} onClick={() => setMobileMenu(false)} style={{ color: "#475569", textDecoration: "none", fontSize: 15, fontWeight: 500, padding: "10px 0", borderBottom: "1px solid #f1f5f9" }}>{label}</a>
-            ))}
-            <button onClick={() => { window.__moeNavigate("/app"); setMobileMenu(false); }} style={{ background: "none", border: "none", color: "#64748b", fontSize: 14, fontWeight: 500, cursor: "pointer", padding: "10px 0", textAlign: "left" }}>Sign In</button>
+        {menuOpen && (
+          <div style={{ display: "flex", flexDirection: "column", padding: "16px 24px", background: "var(--bg)", borderBottom: "1px solid var(--border)", gap: 16 }}>
+            <a href="#features" onClick={() => setMenuOpen(false)} style={{ fontSize: 15, color: "var(--t2)", fontWeight: 500, padding: "8px 0" }}>Features</a>
+            <a href="#pricing" onClick={() => setMenuOpen(false)} style={{ fontSize: 15, color: "var(--t2)", fontWeight: 500, padding: "8px 0" }}>Pricing</a>
+            <a href="#faq" onClick={() => setMenuOpen(false)} style={{ fontSize: 15, color: "var(--t2)", fontWeight: 500, padding: "8px 0" }}>FAQ</a>
+            <button onClick={() => { window.__moeNavigate("/app"); setMenuOpen(false); }} style={{ fontSize: 15, color: "var(--t2)", fontWeight: 500, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: "8px 0" }}>Sign In</button>
+            <button onClick={() => { window.__moeNavigate("/quiz"); setMenuOpen(false); }} style={{ background: "var(--accent)", color: "var(--bg)", padding: "12px", borderRadius: 8, fontWeight: 600, border: "none", cursor: "pointer", textAlign: "center" }}>Start Free Trial</button>
           </div>
         )}
       </nav>
-      <style>{`
-        @media (max-width: 768px) {
-          .landing-nav-desktop { display: none !important; }
-          .landing-nav-mobile { display: flex !important; }
-        }
-      `}</style>
 
       {/* ═══ HERO ═══ */}
-      <section style={{ paddingTop: 120, paddingBottom: 80, textAlign: "center", position: "relative", overflow: "hidden" }}>
-        {/* Subtle grid background */}
-        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 50% 0%, #e2e8f0 0%, transparent 60%)", opacity: 0.4 }} />
-        <div style={{ position: "absolute", inset: 0, backgroundImage: "linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px)", backgroundSize: "60px 60px", opacity: 0.3 }} />
-
-        <div style={{ position: "relative", maxWidth: 800, margin: "0 auto", padding: "0 24px" }}>
-          <div className="fade-up" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 40, padding: "6px 18px 6px 8px", marginBottom: 32, boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>
-            <span style={{ background: "#dcfce7", color: "#16a34a", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>NEW</span>
-            <span style={{ color: "#64748b", fontSize: 13 }}>Now with Price Tracking & Waste Log</span>
+      <section style={{ padding: "160px 0 100px", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -200, left: "50%", transform: "translateX(-50%)", width: 800, height: 800, background: "radial-gradient(circle, var(--glow) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div className="ctn fade-up" style={{ position: "relative", zIndex: 2, textAlign: "center", maxWidth: 720, margin: "0 auto" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 16px", background: "var(--glow)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 100, fontSize: "0.8rem", fontWeight: 600, color: "var(--accent)", marginBottom: 28, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            <span style={{ width: 6, height: 6, background: "var(--accent)", borderRadius: "50%", animation: "pulse-dot 2s infinite" }} /> Now in Early Access
           </div>
-
-          <h1 className="fade-up fade-up-d1" style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(36px, 6vw, 64px)", fontWeight: 800, lineHeight: 1.08, letterSpacing: "-2px", color: "#0f172a", marginBottom: 24 }}>
-            Your business is losing<br /><span style={{ color: "#dc2626" }}>$500 a week</span> on bad orders.
+          <style>{`@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
+          <h1 style={{ fontSize: "clamp(2.5rem,6vw,4rem)", fontWeight: 700, lineHeight: 1.08, letterSpacing: "-0.035em", marginBottom: 24 }}>
+            Stop losing money<br/>on <span style={{ background: "linear-gradient(135deg,var(--accent),#a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>inventory</span>
           </h1>
-
-          <p className="fade-up fade-up-d2" style={{ fontSize: "clamp(16px, 2.5vw, 20px)", color: "#64748b", lineHeight: 1.6, maxWidth: 560, margin: "0 auto 40px" }}>
-            Over-ordering, waste, and rising vendor prices add up fast. MOE tracks your inventory, calculates orders, monitors prices for increases, logs what's going in the trash, and gets smarter every week — so you stop bleeding money.
+          <p style={{ fontSize: "1.2rem", color: "var(--t2)", maxWidth: 540, margin: "0 auto 40px", lineHeight: 1.7 }}>
+            MOE helps small businesses track stock, cut waste, and reorder smarter — so you can save $500+ every week without the spreadsheet headaches.
           </p>
-
-          <div className="fade-up fade-up-d3" style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
-            <button className="cta-btn" onClick={() => window.__moeNavigate("/quiz")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 12, padding: "16px 36px", fontSize: 17, fontWeight: 700, cursor: "pointer", letterSpacing: "-0.3px" }}>
-              Start 14-Day Free Trial
-            </button>
-            <button className="cta-btn" onClick={() => document.getElementById("how-it-works")?.scrollIntoView({ behavior:"smooth" })} style={{ background: "#fff", color: "#0f172a", border: "2px solid #e2e8f0", borderRadius: 12, padding: "14px 32px", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
-              See How It Works ↓
-            </button>
+          <div className="hero-acts" style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }}>
+            <button className="btn-p" onClick={() => window.__moeNavigate("/quiz")}>Start Free 14-Day Trial {arrowSvg}</button>
+            <a href="#features" className="btn-s">See How It Works</a>
           </div>
-
-          <p className="fade-up fade-up-d4" style={{ color: "#94a3b8", fontSize: 13, marginTop: 16 }}>No credit card required · 14 days free · Cancel anytime</p>
-        </div>
-
-        {/* Floating stats */}
-        <div className="fade-up fade-up-d4" style={{ maxWidth: 700, margin: "48px auto 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, padding: "0 16px" }}>
-          {[
-            { value: "$500+", label: "Saved per week on average", sub: "Less waste, fewer emergency orders" },
-            { value: "$26K", label: "Average annual savings", sub: "Pays for itself 4x over" },
-            { value: "30s", label: "To submit a vendor order", sub: "Down from 20+ minutes" },
-          ].map(s => (
-            <div key={s.label} style={{ background: "#fff", borderRadius: 16, padding: "24px 16px", border: "1px solid #e2e8f0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
-              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 32, fontWeight: 800, color: "#0f172a", letterSpacing: "-1px" }}>{s.value}</div>
-              <div style={{ color: "#475569", fontSize: 13, fontWeight: 600, marginTop: 4 }}>{s.label}</div>
-              <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 2 }}>{s.sub}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ═══ SOCIAL PROOF BAR ═══ */}
-      <section style={{ background: "#fff", borderTop: "1px solid #f1f5f9", borderBottom: "1px solid #f1f5f9", padding: "24px 0" }}>
-        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", gap: 40, flexWrap: "wrap", padding: "0 24px" }}>
-          <span style={{ color: "#94a3b8", fontSize: 13, fontWeight: 500 }}>Trusted by businesses that order and stock</span>
-          {["Restaurants", "Retail Shops", "Salons", "Auto Shops", "Warehouses"].map(t => (
-            <span key={t} style={{ color: "#cbd5e1", fontSize: 14, fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", fontFamily: "'DM Mono',monospace" }}>{t}</span>
-          ))}
-        </div>
-      </section>
-
-      {/* ═══ FEATURES ═══ */}
-      <section id="features" ref={regSection("features")} style={{ padding: "100px 24px", maxWidth: 1200, margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: 60, opacity: isVis("features") ? 1 : 0, transform: isVis("features") ? "translateY(0)" : "translateY(30px)", transition: "all 0.7s" }}>
-          <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, letterSpacing: "2px", textTransform: "uppercase", fontFamily: "'DM Mono',monospace" }}>Features</span>
-          <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 800, color: "#0f172a", marginTop: 12, letterSpacing: "-1px" }}>Everything your business needs</h2>
-          <p style={{ color: "#64748b", fontSize: 16, marginTop: 12, maxWidth: 500, margin: "12px auto 0" }}>Built for any business that orders supplies and tracks inventory — restaurants, retail, salons, shops, warehouses, and more.</p>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-          {FEATURES.map((f, idx) => (
-            <div key={f.title} className="feature-card"
-              style={{ background: "#fff", borderRadius: 16, padding: "32px 28px", border: "1px solid #f1f5f9", transition: "all 0.3s", cursor: "default",
-                opacity: isVis("features") ? 1 : 0, transform: isVis("features") ? "translateY(0)" : "translateY(20px)", transitionDelay: `${idx * 0.08}s` }}>
-              <div style={{ fontSize: 32, marginBottom: 16 }}>{f.icon}</div>
-              <h3 style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>{f.title}</h3>
-              <p style={{ color: "#64748b", fontSize: 14, lineHeight: 1.7 }}>{f.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ═══ HOW IT WORKS ═══ */}
-      <section id="how-it-works" ref={regSection("hiw")} style={{ background: "#0f172a", padding: "100px 24px" }}>
-        <div style={{ maxWidth: 1000, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 64, opacity: isVis("hiw") ? 1 : 0, transform: isVis("hiw") ? "translateY(0)" : "translateY(30px)", transition: "all 0.7s" }}>
-            <span style={{ color: "#475569", fontSize: 12, fontWeight: 700, letterSpacing: "2px", textTransform: "uppercase", fontFamily: "'DM Mono',monospace" }}>How It Works</span>
-            <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 800, color: "#f1f5f9", marginTop: 12, letterSpacing: "-1px" }}>Up and running in minutes</h2>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 24 }}>
-            {STEPS.map((step, idx) => (
-              <div key={step.num}
-                style={{ background: "#1e293b", borderRadius: 16, padding: "32px 24px", border: "1px solid #334155", position: "relative",
-                  opacity: isVis("hiw") ? 1 : 0, transform: isVis("hiw") ? "translateY(0)" : "translateY(20px)", transition: "all 0.6s", transitionDelay: `${idx * 0.12}s` }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-                  <span style={{ fontSize: 28 }}>{step.icon}</span>
-                  <span style={{ color: "#475569", fontSize: 32, fontWeight: 800, fontFamily: "'Syne',sans-serif" }}>{step.num}</span>
-                </div>
-                <h3 style={{ color: "#f1f5f9", fontSize: 17, fontWeight: 700, marginBottom: 8, fontFamily: "'Syne',sans-serif" }}>{step.title}</h3>
-                <p style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.7 }}>{step.desc}</p>
+          <p style={{ fontSize: "0.82rem", color: "var(--t3)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            {checkSvg} No credit card required · Setup in under 5 minutes
+          </p>
+          <div className="save-bar" style={{ marginTop: 60, display: "flex", justifyContent: "center", gap: 48, flexWrap: "wrap" }}>
+            {[["$500+","Saved per Week","var(--green)"],["80%","Less Waste","var(--amber)"],["3 min","To Place Orders","var(--accent)"]].map(([num,lbl,col]) => (
+              <div key={lbl} style={{ textAlign: "center" }}>
+                <div className="snum" style={{ fontFamily: "var(--fm)", fontSize: "2.2rem", fontWeight: 700, color: col, letterSpacing: "-0.03em" }}>{num}</div>
+                <div style={{ fontSize: "0.8rem", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 4 }}>{lbl}</div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ═══ QUOTE / PAIN POINT ═══ */}
-      <section ref={regSection("quote")} style={{ padding: "80px 24px", background: "#fff" }}>
-        <div style={{ maxWidth: 700, margin: "0 auto", textAlign: "center", opacity: isVis("quote") ? 1 : 0, transition: "all 0.8s" }}>
-          <div style={{ fontSize: 48, marginBottom: 20 }}>💬</div>
-          <blockquote style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(20px, 3vw, 28px)", fontWeight: 700, color: "#0f172a", lineHeight: 1.4, letterSpacing: "-0.5px", fontStyle: "normal" }}>
-            "I was over-ordering $600 a week and didn't even realize it. MOE showed me exactly where the waste was and cut it to almost zero in the first month."
-          </blockquote>
-          <div style={{ marginTop: 24, color: "#64748b", fontSize: 14 }}>
-            <strong style={{ color: "#0f172a" }}>Small Business Owner</strong> · Queens, NY
+      {/* ═══ SOCIAL PROOF ═══ */}
+      <section style={{ padding: "60px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+        <div className="ctn proof-inner fade-up" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 48, flexWrap: "wrap" }}>
+          {[
+            ["Built by an Owner","Created by a real pizzeria operator","M12 2l2.09 6.26L21 9.27l-5 3.9L17.18 20 12 16.77 6.82 20 8 13.17l-5-3.9 6.91-1.01z","var(--accent)"],
+            ["AI-Powered","Import items & get insights instantly","M9 12l2 2 4-4","var(--green)"],
+            ["Works for Any Business","Restaurants, salons, retail & more","M3 3h18v18H3zM3 9h18M9 3v18","var(--amber)"],
+          ].map(([title,desc,path,color]) => (
+            <div key={title} style={{ display: "flex", alignItems: "center", gap: 12, color: "var(--t2)", fontSize: "0.9rem" }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--surface)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" width="20" height="20"><path d={path}/></svg>
+              </div>
+              <div><strong style={{ color: "var(--t1)", display: "block", fontSize: "0.95rem" }}>{title}</strong>{desc}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ═══ PROBLEM ═══ */}
+      <section style={{ padding: "100px 0" }}>
+        <div className="ctn">
+          <div className="fade-up">
+            <div className="slbl">The Problem</div>
+            <h2 className="stitle">Inventory chaos is costing<br/>you thousands</h2>
+            <p className="ssub">Most small businesses still manage stock with pen-and-paper, messy spreadsheets, or pure guesswork. The result? Over-ordering, waste, and margin erosion every single week.</p>
+          </div>
+          <div className="prob-grid fade-up" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 48 }}>
+            {[
+              ["📋","Spreadsheets from hell","Manual tracking across tabs, notebooks, and sticky notes leads to errors that snowball into wasted money.","var(--rose)"],
+              ["🗑️","Invisible waste","Without tracking what gets tossed and why, you can\u2019t fix the problem. Thousands go in the trash silently.","var(--amber)"],
+              ["📈","Supplier price creep","Vendors quietly raise prices week over week. Without tracking, you don\u2019t catch it until margins are crushed.","var(--rose)"],
+              ["🤷","Ordering by gut feeling","Guessing how much to order means you\u2019re always over-stocked or running out. Both cost you real money.","var(--amber)"],
+            ].map(([emoji,title,desc,color]) => (
+              <div key={title} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: 32, position: "relative", overflow: "hidden", transition: "all 0.3s" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 3, background: color }} />
+                <div style={{ fontSize: "1.5rem", marginBottom: 16 }}>{emoji}</div>
+                <h3 style={{ fontSize: "1.05rem", fontWeight: 600, marginBottom: 8, letterSpacing: "-0.01em" }}>{title}</h3>
+                <p style={{ fontSize: "0.9rem", color: "var(--t2)", lineHeight: 1.65 }}>{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ FEATURES ═══ */}
+      <section id="features" style={{ padding: "100px 0" }}>
+        <div className="ctn">
+          <div className="fade-up" style={{ textAlign: "center", marginBottom: 64 }}>
+            <div className="slbl">How MOE Fixes It</div>
+            <h2 className="stitle">Everything you need to<br/>order smarter</h2>
+            <p className="ssub" style={{ margin: "0 auto" }}>One app replaces the spreadsheets, the guesswork, and the late-night ordering scramble.</p>
+          </div>
+
+          {[
+            { tag: "Inventory", tagCls: "rgba(56,189,248,0.12)", tagCol: "var(--accent)", title: "Know exactly what you have — and what you need", desc: "Track every item in real-time. Set par levels, see what\u2019s running low, and generate orders in one click.", bullets: ["Real-time stock tracking","Smart par level suggestions","One-click order generation"],
+              mock: [["Mozzarella (5lb)","12 units","blu"],["Flour (50lb bag)","8 units","grn"],["Olive Oil (gal)","2 units ⚠","red"],["Pepperoni (10lb)","6 units","grn"]], mockTitle: "Live Inventory" },
+            { tag: "Waste Log", tagCls: "rgba(251,113,133,0.12)", tagCol: "var(--rose)", title: "See where your money goes to die", desc: "Log every item that hits the trash with reason codes and cost estimates. Spot the patterns, fix the leaks.", bullets: ["Reason-coded waste tracking","Automatic cost estimation","Weekly trend analysis"],
+              mock: [["Total waste cost","-$127.40","red"],["vs. last week","↓ 34%","grn"],["Expired produce","$68.20","red"],["Over-prepped","$41.00","red"]], mockTitle: "This Week\u2019s Waste" },
+            { tag: "Price Tracker", tagCls: "rgba(251,191,36,0.12)", tagCol: "var(--amber)", title: "Catch price hikes before they eat your margin", desc: "Upload invoices or CSVs and MOE flags any price that jumped week-over-week.", bullets: ["Invoice photo & CSV upload","Week-over-week price flagging","Supplier comparison tools"],
+              mock: [["Chicken breast (/lb)","$3.89 → $4.42 ↑14%","red"],["Heavy cream (qt)","$4.10 → $4.55 ↑11%","red"],["Romaine lettuce","$2.20 → $2.15 ↓2%","grn"],["Tomatoes (case)","$24.00 — stable","grn"]], mockTitle: "Price Alerts" },
+            { tag: "AI Import", tagCls: "rgba(52,211,153,0.12)", tagCol: "var(--green)", title: "Build your inventory in minutes, not hours", desc: "Just snap a photo of your invoice and MOE\u2019s AI builds your full item list.", bullets: ["AI-generated item lists","Pre-set categories & units","Edit anything after import"],
+              mock: [["✓ Dough & Flour (6 items)","Added","blu"],["✓ Cheese & Dairy (8 items)","Added","blu"],["✓ Meats & Proteins (10 items)","Added","blu"],["✓ Produce & Vegetables (12 items)","Added","blu"]], mockTitle: "AI Import" },
+          ].map((feat, idx) => (
+            <div key={feat.tag} className="feat-row fade-up" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "center", marginBottom: 80 }}>
+              <div style={{ order: idx % 2 === 1 ? 1 : 0 }}>
+                <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 6, fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 16, background: feat.tagCls, color: feat.tagCol }}>{feat.tag}</span>
+                <h3 style={{ fontSize: "1.6rem", fontWeight: 700, letterSpacing: "-0.025em", marginBottom: 12, lineHeight: 1.2 }}>{feat.title}</h3>
+                <p style={{ fontSize: "1rem", color: "var(--t2)", lineHeight: 1.7, marginBottom: 20 }}>{feat.desc}</p>
+                <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+                  {feat.bullets.map(b => <li key={b} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: "0.9rem", color: "var(--t2)" }}>{bulletSvg} {b}</li>)}
+                </ul>
+              </div>
+              <div className="feat-vis" style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--rl)", padding: 40, minHeight: 320, order: idx % 2 === 1 ? -1 : 1 }}>
+                <div className="mock-hdr">{feat.mockTitle}</div>
+                {feat.mock.map(([lb,vl,cl]) => (
+                  <div key={lb} className="mock-row"><span className="lb">{lb}</span><span className={"vl " + cl}>{vl}</span></div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ═══ WHO IT\u2019S FOR ═══ */}
+      <section id="audience" style={{ padding: "100px 0", background: "var(--card)", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+        <div className="ctn">
+          <div className="fade-up" style={{ textAlign: "center", marginBottom: 48 }}>
+            <div className="slbl">Who It\u2019s For</div>
+            <h2 className="stitle">Built for any business with inventory</h2>
+            <p className="ssub" style={{ margin: "0 auto" }}>If you order supplies, track stock, or deal with waste — MOE was built for you.</p>
+          </div>
+          <div className="aud-grid fade-up" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20 }}>
+            {[
+              ["🍕","Restaurants & Cafés","Kitchens, pizzerias, bakeries, food trucks"],
+              ["💇","Salons & Spas","Hair products, skincare, supplies, retail"],
+              ["🏪","Retail & Convenience","Shops, bodegas, boutiques, specialty stores"],
+              ["🔧","Contractors & Trades","Parts, materials, tools, equipment"],
+              ["💪","Fitness & Wellness","Supplements, retail, cleaning, equipment"],
+              ["🏥","Medical & Dental","Office supplies, consumables, disposables"],
+            ].map(([icon,title,desc]) => (
+              <div key={title} style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: 28, textAlign: "center", transition: "all 0.3s" }}>
+                <div style={{ fontSize: "2rem", marginBottom: 12 }}>{icon}</div>
+                <h4 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>{title}</h4>
+                <p style={{ fontSize: "0.82rem", color: "var(--t3)", lineHeight: 1.5 }}>{desc}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* ═══ PRICING ═══ */}
-      <section id="pricing" ref={regSection("pricing")} style={{ padding: "100px 24px", background: "#f8fafc" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 60, opacity: isVis("pricing") ? 1 : 0, transform: isVis("pricing") ? "translateY(0)" : "translateY(30px)", transition: "all 0.7s" }}>
-            <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, letterSpacing: "2px", textTransform: "uppercase", fontFamily: "'DM Mono',monospace" }}>Pricing</span>
-            <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 800, color: "#0f172a", marginTop: 12, letterSpacing: "-1px" }}>Simple pricing, no surprises</h2>
-            <p style={{ color: "#64748b", fontSize: 16, marginTop: 12 }}>Every plan pays for itself in the first week. Start with a 14-day free trial — no credit card required.</p>
+      <section id="pricing" style={{ padding: "100px 0" }}>
+        <div className="ctn">
+          <div className="fade-up" style={{ textAlign: "center", marginBottom: 56 }}>
+            <div className="slbl">Simple Pricing</div>
+            <h2 className="stitle">Start free. Upgrade when you\u2019re ready.</h2>
+            <p className="ssub" style={{ margin: "0 auto" }}>Every plan starts with a 14-day free trial. No credit card required.</p>
           </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
-            {LANDING_PLANS.map((plan, idx) => (
-              <div key={plan.name} className="plan-card"
-                style={{ background: plan.popular ? "#0f172a" : "#fff", borderRadius: 20, padding: "36px 28px", border: plan.popular ? "2px solid #334155" : "1px solid #e2e8f0", position: "relative", transition: "all 0.3s",
-                  opacity: isVis("pricing") ? 1 : 0, transform: isVis("pricing") ? "translateY(0)" : "translateY(20px)", transitionDelay: `${idx * 0.1}s` }}>
-                {plan.popular && (
-                  <div style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", background: "#f1f5f9", color: "#0f172a", borderRadius: 20, padding: "4px 16px", fontSize: 12, fontWeight: 700, letterSpacing: "0.5px" }}>
-                    MOST POPULAR
-                  </div>
-                )}
-                <div style={{ color: plan.popular ? "#94a3b8" : "#64748b", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>{plan.name}</div>
-                <div style={{ fontSize: 44, fontWeight: 800, color: plan.popular ? "#f1f5f9" : "#0f172a", fontFamily: "'Syne',sans-serif", letterSpacing: "-2px" }}>
-                  ${plan.price}<span style={{ fontSize: 16, fontWeight: 400, color: plan.popular ? "#64748b" : "#94a3b8" }}>/mo</span>
+          <div className="price-grid fade-up" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 24, alignItems: "start" }}>
+            {[
+              { name: "Starter", desc: "For solo operators getting organized", price: "$299", features: ["Inventory tracking","Waste log","Order generation","1 team member"], featured: false },
+              { name: "Pro", desc: "For growing teams that need full visibility", price: "$399", features: ["Everything in Starter","Price tracker & alerts","AI item import","Par level insights","Up to 5 team members"], featured: true },
+              { name: "Enterprise", desc: "For multi-location operations", price: "$499", features: ["Everything in Pro","Unlimited team members","Multi-location support","Priority support","Custom integrations"], featured: false },
+            ].map(plan => (
+              <div key={plan.name} className={plan.featured ? "price-card feat" : "price-card"} style={{ background: "var(--card)", border: plan.featured ? "1px solid var(--accent)" : "1px solid var(--border)", borderRadius: "var(--rl)", padding: "36px 28px", position: "relative", boxShadow: plan.featured ? "0 0 60px var(--glow)" : "none", transform: plan.featured ? "scale(1.04)" : "none" }}>
+                {plan.featured && <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", padding: "4px 16px", background: "var(--accent)", color: "var(--bg)", fontSize: "0.7rem", fontWeight: 700, borderRadius: 100, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>Most Popular</div>}
+                <div style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 4 }}>{plan.name}</div>
+                <div style={{ fontSize: "0.8rem", color: "var(--t3)", marginBottom: 24 }}>{plan.desc}</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 24 }}>
+                  <span style={{ fontFamily: "var(--fm)", fontSize: "2.8rem", fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1 }}>{plan.price}</span>
+                  <span style={{ fontSize: "0.85rem", color: "var(--t3)" }}>/month</span>
                 </div>
-
-                <div style={{ display: "flex", gap: 12, margin: "20px 0", flexWrap: "wrap" }}>
-                  {[["Vendors", plan.vendors], ["Items", plan.items], ["Users", plan.users]].map(([l, v]) => (
-                    <span key={l} style={{ background: plan.popular ? "#1e293b" : "#f8fafc", borderRadius: 8, padding: "6px 12px", fontSize: 12, color: plan.popular ? "#94a3b8" : "#64748b", fontFamily: "'DM Mono',monospace" }}>
-                      <strong style={{ color: plan.popular ? "#f1f5f9" : "#0f172a" }}>{v}</strong> {l}
-                    </span>
-                  ))}
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "20px 0 28px" }}>
-                  {plan.features.map(f => (
-                    <div key={f} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ color: "#22c55e", fontSize: 16, flexShrink: 0 }}>✓</span>
-                      <span style={{ color: plan.popular ? "#cbd5e1" : "#475569", fontSize: 14 }}>{f}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <button className="cta-btn" onClick={() => window.__moeNavigate("/quiz")} style={{
-                  width: "100%", padding: "14px", borderRadius: 12, border: "none", fontSize: 15, fontWeight: 700, cursor: "pointer",
-                  background: plan.popular ? "#f1f5f9" : "#0f172a",
-                  color: plan.popular ? "#0f172a" : "#fff",
-                }}>
-                  {plan.cta}
+                <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12, marginBottom: 28 }}>
+                  {plan.features.map(f => <li key={f} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: "0.85rem", color: "var(--t2)" }}>{checkSvg} {f}</li>)}
+                </ul>
+                <button onClick={() => window.__moeNavigate("/quiz")} style={{ display: "block", width: "100%", padding: 14, textAlign: "center", borderRadius: 10, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", background: plan.featured ? "var(--accent)" : "transparent", color: plan.featured ? "var(--bg)" : "var(--t1)", border: plan.featured ? "none" : "1px solid var(--border-b)" }}>
+                  Start Free Trial
                 </button>
+              </div>
+            ))}
+          </div>
+          <p className="fade-up" style={{ textAlign: "center", marginTop: 20, fontSize: "0.8rem", color: "var(--t3)" }}>All plans include a 14-day free trial · No credit card required · Cancel anytime</p>
+        </div>
+      </section>
+
+      {/* ═══ TESTIMONIAL ═══ */}
+      <section style={{ padding: "80px 0", borderTop: "1px solid var(--border)" }}>
+        <div className="ctn">
+          <div className="fade-up" style={{ maxWidth: 640, margin: "0 auto", textAlign: "center" }}>
+            <p style={{ fontSize: "1.25rem", fontStyle: "italic", lineHeight: 1.7, marginBottom: 24, position: "relative" }}>
+              <span style={{ position: "absolute", top: -20, left: -10, fontSize: "4rem", color: "var(--accent)", fontFamily: "Georgia,serif", opacity: 0.5 }}>"</span>
+              I built MOE because I was tired of losing money on over-ordering and catching supplier price hikes too late. If you run a small business with inventory, this is the tool I wish I had years ago.
+            </p>
+            <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>Ronnie</div>
+            <div style={{ fontSize: "0.82rem", color: "var(--t3)" }}>Pizzeria Owner & MOE Creator</div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ FAQ ═══ */}
+      <section id="faq" style={{ padding: "100px 0" }}>
+        <div className="ctn">
+          <div className="fade-up" style={{ textAlign: "center", marginBottom: 48 }}>
+            <div className="slbl">FAQ</div>
+            <h2 className="stitle">Questions? Answered.</h2>
+          </div>
+          <div className="fade-up" style={{ maxWidth: 640, margin: "0 auto" }}>
+            {faqs.map((faq, i) => (
+              <div key={i} style={{ borderBottom: "1px solid var(--border)" }}>
+                <button onClick={() => faqToggle(i)} style={{ width: "100%", background: "none", border: "none", color: "var(--t1)", fontFamily: "var(--ff)", fontSize: "1rem", fontWeight: 600, padding: "20px 0", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", textAlign: "left" }}>
+                  {faq.q}
+                  <span style={{ transition: "transform 0.3s", transform: openFaq === i ? "rotate(45deg)" : "none", color: "var(--t3)", flexShrink: 0, marginLeft: 12 }}>{plusSvg}</span>
+                </button>
+                <div style={{ maxHeight: openFaq === i ? 200 : 0, overflow: "hidden", transition: "max-height 0.35s ease" }}>
+                  <p style={{ paddingBottom: 20, fontSize: "0.9rem", color: "var(--t2)", lineHeight: 1.7 }}>{faq.a}</p>
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ═══ FAQ ═══ */}
-      <section id="faq" ref={regSection("faq")} style={{ padding: "100px 24px", background: "#fff" }}>
-        <div style={{ maxWidth: 700, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 48, opacity: isVis("faq") ? 1 : 0, transform: isVis("faq") ? "translateY(0)" : "translateY(30px)", transition: "all 0.7s" }}>
-            <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, letterSpacing: "2px", textTransform: "uppercase", fontFamily: "'DM Mono',monospace" }}>FAQ</span>
-            <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(28px, 4vw, 36px)", fontWeight: 800, color: "#0f172a", marginTop: 12, letterSpacing: "-1px" }}>Questions? Answers.</h2>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {FAQS.map((faq, idx) => {
-              const isOpen = openFaq === idx;
-              return (
-                <div key={idx} onClick={() => setOpenFaq(isOpen ? null : idx)}
-                  style={{ background: "#f8fafc", borderRadius: 12, border: "1px solid #f1f5f9", padding: "18px 24px", cursor: "pointer", transition: "all 0.2s",
-                    opacity: isVis("faq") ? 1 : 0, transform: isVis("faq") ? "translateY(0)" : "translateY(10px)", transitionDelay: `${idx * 0.06}s` }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ color: "#0f172a", fontSize: 15, fontWeight: 600 }}>{faq.q}</span>
-                    <span style={{ color: "#94a3b8", fontSize: 20, transform: isOpen ? "rotate(45deg)" : "none", transition: "transform 0.2s", flexShrink: 0, marginLeft: 16 }}>+</span>
-                  </div>
-                  {isOpen && <p style={{ color: "#64748b", fontSize: 14, lineHeight: 1.7, marginTop: 12 }}>{faq.a}</p>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══ CTA ═══ */}
-      <section style={{ padding: "100px 24px", background: "#0f172a", textAlign: "center" }}>
-        <div style={{ maxWidth: 600, margin: "0 auto" }}>
-          <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 800, color: "#f1f5f9", letterSpacing: "-1px", marginBottom: 16 }}>
-            Stop losing $500 a week.
-          </h2>
-          <p style={{ color: "#94a3b8", fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>
-            Over-ordering, rising prices you don't notice, and waste you can't track cost the average business $26,000+ a year. MOE catches it all — and pays for itself in the first week.
-          </p>
-          <button className="cta-btn" onClick={() => window.__moeNavigate("/quiz")} style={{ background: "#f1f5f9", color: "#0f172a", border: "none", borderRadius: 14, padding: "18px 44px", fontSize: 18, fontWeight: 800, cursor: "pointer", fontFamily: "'Syne',sans-serif", letterSpacing: "-0.5px" }}>
-            Start Your Free Trial
+      {/* ═══ FINAL CTA ═══ */}
+      <section style={{ padding: "100px 0", textAlign: "center", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", bottom: -300, left: "50%", transform: "translateX(-50%)", width: 800, height: 800, background: "radial-gradient(circle, var(--glow) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div className="ctn fade-up" style={{ position: "relative", zIndex: 2 }}>
+          <h2 style={{ fontSize: "clamp(1.8rem,4vw,2.8rem)", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 16, lineHeight: 1.15 }}>Ready to stop bleeding money<br/>on inventory?</h2>
+          <p style={{ fontSize: "1.1rem", color: "var(--t2)", marginBottom: 36 }}>Join the small businesses saving $500+ per week with smarter ordering.</p>
+          <button className="btn-p" onClick={() => window.__moeNavigate("/quiz")} style={{ fontSize: "1.1rem", padding: "18px 48px" }}>
+            Start Your Free 14-Day Trial {arrowSvg}
           </button>
-          <p style={{ color: "#475569", fontSize: 13, marginTop: 16 }}>14 days free · No credit card · Set up in 5 minutes</p>
+          <p style={{ fontSize: "0.82rem", color: "var(--t3)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 16 }}>
+            {checkSvg} No credit card required · Cancel anytime
+          </p>
         </div>
       </section>
 
       {/* ═══ FOOTER ═══ */}
-      <footer style={{ background: "#0f172a", borderTop: "1px solid #1e293b", padding: "40px 16px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 20 }}>
-          <div style={{ minWidth: 160 }}>
-            <MoeLogoLanding size="md" dark />
-            <p style={{ color: "#475569", fontSize: 12, marginTop: 8 }}>Make Ordering Easy</p>
+      <footer style={{ padding: "40px 0", borderTop: "1px solid var(--border)" }}>
+        <div className="ctn" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+          <div style={{ fontSize: "0.8rem", color: "var(--t3)" }}>© {new Date().getFullYear()} MOE — Make Ordering Easy. All rights reserved.</div>
+          <div style={{ display: "flex", gap: 24 }}>
+            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Privacy</a>
+            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Terms</a>
+            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Contact</a>
           </div>
-          <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
-            <a href="#features" style={{ color: "#64748b", textDecoration: "none", fontSize: 13 }}>Features</a>
-            <a href="#pricing" style={{ color: "#64748b", textDecoration: "none", fontSize: 13 }}>Pricing</a>
-            <a href="#faq" style={{ color: "#64748b", textDecoration: "none", fontSize: 13 }}>FAQ</a>
-            <a href="#" style={{ color: "#64748b", textDecoration: "none", fontSize: 13 }}>Privacy</a>
-            <a href="#" style={{ color: "#64748b", textDecoration: "none", fontSize: 13 }}>Terms</a>
-          </div>
-          <div style={{ color: "#334155", fontSize: 12 }}>© {new Date().getFullYear()} MOE. All rights reserved.</div>
         </div>
       </footer>
     </div>
   );
 }
+
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
