@@ -556,8 +556,9 @@ function MoeApp() {
   ];
 
   return (
-    <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif" }}>
+    <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif", overflowX:"hidden", width:"100%" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+      <style>{`*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { overflow-x: hidden; }`}</style>
 
       {/* Sidebar overlay */}
       {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200 }} />}
@@ -644,7 +645,7 @@ function MoeApp() {
       )}
 
       {/* Main content */}
-      <main style={{ maxWidth:1200, margin:"0 auto", padding:"20px 16px" }}>
+      <main style={{ maxWidth:1200, margin:"0 auto", padding:"16px", boxSizing:"border-box", width:"100%" }}>
         {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
         {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
         {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} user={user} />}
