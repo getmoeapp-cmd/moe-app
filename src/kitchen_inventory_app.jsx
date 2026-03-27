@@ -2798,6 +2798,7 @@ function LandingPage() {
   const [openFaq, setOpenFaq] = useState(null);
   const [scrolled, setScrolled] = useState(false);
   const [visible, setVisible] = useState({});
+  const [mobileMenu, setMobileMenu] = useState(false);
   const sectionRefs = useRef({});
 
   useEffect(() => {
@@ -2843,30 +2844,51 @@ function LandingPage() {
       {/* ═══ NAV ═══ */}
       <nav style={{
         position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-        background: scrolled ? "rgba(248,250,252,0.92)" : "transparent",
-        backdropFilter: scrolled ? "blur(20px)" : "none",
+        background: scrolled || mobileMenu ? "rgba(248,250,252,0.97)" : "transparent",
+        backdropFilter: scrolled || mobileMenu ? "blur(20px)" : "none",
         borderBottom: scrolled ? "1px solid #e2e8f0" : "1px solid transparent",
         transition: "all 0.3s",
       }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px", height: 72, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 16px", height: 60, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <MoeLogoLanding size="md" />
-          <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+          {/* Desktop nav */}
+          <div className="landing-nav-desktop" style={{ display: "flex", alignItems: "center", gap: 28 }}>
             <a href="#features" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>Features</a>
             <a href="#how-it-works" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>How It Works</a>
             <a href="#pricing" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>Pricing</a>
             <a href="#faq" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>FAQ</a>
-            <button onClick={() => window.__moeNavigate("/app")} style={{ background: "none", border: "none", color: "#64748b", fontSize: 13, fontWeight: 500, cursor: "pointer", padding: "6px 0" }}>
-              Sign In
-            </button>
-            <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-              Get Started Free
+            <button onClick={() => window.__moeNavigate("/app")} style={{ background: "none", border: "none", color: "#64748b", fontSize: 13, fontWeight: 500, cursor: "pointer", padding: "6px 0" }}>Sign In</button>
+            <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Get Started Free</button>
+          </div>
+          {/* Mobile: CTA + hamburger */}
+          <div className="landing-nav-mobile" style={{ display: "none", alignItems: "center", gap: 8 }}>
+            <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Get Started</button>
+            <button onClick={() => setMobileMenu(!mobileMenu)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ display: "block", width: 20, height: 2, background: "#475569", borderRadius: 2 }} />
+              <span style={{ display: "block", width: 20, height: 2, background: "#475569", borderRadius: 2 }} />
+              <span style={{ display: "block", width: 20, height: 2, background: "#475569", borderRadius: 2 }} />
             </button>
           </div>
         </div>
+        {/* Mobile dropdown */}
+        {mobileMenu && (
+          <div className="landing-nav-mobile" style={{ display: "none", flexDirection: "column", padding: "8px 16px 16px", background: "rgba(248,250,252,0.97)", borderTop: "1px solid #e2e8f0" }}>
+            {[["#features","Features"],["#how-it-works","How It Works"],["#pricing","Pricing"],["#faq","FAQ"]].map(([href, label]) => (
+              <a key={href} href={href} onClick={() => setMobileMenu(false)} style={{ color: "#475569", textDecoration: "none", fontSize: 15, fontWeight: 500, padding: "10px 0", borderBottom: "1px solid #f1f5f9" }}>{label}</a>
+            ))}
+            <button onClick={() => { window.__moeNavigate("/app"); setMobileMenu(false); }} style={{ background: "none", border: "none", color: "#64748b", fontSize: 14, fontWeight: 500, cursor: "pointer", padding: "10px 0", textAlign: "left" }}>Sign In</button>
+          </div>
+        )}
       </nav>
+      <style>{`
+        @media (max-width: 768px) {
+          .landing-nav-desktop { display: none !important; }
+          .landing-nav-mobile { display: flex !important; }
+        }
+      `}</style>
 
       {/* ═══ HERO ═══ */}
-      <section style={{ paddingTop: 160, paddingBottom: 100, textAlign: "center", position: "relative", overflow: "hidden" }}>
+      <section style={{ paddingTop: 120, paddingBottom: 80, textAlign: "center", position: "relative", overflow: "hidden" }}>
         {/* Subtle grid background */}
         <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 50% 0%, #e2e8f0 0%, transparent 60%)", opacity: 0.4 }} />
         <div style={{ position: "absolute", inset: 0, backgroundImage: "linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px)", backgroundSize: "60px 60px", opacity: 0.3 }} />
@@ -2898,7 +2920,7 @@ function LandingPage() {
         </div>
 
         {/* Floating stats */}
-        <div className="fade-up fade-up-d4" style={{ maxWidth: 700, margin: "60px auto 0", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, padding: "0 24px" }}>
+        <div className="fade-up fade-up-d4" style={{ maxWidth: 700, margin: "48px auto 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, padding: "0 16px" }}>
           {[
             { value: "$500+", label: "Saved per week on average", sub: "Less waste, fewer emergency orders" },
             { value: "$26K", label: "Average annual savings", sub: "Pays for itself 4x over" },
@@ -2931,7 +2953,7 @@ function LandingPage() {
           <p style={{ color: "#64748b", fontSize: 16, marginTop: 12, maxWidth: 500, margin: "12px auto 0" }}>Built for any business that orders supplies and tracks inventory — restaurants, retail, salons, shops, warehouses, and more.</p>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
           {FEATURES.map((f, idx) => (
             <div key={f.title} className="feature-card"
               style={{ background: "#fff", borderRadius: 16, padding: "32px 28px", border: "1px solid #f1f5f9", transition: "all 0.3s", cursor: "default",
@@ -2991,7 +3013,7 @@ function LandingPage() {
             <p style={{ color: "#64748b", fontSize: 16, marginTop: 12 }}>Every plan pays for itself in the first week. Start with a 14-day free trial — no credit card required.</p>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
             {LANDING_PLANS.map((plan, idx) => (
               <div key={plan.name} className="plan-card"
                 style={{ background: plan.popular ? "#0f172a" : "#fff", borderRadius: 20, padding: "36px 28px", border: plan.popular ? "2px solid #334155" : "1px solid #e2e8f0", position: "relative", transition: "all 0.3s",
