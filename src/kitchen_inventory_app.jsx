@@ -638,7 +638,14 @@ function MoeApp() {
             <span style={{ display:"block", width:18, height:2, background:"#94a3b8", borderRadius:2 }} />
             <span style={{ display:"block", width:18, height:2, background:"#94a3b8", borderRadius:2 }} />
           </button>
-          <span style={{ color:"#f1f5f9", fontSize:16, fontWeight:900, fontFamily:"'DM Sans',sans-serif", flexShrink:0 }}>M<span style={{ color:"#94a3b8" }}>OE</span></span>
+          <svg viewBox="0 0 40 40" fill="none" width="28" height="28" style={{ display:"block", flexShrink:0 }}>
+            <polygon points="20,2.5 36.5,11.25 36.5,28.75 20,37.5 3.5,28.75 3.5,11.25" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.35"/>
+            <polygon points="20,8 31,14 31,26 20,32 9,26 9,14" fill="none" stroke="#38bdf8" strokeWidth="1.2" opacity="0.5"/>
+            <polygon points="20,13 25.5,16.5 25.5,23.5 20,27 14.5,23.5 14.5,16.5" fill="#38bdf8" opacity="0.12"/>
+            <line x1="20" y1="2.5" x2="20" y2="8" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/><line x1="36.5" y1="11.25" x2="31" y2="14" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/><line x1="36.5" y1="28.75" x2="31" y2="26" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/><line x1="20" y1="37.5" x2="20" y2="32" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/><line x1="3.5" y1="28.75" x2="9" y2="26" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/><line x1="3.5" y1="11.25" x2="9" y2="14" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+            <circle cx="20" cy="2.5" r="1.8" fill="#38bdf8" opacity="0.5"/><circle cx="36.5" cy="11.25" r="1.8" fill="#38bdf8" opacity="0.5"/><circle cx="36.5" cy="28.75" r="1.8" fill="#38bdf8" opacity="0.5"/><circle cx="20" cy="37.5" r="1.8" fill="#38bdf8" opacity="0.5"/><circle cx="3.5" cy="28.75" r="1.8" fill="#38bdf8" opacity="0.5"/><circle cx="3.5" cy="11.25" r="1.8" fill="#38bdf8" opacity="0.5"/>
+            <text x="20" y="24.5" textAnchor="middle" fill="#38bdf8" fontFamily="DM Sans,sans-serif" fontWeight="700" fontSize="13">M</text>
+          </svg>
           <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap" }}>{view.toUpperCase()}</span>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
@@ -681,22 +688,38 @@ function MoeApp() {
 // MOE LOGO — Hex SVG logo
 // ═══════════════════════════════════════════════════════════════════════════════
 function MoeLogo({ size = "md" }) {
-  const configs = { sm: { vw: 110, vh: 36, hx: 18, hy: 18, outerR: 16, midR: 11, innerR: 6, dot: 1.8, tx: 36, ty: 23, fs: 20 }, md: { vw: 130, vh: 44, hx: 22, hy: 22, outerR: 20, midR: 13, innerR: 7, dot: 2.2, tx: 44, ty: 28, fs: 24 }, lg: { vw: 220, vh: 72, hx: 36, hy: 36, outerR: 33, midR: 22, innerR: 11, dot: 3.5, tx: 74, ty: 46, fs: 40 } };
+  const configs = {
+    sm: { s: 28, fs: 16, gap: 6, textSize: 18 },
+    md: { s: 36, fs: 18, gap: 8, textSize: 22 },
+    lg: { s: 56, fs: 28, gap: 10, textSize: 36 },
+  };
   const c = configs[size] || configs.md;
-  const { vw, vh, hx, hy, outerR: oR, midR: mR, innerR: iR, dot: d, tx, ty, fs } = c;
-  const hex = (cx, cy, r) => { const pts = []; for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - 30); pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`); } return pts.join(" "); };
-  const spokeLines = Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 180 * (60 * i - 30); return { x1: (hx + oR * Math.cos(a)).toFixed(2), y1: (hy + oR * Math.sin(a)).toFixed(2), x2: (hx + mR * Math.cos(a)).toFixed(2), y2: (hy + mR * Math.sin(a)).toFixed(2) }; });
-  const outerDots = Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 180 * (60 * i - 30); return { cx: (hx + oR * Math.cos(a)).toFixed(2), cy: (hy + oR * Math.sin(a)).toFixed(2) }; });
   return (
-    <svg width={vw} height={vh} viewBox={`0 0 ${vw} ${vh}`} xmlns="http://www.w3.org/2000/svg" style={{ display:"block", flexShrink:0 }}>
-      <polygon points={hex(hx, hy, oR)} fill="none" stroke="#94a3b8" strokeWidth="0.8" opacity="0.2"/>
-      {spokeLines.map((l, i) => <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#94a3b8" strokeWidth="0.7" opacity="0.3"/>)}
-      {outerDots.map((p, i) => <circle key={i} cx={p.cx} cy={p.cy} r={d} fill="#64748b" opacity="0.55"/>)}
-      <polygon points={hex(hx, hy, mR)} fill="none" stroke="#cbd5e1" strokeWidth="1" opacity="0.55"/>
-      <polygon points={hex(hx, hy, iR)} fill="#f1f5f9"/>
-      <circle cx={hx} cy={hy} r={iR * 0.45} fill="#080c14" opacity="0.45"/>
-      <text x={tx} y={ty} fontFamily="'DM Sans',sans-serif" fontWeight="900" fontSize={fs} letterSpacing="-1" fill="#f1f5f9">M<tspan fill="#e2e8f0">OE</tspan></text>
-    </svg>
+    <div style={{ display: "flex", alignItems: "center", gap: c.gap, flexShrink: 0 }}>
+      <svg viewBox="0 0 40 40" fill="none" width={c.s} height={c.s} style={{ display: "block", flexShrink: 0 }}>
+        <polygon points="20,2.5 36.5,11.25 36.5,28.75 20,37.5 3.5,28.75 3.5,11.25" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.35"/>
+        <polygon points="20,8 31,14 31,26 20,32 9,26 9,14" fill="none" stroke="#38bdf8" strokeWidth="1.2" opacity="0.5"/>
+        <polygon points="20,13 25.5,16.5 25.5,23.5 20,27 14.5,23.5 14.5,16.5" fill="#38bdf8" opacity="0.12"/>
+        <line x1="20" y1="2.5" x2="20" y2="8" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+        <line x1="36.5" y1="11.25" x2="31" y2="14" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+        <line x1="36.5" y1="28.75" x2="31" y2="26" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+        <line x1="20" y1="37.5" x2="20" y2="32" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+        <line x1="3.5" y1="28.75" x2="9" y2="26" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+        <line x1="3.5" y1="11.25" x2="9" y2="14" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
+        <circle cx="20" cy="2.5" r="1.8" fill="#38bdf8" opacity="0.5"/>
+        <circle cx="36.5" cy="11.25" r="1.8" fill="#38bdf8" opacity="0.5"/>
+        <circle cx="36.5" cy="28.75" r="1.8" fill="#38bdf8" opacity="0.5"/>
+        <circle cx="20" cy="37.5" r="1.8" fill="#38bdf8" opacity="0.5"/>
+        <circle cx="3.5" cy="28.75" r="1.8" fill="#38bdf8" opacity="0.5"/>
+        <circle cx="3.5" cy="11.25" r="1.8" fill="#38bdf8" opacity="0.5"/>
+        <text x="20" y="24.5" textAnchor="middle" fill="#38bdf8" fontFamily="DM Sans,sans-serif" fontWeight="700" fontSize="13">M</text>
+      </svg>
+      {size !== "icon" && (
+        <span style={{ fontFamily: "'DM Sans',sans-serif", fontWeight: 700, fontSize: c.textSize, letterSpacing: "-0.02em", color: "#f1f5f9" }}>
+          M<span style={{ color: "#94a3b8" }}>OE</span>
+        </span>
+      )}
+    </div>
   );
 }
 
