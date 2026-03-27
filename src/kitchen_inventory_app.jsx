@@ -319,6 +319,7 @@ function MoeApp() {
   const [wasteLog, setWasteLog]         = useState([]);
   const [priceHistory, setPriceHistory] = useState({});
   const [dataLoaded, setDataLoaded]     = useState(false);
+  const [onboarding, setOnboarding]     = useState(null); // null = not started, 1-4 = step, "done" = completed
   const [permissions, setPermissions]   = useState({
     manager: ["inventory", "waste", "orders", "history", "insights", "prices", "backend", "settings"],
     employee: ["inventory", "waste", "history"],
@@ -362,9 +363,11 @@ function MoeApp() {
       const wl = await load("wasteLog", []);
       const ph = await load("priceHistory", {});
       const perms = await load("permissions", null);
+      const ob = await load("onboarding", null);
       setStock(st); setVendors(vd); setHistory(hi); setInventory(inv);
       setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl); setPriceHistory(ph);
       if (perms) setPermissions(perms);
+      setOnboarding(ob);
       setDataLoaded(true);
     };
     init();
@@ -531,6 +534,19 @@ function MoeApp() {
 
   // Get current plan limits
   const currentPlan = PLANS[subscription?.plan] || PLANS.pro;
+
+  // ── Onboarding for new owners ─────────────────────────────────────────
+  const needsOnboarding = dataLoaded && user.role === "owner" && onboarding !== "done" && !isDemo;
+  if (needsOnboarding) {
+    return <OnboardingFlow
+      user={user} step={onboarding || 1}
+      vendors={vendors} saveVendors={(v) => { setVendors(v); save("vendors", v); }}
+      inventory={inventory} saveInventory={(inv) => { setInventory(inv); save("inventory", inv); }}
+      team={team} saveTeam={(t) => { setTeam(t); const g = groupRef.current; try { localStorage.setItem(`moe_${g}_team`, JSON.stringify(t)); } catch {} sbSet(g, "team", t); }}
+      onStep={(s) => { setOnboarding(s); save("onboarding", s); }}
+      onComplete={() => { setOnboarding("done"); save("onboarding", "done"); }}
+    />;
+  }
 
   // ── Permission check ──────────────────────────────────────────────────
   const canAccess = (feature) => {
@@ -2777,21 +2793,25 @@ function HexIcon({ size = 48 }) {
   );
 }
 
-function MoeLogoLanding({ size = "lg" }) {
-  const configs = { md: { vw: 130, vh: 44, hx: 22, hy: 22, oR: 20, mR: 13, iR: 7, d: 2.2, tx: 44, ty: 28, fs: 24 }, lg: { vw: 200, vh: 64, hx: 32, hy: 32, oR: 29, mR: 19, iR: 10, d: 3, tx: 64, ty: 42, fs: 34 } };
+function MoeLogoLanding({ size = "lg", dark = false }) {
+  const configs = { md: { vw: 150, vh: 44, hx: 22, hy: 22, oR: 20, mR: 13, iR: 7, d: 2.2, tx: 48, ty: 28, fs: 24 }, lg: { vw: 200, vh: 64, hx: 32, hy: 32, oR: 29, mR: 19, iR: 10, d: 3, tx: 68, ty: 42, fs: 34 } };
   const c = configs[size] || configs.lg;
   const hex = (cx, cy, r) => { const pts = []; for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - 30); pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`); } return pts.join(" "); };
   const spokes = Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 180 * (60 * i - 30); return { x1: (c.hx + c.oR * Math.cos(a)).toFixed(2), y1: (c.hy + c.oR * Math.sin(a)).toFixed(2), x2: (c.hx + c.mR * Math.cos(a)).toFixed(2), y2: (c.hy + c.mR * Math.sin(a)).toFixed(2) }; });
   const dots = Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 180 * (60 * i - 30); return { cx: (c.hx + c.oR * Math.cos(a)).toFixed(2), cy: (c.hy + c.oR * Math.sin(a)).toFixed(2) }; });
+  const mFill = dark ? "#f1f5f9" : "#0f172a";
+  const oeFill = dark ? "#94a3b8" : "#475569";
+  const hexStroke = dark ? "#64748b" : "#94a3b8";
+  const innerFill = dark ? "#f1f5f9" : "#0f172a";
   return (
     <svg width={c.vw} height={c.vh} viewBox={`0 0 ${c.vw} ${c.vh}`} style={{ display: "block" }}>
-      <polygon points={hex(c.hx, c.hy, c.oR)} fill="none" stroke="#94a3b8" strokeWidth="0.8" opacity="0.4" />
-      {spokes.map((l, i) => <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#94a3b8" strokeWidth="0.7" opacity="0.3" />)}
+      <polygon points={hex(c.hx, c.hy, c.oR)} fill="none" stroke={hexStroke} strokeWidth="0.8" opacity="0.4" />
+      {spokes.map((l, i) => <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={hexStroke} strokeWidth="0.7" opacity="0.3" />)}
       {dots.map((p, i) => <circle key={i} cx={p.cx} cy={p.cy} r={c.d} fill="#64748b" opacity="0.5" />)}
-      <polygon points={hex(c.hx, c.hy, c.mR)} fill="none" stroke="#475569" strokeWidth="1" opacity="0.5" />
-      <polygon points={hex(c.hx, c.hy, c.iR)} fill="#0f172a" />
-      <circle cx={c.hx} cy={c.hy} r={c.iR * 0.4} fill="#f8fafc" opacity="0.3" />
-      <text x={c.tx} y={c.ty} fontFamily="'Syne',sans-serif" fontWeight="800" fontSize={c.fs} letterSpacing="-1" fill="#0f172a">M<tspan fill="#475569">OE</tspan></text>
+      <polygon points={hex(c.hx, c.hy, c.mR)} fill="none" stroke={dark ? "#cbd5e1" : "#475569"} strokeWidth="1" opacity="0.55" />
+      <polygon points={hex(c.hx, c.hy, c.iR)} fill={innerFill} />
+      <circle cx={c.hx} cy={c.hy} r={c.iR * 0.4} fill={dark ? "#080c14" : "#f8fafc"} opacity={dark ? 0.45 : 0.3} />
+      <text x={c.tx} y={c.ty} fontFamily="'Syne',sans-serif" fontWeight="800" fontSize={c.fs} letterSpacing="-1" fill={mFill}>M<tspan fill={oeFill}>OE</tspan></text>
     </svg>
   );
 }
@@ -2860,11 +2880,11 @@ function LandingPage() {
             <a href="#pricing" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>Pricing</a>
             <a href="#faq" style={{ color: "#64748b", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>FAQ</a>
             <button onClick={() => window.__moeNavigate("/app")} style={{ background: "none", border: "none", color: "#64748b", fontSize: 13, fontWeight: 500, cursor: "pointer", padding: "6px 0" }}>Sign In</button>
-            <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Get Started Free</button>
+            <button className="cta-btn" onClick={() => window.__moeNavigate("/quiz")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Get Started Free</button>
           </div>
           {/* Mobile: CTA + hamburger */}
           <div className="landing-nav-mobile" style={{ display: "none", alignItems: "center", gap: 8 }}>
-            <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Get Started</button>
+            <button className="cta-btn" onClick={() => window.__moeNavigate("/quiz")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Get Started</button>
             <button onClick={() => setMobileMenu(!mobileMenu)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, display: "flex", flexDirection: "column", gap: 4 }}>
               <span style={{ display: "block", width: 20, height: 2, background: "#475569", borderRadius: 2 }} />
               <span style={{ display: "block", width: 20, height: 2, background: "#475569", borderRadius: 2 }} />
@@ -2910,7 +2930,7 @@ function LandingPage() {
           </p>
 
           <div className="fade-up fade-up-d3" style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
-            <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 12, padding: "16px 36px", fontSize: 17, fontWeight: 700, cursor: "pointer", letterSpacing: "-0.3px" }}>
+            <button className="cta-btn" onClick={() => window.__moeNavigate("/quiz")} style={{ background: "#0f172a", color: "#fff", border: "none", borderRadius: 12, padding: "16px 36px", fontSize: 17, fontWeight: 700, cursor: "pointer", letterSpacing: "-0.3px" }}>
               Start 14-Day Free Trial
             </button>
             <button className="cta-btn" onClick={() => document.getElementById("how-it-works")?.scrollIntoView({ behavior:"smooth" })} style={{ background: "#fff", color: "#0f172a", border: "2px solid #e2e8f0", borderRadius: 12, padding: "14px 32px", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
@@ -3047,7 +3067,7 @@ function LandingPage() {
                   ))}
                 </div>
 
-                <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{
+                <button className="cta-btn" onClick={() => window.__moeNavigate("/quiz")} style={{
                   width: "100%", padding: "14px", borderRadius: 12, border: "none", fontSize: 15, fontWeight: 700, cursor: "pointer",
                   background: plan.popular ? "#f1f5f9" : "#0f172a",
                   color: plan.popular ? "#0f172a" : "#fff",
@@ -3096,7 +3116,7 @@ function LandingPage() {
           <p style={{ color: "#94a3b8", fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>
             Over-ordering, rising prices you don't notice, and waste you can't track cost the average business $26,000+ a year. MOE catches it all — and pays for itself in the first week.
           </p>
-          <button className="cta-btn" onClick={() => window.__moeNavigate("/app")} style={{ background: "#f1f5f9", color: "#0f172a", border: "none", borderRadius: 14, padding: "18px 44px", fontSize: 18, fontWeight: 800, cursor: "pointer", fontFamily: "'Syne',sans-serif", letterSpacing: "-0.5px" }}>
+          <button className="cta-btn" onClick={() => window.__moeNavigate("/quiz")} style={{ background: "#f1f5f9", color: "#0f172a", border: "none", borderRadius: 14, padding: "18px 44px", fontSize: 18, fontWeight: 800, cursor: "pointer", fontFamily: "'Syne',sans-serif", letterSpacing: "-0.5px" }}>
             Start Your Free Trial
           </button>
           <p style={{ color: "#475569", fontSize: 13, marginTop: 16 }}>14 days free · No credit card · Set up in 5 minutes</p>
@@ -3104,10 +3124,10 @@ function LandingPage() {
       </section>
 
       {/* ═══ FOOTER ═══ */}
-      <footer style={{ background: "#0f172a", borderTop: "1px solid #1e293b", padding: "48px 24px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 24 }}>
-          <div>
-            <MoeLogoLanding size="md" />
+      <footer style={{ background: "#0f172a", borderTop: "1px solid #1e293b", padding: "40px 16px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 20 }}>
+          <div style={{ minWidth: 160 }}>
+            <MoeLogoLanding size="md" dark />
             <p style={{ color: "#475569", fontSize: 12, marginTop: 8 }}>Make Ordering Easy</p>
           </div>
           <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
@@ -3129,15 +3149,11 @@ function LandingPage() {
 // ROUTER — getmoe.ai/ → Landing, getmoe.ai/app → MOE App
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function Router() {
-  const isSandbox = window.location.hostname === "localhost" || window.location.pathname.includes("artifact");
-
   const getRoute = () => {
     const p = window.location.pathname;
     const h = window.location.hash;
-    // Production: check pathname
-    if (p === "/app" || p.startsWith("/app/")) return "app";
-    // Sandbox fallback: check hash
-    if (h === "#/app" || h === "#app") return "app";
+    if (p === "/app" || p.startsWith("/app/") || h === "#/app") return "app";
+    if (p === "/quiz" || p.startsWith("/quiz") || h === "#/quiz") return "quiz";
     return "landing";
   };
 
@@ -3151,20 +3167,16 @@ export default function Router() {
   }, []);
 
   window.__moeNavigate = (to) => {
-    if (to === "/app") {
-      try { window.history.pushState({}, "", "/app"); } catch {
-        window.location.hash = "#/app";
-      }
-      setRoute("app");
-    } else {
-      try { window.history.pushState({}, "", "/"); } catch {
-        window.location.hash = "";
-      }
-      setRoute("landing");
+    try { window.history.pushState({}, "", to); } catch {
+      window.location.hash = to;
     }
+    if (to === "/app") setRoute("app");
+    else if (to === "/quiz") setRoute("quiz");
+    else setRoute("landing");
   };
 
   if (route === "app") return <MoeApp />;
+  if (route === "quiz") return <SavingsQuiz />;
   return <LandingPage />;
 }
 
@@ -3906,6 +3918,485 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ONBOARDING FLOW — Guide new owners through setup
+// ═══════════════════════════════════════════════════════════════════════════════
+function OnboardingFlow({ user, step, vendors, saveVendors, inventory, saveInventory, team, saveTeam, onStep, onComplete }) {
+  const [currentStep, setCurrentStep] = useState(step || 1);
+  const [vendorName, setVendorName] = useState("");
+  const [vendorDays, setVendorDays] = useState([]);
+  const [addedVendors, setAddedVendors] = useState(vendors.filter(v => v.name.trim()));
+  const [empName, setEmpName] = useState("");
+  const [empEmail, setEmpEmail] = useState("");
+  const [empPassword, setEmpPassword] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const photoRef = React.useRef(null);
+
+  const goTo = (s) => { setCurrentStep(s); onStep(s); };
+
+  // Add a vendor
+  const addVendor = () => {
+    if (!vendorName.trim()) return;
+    const newVendor = { id: Date.now(), name: vendorName.trim(), orderDays: vendorDays };
+    const updated = [...addedVendors, newVendor];
+    setAddedVendors(updated);
+    saveVendors(updated);
+    setVendorName(""); setVendorDays([]);
+  };
+
+  const toggleDay = (dayIdx) => {
+    setVendorDays(prev => prev.includes(dayIdx) ? prev.filter(d => d !== dayIdx) : [...prev, dayIdx].sort());
+  };
+
+  // Photo import
+  const handlePhotoImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true); setImportResult(null);
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const r = new FileReader(); r.onload = () => resolve(r.result.split(",")[1]); r.onerror = () => reject(new Error("Read failed")); r.readAsDataURL(file);
+      });
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514", max_tokens: 4000,
+          messages: [{ role: "user", content: [
+            { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
+            { type: "text", text: `Extract ALL inventory items from this image. Return ONLY a JSON array, no markdown. Each object: {"name":"item name","order_unit":"Case","vendor":"","max_stock":10,"reorder":2,"upu":1,"section":""}` }
+          ]}]
+        })
+      });
+      const data = await response.json();
+      const text = (data.content || []).map(c => c.text || "").join("");
+      const items = JSON.parse(text.replace(/```json|```/g, "").trim());
+      if (Array.isArray(items) && items.length > 0) {
+        const newSection = { section: "📦  Imported Items", items: items.map((item, idx) => ({
+          id: Date.now() + idx, name: item.name || "Item", order_unit: item.order_unit || "Case",
+          upu: parseInt(item.upu) || 1, vendor: item.vendor || "", max_stock: parseInt(item.max_stock) || 10, reorder: parseInt(item.reorder) || 2,
+        }))};
+        saveInventory([...inventory, newSection]);
+        setImportResult({ success: true, count: items.length });
+      } else {
+        setImportResult({ success: false, error: "No items found in image." });
+      }
+    } catch (err) {
+      setImportResult({ success: false, error: err.message });
+    }
+    setImporting(false);
+  };
+
+  // Add employee
+  const addEmployee = () => {
+    if (!empName.trim() || !empEmail.trim() || !empPassword || empPassword.length < 6) return;
+    const newMember = { id: Date.now(), name: empName.trim(), email: empEmail.toLowerCase().trim(), password: empPassword, role: "employee", addedAt: new Date().toISOString() };
+    saveTeam([...(team || []), newMember]);
+    setEmpName(""); setEmpEmail(""); setEmpPassword("");
+  };
+
+  const inp = { width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:16, outline:"none", boxSizing:"border-box" };
+  const lbl = { display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" };
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", padding:"20px 16px" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+      <div style={{ width:"100%", maxWidth:480 }}>
+
+        {/* Progress bar */}
+        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:32 }}>
+          {[1,2,3,4].map(s => (
+            <React.Fragment key={s}>
+              <div style={{ width:32, height:32, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace",
+                background: currentStep >= s ? "#e2e8f0" : "#1e2d45", color: currentStep >= s ? "#080c14" : "#475569", transition:"all 0.3s" }}>
+                {currentStep > s ? "✓" : s}
+              </div>
+              {s < 4 && <div style={{ flex:1, height:2, background: currentStep > s ? "#e2e8f0" : "#1e2d45", borderRadius:1, transition:"all 0.3s" }} />}
+            </React.Fragment>
+          ))}
+        </div>
+
+        {/* ── STEP 1: WELCOME ── */}
+        {currentStep === 1 && (
+          <div style={{ textAlign:"center" }}>
+            <MoeLogo size="lg" />
+            <h1 style={{ color:"#f1f5f9", fontSize:24, fontWeight:700, margin:"24px 0 8px" }}>Welcome to MOE, {user.name?.split(" ")[0]}!</h1>
+            <p style={{ color:"#475569", fontSize:14, lineHeight:1.6, margin:"0 0 8px" }}>Let's get your business set up. This takes about 2 minutes.</p>
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:20, margin:"24px 0", textAlign:"left" }}>
+              <div style={{ color:"#94a3b8", fontSize:12, fontWeight:600, marginBottom:12, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Here's what we'll do:</div>
+              {[
+                { icon:"📦", text:"Add your vendors and order days" },
+                { icon:"📋", text:"Import your items (photo, file, or manual)" },
+                { icon:"👥", text:"Invite your team (optional)" },
+              ].map((item, idx) => (
+                <div key={idx} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderTop:idx>0?"1px solid #080c14":"none" }}>
+                  <span style={{ fontSize:18 }}>{item.icon}</span>
+                  <span style={{ color:"#e2e8f0", fontSize:14 }}>{item.text}</span>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => goTo(2)} style={{ width:"100%", background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:10, padding:"14px", color:"#080c14", fontSize:16, fontWeight:700, cursor:"pointer" }}>
+              Let's Go
+            </button>
+            <p style={{ color:"#334155", fontSize:12, marginTop:12 }}>Your 14-day free trial is active</p>
+          </div>
+        )}
+
+        {/* ── STEP 2: ADD VENDORS ── */}
+        {currentStep === 2 && (
+          <div>
+            <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:"0 0 6px" }}>Add Your Vendors</h2>
+            <p style={{ color:"#475569", fontSize:13, margin:"0 0 20px" }}>Who do you order supplies from? Add at least one to continue.</p>
+
+            {/* Added vendors list */}
+            {addedVendors.filter(v => v.name.trim()).length > 0 && (
+              <div style={{ marginBottom:16 }}>
+                {addedVendors.filter(v => v.name.trim()).map(v => (
+                  <div key={v.id} style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:8, padding:"10px 14px", marginBottom:6, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                    <div>
+                      <span style={{ color:"#4ade80", fontSize:14, fontWeight:600 }}>✓ {v.name}</span>
+                      {v.orderDays?.length > 0 && <span style={{ color:"#16a34a", fontSize:11, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>{v.orderDays.map(d => DAYS_SHORT[d]).join(", ")}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add vendor form */}
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:20, marginBottom:16 }}>
+              <div style={{ marginBottom:14 }}>
+                <label style={lbl}>Vendor Name</label>
+                <input value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="e.g. Sysco, US Foods, Anacapri..." style={inp}
+                  onKeyDown={e => { if (e.key === "Enter" && vendorName.trim()) addVendor(); }} />
+              </div>
+              <div style={{ marginBottom:14 }}>
+                <label style={lbl}>Order Days (optional)</label>
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                  {DAYS_SHORT.map((day, i) => (
+                    <button key={day} onClick={() => toggleDay(i)}
+                      style={{ padding:"8px 12px", borderRadius:8, background:vendorDays.includes(i)?"#e2e8f0":"#080c14", border:`1px solid ${vendorDays.includes(i)?"#e2e8f0":"#1e2d45"}`, color:vendorDays.includes(i)?"#080c14":"#64748b", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+                      {day}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button onClick={addVendor} disabled={!vendorName.trim()}
+                style={{ width:"100%", background:vendorName.trim()?"linear-gradient(135deg,#22c55e,#16a34a)":"#1e2d45", border:"none", borderRadius:8, padding:"10px", color:vendorName.trim()?"#fff":"#475569", fontSize:14, fontWeight:600, cursor:vendorName.trim()?"pointer":"default" }}>
+                + Add Vendor
+              </button>
+            </div>
+
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={() => goTo(1)} style={{ flex:1, background:"transparent", border:"1px solid #1e2d45", borderRadius:10, padding:"12px", color:"#94a3b8", fontSize:14, cursor:"pointer" }}>Back</button>
+              <button onClick={() => goTo(3)} disabled={addedVendors.filter(v => v.name.trim()).length === 0}
+                style={{ flex:2, background:addedVendors.filter(v=>v.name.trim()).length>0?"linear-gradient(135deg,#e2e8f0,#94a3b8)":"#1e2d45", border:"none", borderRadius:10, padding:"12px", color:addedVendors.filter(v=>v.name.trim()).length>0?"#080c14":"#475569", fontSize:14, fontWeight:700, cursor:addedVendors.filter(v=>v.name.trim()).length>0?"pointer":"default" }}>
+                Continue
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 3: ADD ITEMS ── */}
+        {currentStep === 3 && (
+          <div>
+            <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:"0 0 6px" }}>Add Your Items</h2>
+            <p style={{ color:"#475569", fontSize:13, margin:"0 0 20px" }}>The fastest way: take a photo of an invoice. Or skip and add items later in the Backend.</p>
+
+            {/* Import result */}
+            {importResult?.success && (
+              <div style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:10, padding:"14px 18px", marginBottom:16, textAlign:"center" }}>
+                <div style={{ color:"#4ade80", fontSize:28, marginBottom:6 }}>✅</div>
+                <div style={{ color:"#4ade80", fontSize:16, fontWeight:700 }}>{importResult.count} items imported!</div>
+                <div style={{ color:"#22c55e", fontSize:12, marginTop:4 }}>You can edit them anytime in the Backend</div>
+              </div>
+            )}
+            {importResult?.success === false && (
+              <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:10, padding:"12px 16px", marginBottom:16, color:"#fca5a5", fontSize:13 }}>{importResult.error}</div>
+            )}
+
+            {/* Import options */}
+            {!importResult?.success && (
+              <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:20 }}>
+                <button onClick={() => photoRef.current?.click()}
+                  style={{ background:"#0f1a2e", border:"2px dashed #1e2d45", borderRadius:14, padding:"28px 20px", cursor:"pointer", textAlign:"center" }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor="#e2e8f0"} onMouseLeave={e => e.currentTarget.style.borderColor="#1e2d45"}>
+                  <input ref={photoRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoImport} style={{ display:"none" }} />
+                  <div style={{ fontSize:32, marginBottom:8 }}>📸</div>
+                  <div style={{ color:"#f1f5f9", fontSize:15, fontWeight:600, marginBottom:4 }}>Take a Photo of an Invoice</div>
+                  <div style={{ color:"#475569", fontSize:12 }}>AI will extract all items automatically</div>
+                </button>
+                {importing && (
+                  <div style={{ textAlign:"center", padding:16 }}>
+                    <div style={{ color:"#a5b4fc", fontSize:14, fontWeight:600 }}>Analyzing your invoice...</div>
+                    <div style={{ color:"#475569", fontSize:12, marginTop:4 }}>This takes a few seconds</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={() => goTo(2)} style={{ flex:1, background:"transparent", border:"1px solid #1e2d45", borderRadius:10, padding:"12px", color:"#94a3b8", fontSize:14, cursor:"pointer" }}>Back</button>
+              <button onClick={() => goTo(4)}
+                style={{ flex:2, background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:10, padding:"12px", color:"#080c14", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                {importResult?.success ? "Continue" : "Skip for Now"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 4: INVITE TEAM ── */}
+        {currentStep === 4 && (
+          <div>
+            <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:"0 0 6px" }}>Invite Your Team</h2>
+            <p style={{ color:"#475569", fontSize:13, margin:"0 0 20px" }}>Add employees so they can sign in and count stock. You can always do this later in Settings.</p>
+
+            {/* Added team members */}
+            {team.length > 0 && (
+              <div style={{ marginBottom:16 }}>
+                {team.map(m => (
+                  <div key={m.id} style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:8, padding:"10px 14px", marginBottom:6, display:"flex", alignItems:"center", gap:10 }}>
+                    <span style={{ color:"#4ade80", fontSize:14, fontWeight:600 }}>✓ {m.name}</span>
+                    <span style={{ color:"#16a34a", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{m.email}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add employee form */}
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:20, marginBottom:16 }}>
+              <div style={{ marginBottom:12 }}>
+                <label style={lbl}>Employee Name</label>
+                <input value={empName} onChange={e => setEmpName(e.target.value)} placeholder="Full name" style={inp} />
+              </div>
+              <div style={{ marginBottom:12 }}>
+                <label style={lbl}>Email</label>
+                <input value={empEmail} onChange={e => setEmpEmail(e.target.value)} placeholder="employee@email.com" type="email" style={inp} />
+              </div>
+              <div style={{ marginBottom:14 }}>
+                <label style={lbl}>Temporary Password</label>
+                <input value={empPassword} onChange={e => setEmpPassword(e.target.value)} placeholder="Min 6 characters" style={inp} />
+                <div style={{ color:"#475569", fontSize:11, marginTop:4 }}>Share this with your employee so they can sign in</div>
+              </div>
+              <button onClick={addEmployee} disabled={!empName.trim() || !empEmail.includes("@") || empPassword.length < 6}
+                style={{ width:"100%", background:(empName.trim() && empEmail.includes("@") && empPassword.length >= 6)?"linear-gradient(135deg,#22c55e,#16a34a)":"#1e2d45", border:"none", borderRadius:8, padding:"10px", color:(empName.trim() && empEmail.includes("@") && empPassword.length >= 6)?"#fff":"#475569", fontSize:14, fontWeight:600, cursor:(empName.trim() && empEmail.includes("@") && empPassword.length >= 6)?"pointer":"default" }}>
+                + Add Employee
+              </button>
+            </div>
+
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={() => goTo(3)} style={{ flex:1, background:"transparent", border:"1px solid #1e2d45", borderRadius:10, padding:"12px", color:"#94a3b8", fontSize:14, cursor:"pointer" }}>Back</button>
+              <button onClick={onComplete}
+                style={{ flex:2, background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:10, padding:"14px", color:"#080c14", fontSize:16, fontWeight:700, cursor:"pointer" }}>
+                {team.length > 0 ? "Finish Setup" : "Skip & Finish"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SAVINGS QUIZ — Pre-signup conversion flow
+// ═══════════════════════════════════════════════════════════════════════════════
+function SavingsQuiz() {
+  const [step, setStep] = useState(1);
+  const [answers, setAnswers] = useState({ bizType: "", vendors: "", weeklySpend: "", teamSize: "", overOrder: "", emergencyRuns: "", trackWaste: "" });
+  const [showResults, setShowResults] = useState(false);
+  const [animatedTotal, setAnimatedTotal] = useState(0);
+
+  const update = (field, val) => setAnswers(prev => ({ ...prev, [field]: val }));
+
+  const calcSavings = () => {
+    const spend = { "$1,000-$3,000": 2000, "$3,000-$5,000": 4000, "$5,000-$10,000": 7500, "$10,000+": 12000 }[answers.weeklySpend] || 3000;
+    const overOrderPct = { "Rarely": 0.03, "Sometimes": 0.06, "Often": 0.10, "All the time": 0.15 }[answers.overOrder] || 0.06;
+    const emergencyAmt = { "Never": 0, "1-2x/month": 75, "Weekly": 150, "Multiple/week": 300 }[answers.emergencyRuns] || 75;
+    const teamHours = { "Just me": 3, "2-5": 4, "6-10": 5, "10+": 7 }[answers.teamSize] || 4;
+    const wastePct = answers.trackWaste === "No" ? 0.05 : 0.02;
+    const overOrdering = Math.round(spend * overOrderPct);
+    const emergency = emergencyAmt;
+    const labor = Math.round(teamHours * 28);
+    const waste = Math.round(spend * wastePct);
+    const weekly = overOrdering + emergency + labor + waste;
+    return { overOrdering, emergency, labor, waste, weekly, monthly: Math.round(weekly * 4.3), annual: Math.round(weekly * 52) };
+  };
+
+  const savings = calcSavings();
+
+  useEffect(() => {
+    if (!showResults) return;
+    const target = savings.monthly;
+    let current = 0;
+    const inc = Math.max(1, Math.floor(target / 40));
+    const timer = setInterval(() => { current += inc; if (current >= target) { current = target; clearInterval(timer); } setAnimatedTotal(current); }, 30);
+    return () => clearInterval(timer);
+  }, [showResults]);
+
+  const optBtn = (field, value, icon) => {
+    const sel = answers[field] === value;
+    return (
+      <button key={value} onClick={() => update(field, value)}
+        style={{ flex:1, minWidth:130, background:sel?"#0f2040":"#0f1a2e", border:"2px solid "+(sel?"#a5b4fc":"#1e2d45"), borderRadius:12, padding:"14px 12px", cursor:"pointer", textAlign:"center", transition:"all 0.2s" }}
+        onMouseEnter={e => { if(!sel) e.currentTarget.style.borderColor="#475569"; }}
+        onMouseLeave={e => { if(!sel) e.currentTarget.style.borderColor="#1e2d45"; }}>
+        {icon && <div style={{ fontSize:22, marginBottom:4 }}>{icon}</div>}
+        <div style={{ color:sel?"#a5b4fc":"#e2e8f0", fontSize:13, fontWeight:sel?700:500 }}>{value}</div>
+      </button>
+    );
+  };
+
+  const canContinue = { 1: !!answers.bizType, 2: !!answers.vendors && !!answers.weeklySpend && !!answers.teamSize, 3: !!answers.overOrder && !!answers.emergencyRuns && !!answers.trackWaste };
+
+  const nextBtn = (nextStep) => (
+    <button onClick={() => { if (nextStep === "results") { setShowResults(true); } else setStep(nextStep); }}
+      disabled={!canContinue[step]}
+      style={{ width:"100%", background:canContinue[step]?"linear-gradient(135deg,#e2e8f0,#94a3b8)":"#1e2d45", border:"none", borderRadius:10, padding:"14px", color:canContinue[step]?"#080c14":"#475569", fontSize:16, fontWeight:700, cursor:canContinue[step]?"pointer":"default", marginTop:20 }}>
+      Continue
+    </button>
+  );
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", padding:"20px 16px" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+      <div style={{ width:"100%", maxWidth:520 }}>
+
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24 }}>
+          <MoeLogo size="md" />
+          {step > 1 && !showResults && <button onClick={() => setStep(step-1)} style={{ background:"none", border:"1px solid #1e2d45", borderRadius:6, color:"#64748b", padding:"4px 12px", cursor:"pointer", fontSize:12 }}>Back</button>}
+          {(step === 1 || showResults) && <button onClick={() => window.__moeNavigate("/")} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:12 }}>Back to site</button>}
+        </div>
+
+        {!showResults && (
+          <div style={{ display:"flex", gap:6, marginBottom:28 }}>
+            {[1,2,3].map(s => <div key={s} style={{ flex:1, height:4, borderRadius:2, background:step>=s?"#a5b4fc":"#1e2d45", transition:"all 0.3s" }} />)}
+          </div>
+        )}
+
+        {step === 1 && !showResults && (
+          <div>
+            <h1 style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, margin:"0 0 6px" }}>How much is your business losing?</h1>
+            <p style={{ color:"#475569", fontSize:14, margin:"0 0 24px" }}>Answer 3 quick questions. Takes 30 seconds.</p>
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:10, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>What type of business do you run?</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
+              {[["Restaurant","🍕"],["Pizzeria","🍕"],["Bakery","🥐"],["Deli","🥪"],["Retail Shop","🏪"],["Salon","💇"],["Auto Shop","🔧"],["Warehouse","📦"],["Other","🏢"]].map(([v,i]) => optBtn("bizType", v, i))}
+            </div>
+            {nextBtn(2)}
+          </div>
+        )}
+
+        {step === 2 && !showResults && (
+          <div>
+            <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:"0 0 6px" }}>Tell us about your ordering</h2>
+            <p style={{ color:"#475569", fontSize:14, margin:"0 0 20px" }}>No exact numbers needed — just your best estimate.</p>
+
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:10, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>How many vendors do you order from?</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:20 }}>
+              {["1-2","3-5","6-10","10+"].map(v => optBtn("vendors", v))}
+            </div>
+
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:10, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>How much do you spend on supplies per week?</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:20 }}>
+              {["$1,000-$3,000","$3,000-$5,000","$5,000-$10,000","$10,000+"].map(v => optBtn("weeklySpend", v))}
+            </div>
+
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:10, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>How many people on your team?</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+              {["Just me","2-5","6-10","10+"].map(v => optBtn("teamSize", v))}
+            </div>
+
+            {nextBtn(3)}
+          </div>
+        )}
+
+        {step === 3 && !showResults && (
+          <div>
+            <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:"0 0 6px" }}>Where does the money go?</h2>
+            <p style={{ color:"#475569", fontSize:14, margin:"0 0 20px" }}>Be honest — this is just for you.</p>
+
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:10, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>How often do you over-order?</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:20 }}>
+              {["Rarely","Sometimes","Often","All the time"].map(v => optBtn("overOrder", v))}
+            </div>
+
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:10, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Emergency supply runs at retail prices?</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:20 }}>
+              {["Never","1-2x/month","Weekly","Multiple/week"].map(v => optBtn("emergencyRuns", v))}
+            </div>
+
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:10, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Do you currently track waste?</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+              {["Yes","No","Sort of"].map(v => optBtn("trackWaste", v))}
+            </div>
+
+            <button onClick={() => setShowResults(true)} disabled={!canContinue[3]}
+              style={{ width:"100%", background:canContinue[3]?"linear-gradient(135deg,#e2e8f0,#94a3b8)":"#1e2d45", border:"none", borderRadius:10, padding:"14px", color:canContinue[3]?"#080c14":"#475569", fontSize:16, fontWeight:700, cursor:canContinue[3]?"pointer":"default", marginTop:20 }}>
+              Show My Results
+            </button>
+          </div>
+        )}
+
+        {showResults && (
+          <div style={{ textAlign:"center" }}>
+            <div style={{ color:"#475569", fontSize:12, fontWeight:600, textTransform:"uppercase", letterSpacing:"1px", fontFamily:"'DM Mono',monospace", marginBottom:8 }}>Your estimated losses</div>
+            <div style={{ fontFamily:"'Syne',sans-serif", fontSize:52, fontWeight:800, color:"#ef4444", letterSpacing:"-2px" }}>
+              ${animatedTotal.toLocaleString()}
+            </div>
+            <div style={{ color:"#fca5a5", fontSize:16, fontWeight:600, marginBottom:4 }}>per month</div>
+            <div style={{ color:"#475569", fontSize:13, marginBottom:24 }}>That's ${savings.annual.toLocaleString()} per year walking out the door</div>
+
+            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:14, padding:"20px", marginBottom:20, textAlign:"left" }}>
+              <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:14, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Where it's going</div>
+              {[
+                { label:"Over-ordering & spoilage", value:savings.overOrdering, icon:"📦", color:"#fca5a5" },
+                { label:"Emergency supply runs", value:savings.emergency, icon:"🚗", color:"#fbbf24" },
+                { label:"Manager time on manual ordering", value:savings.labor, icon:"⏰", color:"#a5b4fc" },
+                { label:"Untracked waste", value:savings.waste, icon:"🗑️", color:"#f87171" },
+              ].map(item => (
+                <div key={item.label} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", borderTop:"1px solid #080c14" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <span style={{ fontSize:16 }}>{item.icon}</span>
+                    <span style={{ color:"#94a3b8", fontSize:13 }}>{item.label}</span>
+                  </div>
+                  <span style={{ color:item.color, fontSize:15, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${item.value}/wk</span>
+                </div>
+              ))}
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 0 0", borderTop:"2px solid #1e2d45", marginTop:6 }}>
+                <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:700 }}>Total weekly loss</span>
+                <span style={{ color:"#ef4444", fontSize:18, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>${savings.weekly}/wk</span>
+              </div>
+            </div>
+
+            <div style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:12, padding:"16px 20px", marginBottom:20, textAlign:"left" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                <div>
+                  <div style={{ color:"#4ade80", fontSize:14, fontWeight:700 }}>MOE Pro — $399/month</div>
+                  <div style={{ color:"#22c55e", fontSize:12, marginTop:2 }}>Pays for itself in {Math.max(1, Math.ceil(399 / savings.weekly * 7))} days</div>
+                </div>
+                <div style={{ textAlign:"right" }}>
+                  <div style={{ color:"#4ade80", fontSize:20, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>{Math.round((savings.monthly / 399) * 10) / 10}x</div>
+                  <div style={{ color:"#22c55e", fontSize:10 }}>ROI</div>
+                </div>
+              </div>
+            </div>
+
+            <button onClick={() => window.__moeNavigate("/app")}
+              style={{ width:"100%", background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:12, padding:"16px", color:"#080c14", fontSize:17, fontWeight:700, cursor:"pointer", letterSpacing:"-0.3px", marginBottom:10 }}>
+              Start Your Free 14-Day Trial
+            </button>
+            <p style={{ color:"#334155", fontSize:12 }}>No credit card required. Set up in 2 minutes.</p>
+
+            <button onClick={() => { setShowResults(false); setStep(1); setAnswers({ bizType:"", vendors:"", weeklySpend:"", teamSize:"", overOrder:"", emergencyRuns:"", trackWaste:"" }); }}
+              style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:12, marginTop:12 }}>
+              Retake quiz
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
