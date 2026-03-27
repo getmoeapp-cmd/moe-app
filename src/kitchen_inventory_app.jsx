@@ -536,7 +536,9 @@ function MoeApp() {
   const currentPlan = PLANS[subscription?.plan] || PLANS.pro;
 
   // ── Onboarding for new owners ─────────────────────────────────────────
-  const needsOnboarding = dataLoaded && user.role === "owner" && onboarding !== "done" && !isDemo;
+  // Skip onboarding for existing accounts that already have vendors/inventory set up
+  const hasExistingData = vendors.some(v => v.name && v.name.trim()) && inventory.length > 0;
+  const needsOnboarding = dataLoaded && user.role === "owner" && onboarding !== "done" && !isDemo && !hasExistingData;
   if (needsOnboarding) {
     return <OnboardingFlow
       user={user} step={onboarding || 1}
