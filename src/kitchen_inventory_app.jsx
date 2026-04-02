@@ -1109,25 +1109,39 @@ function InventoryView({ inventory, stock, updateStock, vendors }) {
 // ORDERS VIEW — Shows vendors ordering today, submit per vendor
 // ═══════════════════════════════════════════════════════════════════════════════
 function OrdersView({ inventory, stock, vendors, submitOrder, user }) {
-  const todayVendors = vendorsOrderingToday(vendors);
+  const [selectedDay, setSelectedDay] = useState(getToday());
+  const dayVendors = vendors.filter(v => v.orderDays && v.orderDays.includes(selectedDay));
   const allItems = flatItems(inventory);
   const weekNum = getWeekNumber();
   const [submitted, setSubmitted] = useState({});
+  const isPast = selectedDay !== getToday();
 
   const handleSubmit = (vendorName) => {
     submitOrder(vendorName);
     setSubmitted(prev => ({ ...prev, [vendorName]: true }));
   };
 
-  if (todayVendors.length === 0) {
-    // Show which vendors order on which days
-    return (
-      <div>
-        <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 4px" }}>Orders</h2>
-        <p style={{ color:"#475569", fontSize:13, margin:"0 0 24px" }}>No vendors ordering today ({DAYS[getToday()]})</p>
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
+        <div>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 4px" }}>Orders — {DAYS[selectedDay]}, Week {weekNum}</h2>
+          <p style={{ color:"#475569", fontSize:13, margin:0 }}>{dayVendors.length} vendor{dayVendors.length!==1?"s":""} {isPast ? "scheduled for " + DAYS[selectedDay] : "ordering today"}</p>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>Day:</span>
+          <select value={selectedDay} onChange={e => { setSelectedDay(parseInt(e.target.value)); setSubmitted({}); }}
+            style={{ background:"#0f1a2e", border:`1px solid ${isPast ? "#d97706" : "#1e2d45"}`, borderRadius:8, padding:"7px 12px", color: isPast ? "#fbbf24" : "#f1f5f9", fontSize:13, outline:"none", cursor:"pointer", fontFamily:"'DM Mono',monospace" }}>
+            {DAYS.map((day, i) => <option key={i} value={i}>{day}{i === getToday() ? " (today)" : ""}</option>)}
+          </select>
+          {isPast && <span style={{ background:"#422006", border:"1px solid #d97706", borderRadius:6, padding:"3px 8px", color:"#fbbf24", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>Past day</span>}
+        </div>
+      </div>
+
+      {dayVendors.length === 0 ? (
         <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:32, textAlign:"center" }}>
           <div style={{ fontSize:40, marginBottom:16 }}>📅</div>
-          <div style={{ color:"#94a3b8", fontSize:15, fontWeight:600, marginBottom:16 }}>Upcoming order days</div>
+          <div style={{ color:"#94a3b8", fontSize:15, fontWeight:600, marginBottom:16 }}>No vendors order on {DAYS[selectedDay]}</div>
           <div style={{ display:"flex", flexDirection:"column", gap:8, maxWidth:300, margin:"0 auto" }}>
             {vendors.map(v => (
               <div key={v.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#080c14", borderRadius:8, padding:"10px 14px" }}>
@@ -1137,16 +1151,9 @@ function OrdersView({ inventory, stock, vendors, submitOrder, user }) {
             ))}
           </div>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 4px" }}>Orders — {DAYS[getToday()]}, Week {weekNum}</h2>
-      <p style={{ color:"#475569", fontSize:13, margin:"0 0 20px" }}>{todayVendors.length} vendor{todayVendors.length!==1?"s":""} ordering today</p>
-
-      {todayVendors.map(vendor => {
+      ) : (
+        <>
+      {dayVendors.map(vendor => {
         const vendorItems = allItems.filter(i => (i.vendor || "").trim().toLowerCase() === vendor.name.toLowerCase());
         const orderLines = vendorItems.map(item => ({
           ...item,
@@ -1224,6 +1231,8 @@ function OrdersView({ inventory, stock, vendors, submitOrder, user }) {
           </div>
         );
       })}
+        </>
+      )}
     </div>
   );
 }
