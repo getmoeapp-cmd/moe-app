@@ -604,6 +604,7 @@ function MoeApp() {
             ...(canAccess("import") ? [{ key:"import", label:"Import Items", icon:"📤", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
             ...(user.role === "owner" ? [
               { key:"subscription", label:"Subscription", icon:"💳", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
+              { key:"admin", label:"Admin", icon:"👑", desc:"Signups & accounts" },
             ] : []),
           ].map(item => {
             const isActive = view === item.key;
@@ -681,6 +682,7 @@ function MoeApp() {
         {view === "backend" && canAccess("backend") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
         {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} allFeatures={ALL_FEATURES} />}
         {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
+        {view === "admin" && user.role === "owner" && <AdminView />}
       </main>
     </div>
   );
@@ -4455,6 +4457,104 @@ function SavingsQuiz() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADMIN VIEW — See all signups and accounts
+// ═══════════════════════════════════════════════════════════════════════════════
+function AdminView() {
+  const [accounts, setAccounts] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      await loadSupabase();
+      try {
+        const data = await sbGet("__moe_accounts__", "accounts");
+        setAccounts(data || {});
+      } catch (err) {
+        console.error("Failed to load accounts:", err);
+        setAccounts({});
+      }
+      setLoading(false);
+    };
+    fetchAccounts();
+  }, []);
+
+  if (loading) return (
+    <div style={{ textAlign: "center", padding: 40 }}>
+      <div style={{ color: "#475569", fontSize: 14, fontFamily: "'DM Mono',monospace" }}>Loading accounts...</div>
+    </div>
+  );
+
+  const acctList = Object.entries(accounts || {}).map(([email, data]) => ({ email, ...data }));
+  const sorted = acctList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+  return (
+    <div>
+      <h2 style={{ color: "#f1f5f9", fontSize: 18, fontWeight: 700, margin: "0 0 4px" }}>👑 Admin — Accounts</h2>
+      <p style={{ color: "#475569", fontSize: 13, margin: "0 0 20px" }}>All registered accounts on MOE</p>
+
+      {/* Stats */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+        <div style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 10, padding: "14px 20px", flex: "1 1 120px" }}>
+          <div style={{ color: "#38bdf8", fontSize: 28, fontWeight: 700, fontFamily: "'Space Mono',monospace" }}>{acctList.length}</div>
+          <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'DM Mono',monospace" }}>Total Signups</div>
+        </div>
+        <div style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 10, padding: "14px 20px", flex: "1 1 120px" }}>
+          <div style={{ color: "#34d399", fontSize: 28, fontWeight: 700, fontFamily: "'Space Mono',monospace" }}>
+            {acctList.filter(a => { const d = new Date(a.createdAt || 0); const now = new Date(); return (now - d) < 7 * 24 * 60 * 60 * 1000; }).length}
+          </div>
+          <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'DM Mono',monospace" }}>This Week</div>
+        </div>
+        <div style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 10, padding: "14px 20px", flex: "1 1 120px" }}>
+          <div style={{ color: "#fbbf24", fontSize: 28, fontWeight: 700, fontFamily: "'Space Mono',monospace" }}>
+            {acctList.filter(a => { const d = new Date(a.createdAt || 0); const now = new Date(); return (now - d) < 30 * 24 * 60 * 60 * 1000; }).length}
+          </div>
+          <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'DM Mono',monospace" }}>This Month</div>
+        </div>
+      </div>
+
+      {/* Accounts list */}
+      {sorted.length === 0 ? (
+        <div style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 12, padding: 32, textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>📭</div>
+          <div style={{ color: "#94a3b8", fontSize: 14, fontWeight: 600 }}>No signups yet</div>
+          <div style={{ color: "#475569", fontSize: 12, marginTop: 4 }}>New accounts will appear here when people register</div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {sorted.map((acct, idx) => {
+            const created = acct.createdAt ? new Date(acct.createdAt) : null;
+            const daysAgo = created ? Math.floor((new Date() - created) / (24 * 60 * 60 * 1000)) : null;
+            return (
+              <div key={acct.email} style={{ background: idx % 2 === 0 ? "#0f1a2e" : "#0a1220", border: "1px solid #1e2d45", borderRadius: 10, padding: "14px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ color: "#f1f5f9", fontSize: 14, fontWeight: 600 }}>
+                      {acct.ownerFirst} {acct.ownerLast}
+                      {daysAgo !== null && daysAgo <= 1 && <span style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 4, padding: "1px 6px", color: "#4ade80", fontSize: 9, fontWeight: 700, marginLeft: 8, fontFamily: "'DM Mono',monospace" }}>NEW</span>}
+                    </div>
+                    <div style={{ color: "#64748b", fontSize: 12, fontFamily: "'DM Mono',monospace", marginTop: 2 }}>{acct.email}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    {acct.business && <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 600 }}>{acct.business.name}</div>}
+                    {acct.business?.type && <div style={{ color: "#475569", fontSize: 10, fontFamily: "'DM Mono',monospace", textTransform: "uppercase" }}>{acct.business.type}</div>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+                  {acct.phone && <span style={{ color: "#475569", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>📱 {acct.phone}</span>}
+                  {acct.business?.phone && <span style={{ color: "#475569", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>☎ {acct.business.phone}</span>}
+                  {acct.business?.city && <span style={{ color: "#475569", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>📍 {acct.business.city}, {acct.business.state}</span>}
+                  {created && <span style={{ color: "#475569", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>🗓 {created.toLocaleDateString()}{daysAgo !== null ? ` (${daysAgo === 0 ? "today" : daysAgo === 1 ? "yesterday" : daysAgo + "d ago"})` : ""}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
