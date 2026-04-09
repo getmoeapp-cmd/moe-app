@@ -3812,8 +3812,27 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
       });
       const data = await response.json();
       if (data.error) { setParseError(data.error.message || "API error"); setParsing(false); return; }
-      const text = (data.content || []).map(c => c.text || "").join("");
-      const items = JSON.parse(text.replace(/```json|```/g, "").trim());
+      const rawText = (data.content || []).map(c => c.text || "").join("");
+      // Clean up the response — remove markdown fences, fix common JSON issues
+      let cleaned = rawText.replace(/```json|```/g, "").trim();
+      // Fix trailing commas before ] or }
+      cleaned = cleaned.replace(/,\s*([}\]])/g, "$1");
+      // Fix unescaped quotes inside strings by finding the array
+      const arrayStart = cleaned.indexOf("[");
+      const arrayEnd = cleaned.lastIndexOf("]");
+      if (arrayStart !== -1 && arrayEnd !== -1) cleaned = cleaned.slice(arrayStart, arrayEnd + 1);
+      let items;
+      try {
+        items = JSON.parse(cleaned);
+      } catch (e1) {
+        // Fallback: try to extract individual objects with regex
+        try {
+          const matches = cleaned.match(/\{[^{}]+\}/g);
+          if (matches) {
+            items = matches.map(m => { try { return JSON.parse(m); } catch { return null; } }).filter(Boolean);
+          }
+        } catch (e2) { /* give up */ }
+      }
       if (Array.isArray(items) && items.length > 0) {
         setParsedPrices(items.map((p, i) => ({
           id: Date.now() + i,
