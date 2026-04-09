@@ -265,6 +265,27 @@ const getStatus = (item, stock) => {
 // Get all items flat with their section + vendor info
 const flatItems = (inventory) => inventory.flatMap(s => s.items.map(i => ({ ...i, section: s.section })));
 
+// Compress image to max 1200px wide, JPEG quality 0.7 — keeps it under Vercel's 4.5MB limit
+const compressImage = (file, maxWidth = 1200, quality = 0.7) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let w = img.width, h = img.height;
+      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+      resolve(dataUrl.split(",")[1]); // return base64 only
+    };
+    img.onerror = () => reject(new Error("Image load failed"));
+    img.src = e.target.result;
+  };
+  reader.onerror = () => reject(new Error("File read failed"));
+  reader.readAsDataURL(file);
+});
+
 // Get vendors ordering today
 const vendorsOrderingToday = (vendors) => {
   const today = getToday();
@@ -456,6 +477,37 @@ function MoeApp() {
     save("stock", newStock);
 
     showFlash(`✓ ${vendorName} order submitted`);
+  };
+
+  // ── Log a quick/emergency order (off-schedule purchase) ──────────────
+  const logQuickOrder = (items, source, note) => {
+    if (!items || items.length === 0) return;
+    const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2,"0")}`;
+    const sourceName = source || "Quick Order";
+
+    // 1. Log usage
+    const newUsageLog = { ...usageLog };
+    if (!newUsageLog[wk]) newUsageLog[wk] = {};
+    if (!newUsageLog[wk][sourceName]) newUsageLog[wk][sourceName] = {};
+    items.forEach(line => {
+      const existing = newUsageLog[wk][sourceName][line.id];
+      newUsageLog[wk][sourceName][line.id] = {
+        name: line.name, qty: (existing?.qty || 0) + line.qty, order_unit: line.order_unit,
+        stockBefore: stock[line.id] ?? 0, maxStock: 0,
+      };
+    });
+    setUsageLog(newUsageLog); save("usageLog", newUsageLog);
+
+    // 2. Save to history
+    const entry = {
+      id: `qord_${Date.now()}`, vendor: sourceName,
+      weekNumber: getWeekNumber(), year: new Date().getFullYear(),
+      day: DAYS[getToday()], date: new Date().toISOString(),
+      lines: items, totalItems: items.length,
+      orderedBy: user?.name || "", type: "quick", note: note || "",
+    };
+    setHistory(prev => { const h = [entry, ...prev]; save("history", h); return h; });
+    showFlash(`✓ Quick order logged — ${items.length} item${items.length !== 1 ? "s" : ""}`);
   };
 
   // ── Save vendors ─────────────────────────────────────────────────────────
@@ -674,7 +726,7 @@ function MoeApp() {
       <main style={{ maxWidth:1200, margin:"0 auto", padding:"16px", boxSizing:"border-box", width:"100%" }}>
         {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
         {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
-        {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} user={user} />}
+        {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} user={user} />}
         {view === "history" && canAccess("history") && <HistoryView history={history} user={user} />}
         {view === "insights" && canAccess("insights") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
         {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} />}
@@ -1108,13 +1160,36 @@ function InventoryView({ inventory, stock, updateStock, vendors }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ORDERS VIEW — Shows vendors ordering today, submit per vendor
 // ═══════════════════════════════════════════════════════════════════════════════
-function OrdersView({ inventory, stock, vendors, submitOrder, user }) {
+function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, user }) {
   const [selectedDay, setSelectedDay] = useState(getToday());
   const dayVendors = vendors.filter(v => v.orderDays && v.orderDays.includes(selectedDay));
   const allItems = flatItems(inventory);
   const weekNum = getWeekNumber();
   const [submitted, setSubmitted] = useState({});
   const isPast = selectedDay !== getToday();
+
+  // Quick order state
+  const [showQuick, setShowQuick] = useState(false);
+  const [quickSearch, setQuickSearch] = useState("");
+  const [quickItems, setQuickItems] = useState([]); // [{ id, name, qty, order_unit, vendor, section }]
+  const [quickSource, setQuickSource] = useState("");
+  const [quickNote, setQuickNote] = useState("");
+
+  const addQuickItem = (item) => {
+    if (quickItems.find(q => q.id === item.id)) return;
+    setQuickItems(prev => [...prev, { id: item.id, name: item.name, qty: 1, order_unit: item.order_unit, vendor: item.vendor || "", section: item.section || "" }]);
+    setQuickSearch("");
+  };
+  const updateQuickQty = (id, qty) => setQuickItems(prev => prev.map(q => q.id === id ? { ...q, qty: Math.max(1, qty) } : q));
+  const removeQuickItem = (id) => setQuickItems(prev => prev.filter(q => q.id !== id));
+
+  const submitQuickOrder = () => {
+    if (quickItems.length === 0) return;
+    logQuickOrder(quickItems, quickSource || "Quick Order", quickNote);
+    setQuickItems([]); setQuickSource(""); setQuickNote(""); setShowQuick(false);
+  };
+
+  const filteredItems = quickSearch.trim() ? allItems.filter(i => i.name.toLowerCase().includes(quickSearch.toLowerCase())).slice(0, 8) : [];
 
   const handleSubmit = (vendorName) => {
     submitOrder(vendorName);
@@ -1135,8 +1210,84 @@ function OrdersView({ inventory, stock, vendors, submitOrder, user }) {
             {DAYS.map((day, i) => <option key={i} value={i}>{day}{i === getToday() ? " (today)" : ""}</option>)}
           </select>
           {isPast && <span style={{ background:"#422006", border:"1px solid #d97706", borderRadius:6, padding:"3px 8px", color:"#fbbf24", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>Past day</span>}
+          <button onClick={() => setShowQuick(!showQuick)}
+            style={{ background: showQuick ? "#38bdf8" : "transparent", border: `1px solid ${showQuick ? "#38bdf8" : "#1e2d45"}`, borderRadius: 8, padding: "7px 14px", color: showQuick ? "#060a12" : "#38bdf8", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            ⚡ Quick Order
+          </button>
         </div>
       </div>
+
+      {/* ── QUICK ORDER PANEL ── */}
+      {showQuick && (
+        <div style={{ background: "#0f1a2e", border: "1px solid #1e3a5f", borderRadius: 12, padding: 20, marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <div>
+              <div style={{ color: "#38bdf8", fontSize: 14, fontWeight: 700 }}>⚡ Quick Order</div>
+              <div style={{ color: "#475569", fontSize: 11, marginTop: 2 }}>Log an emergency run or off-schedule purchase</div>
+            </div>
+          </div>
+
+          {/* Source */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+            <div>
+              <label style={{ display: "block", color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'DM Mono',monospace" }}>Where from</label>
+              <input value={quickSource} onChange={e => setQuickSource(e.target.value)} placeholder="e.g. Restaurant Depot"
+                style={{ width: "100%", background: "#080c14", border: "1px solid #1e2d45", borderRadius: 8, padding: "8px 12px", color: "#f1f5f9", fontSize: 16, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'DM Mono',monospace" }}>Note (optional)</label>
+              <input value={quickNote} onChange={e => setQuickNote(e.target.value)} placeholder="e.g. ran out mid-week"
+                style={{ width: "100%", background: "#080c14", border: "1px solid #1e2d45", borderRadius: 8, padding: "8px 12px", color: "#f1f5f9", fontSize: 16, outline: "none", boxSizing: "border-box" }} />
+            </div>
+          </div>
+
+          {/* Search items */}
+          <div style={{ position: "relative", marginBottom: 14 }}>
+            <label style={{ display: "block", color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'DM Mono',monospace" }}>Add items</label>
+            <input value={quickSearch} onChange={e => setQuickSearch(e.target.value)} placeholder="Search your items..."
+              style={{ width: "100%", background: "#080c14", border: "1px solid #1e2d45", borderRadius: 8, padding: "8px 12px", color: "#f1f5f9", fontSize: 16, outline: "none", boxSizing: "border-box" }} />
+            {filteredItems.length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#0c1220", border: "1px solid #1e2d45", borderRadius: "0 0 8px 8px", zIndex: 10, maxHeight: 200, overflowY: "auto" }}>
+                {filteredItems.map(item => (
+                  <button key={item.id} onClick={() => addQuickItem(item)}
+                    style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "transparent", border: "none", borderBottom: "1px solid #080c14", color: "#e2e8f0", fontSize: 13, cursor: "pointer", textAlign: "left" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#1e2d45"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <span>{item.name}</span>
+                    <span style={{ color: "#475569", fontSize: 10, fontFamily: "'DM Mono',monospace" }}>{item.order_unit} · {item.vendor}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Selected items */}
+          {quickItems.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              {quickItems.map(item => (
+                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#080c14", borderRadius: 8, marginBottom: 4 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
+                    <div style={{ color: "#475569", fontSize: 10, fontFamily: "'DM Mono',monospace" }}>{item.order_unit}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <button onClick={() => updateQuickQty(item.id, item.qty - 1)} style={{ width: 28, height: 28, background: "#1e2d45", border: "none", borderRadius: 6, color: "#94a3b8", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                    <input type="number" value={item.qty} min={1} onChange={e => updateQuickQty(item.id, parseInt(e.target.value) || 1)}
+                      style={{ width: 40, background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 6, padding: "4px", color: "#f1f5f9", fontSize: 16, fontWeight: 700, textAlign: "center", outline: "none", fontFamily: "'DM Mono',monospace" }} />
+                    <button onClick={() => updateQuickQty(item.id, item.qty + 1)} style={{ width: 28, height: 28, background: "#1e2d45", border: "none", borderRadius: 6, color: "#94a3b8", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                  </div>
+                  <button onClick={() => removeQuickItem(item.id)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 14, padding: 4 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Submit */}
+          <button onClick={submitQuickOrder} disabled={quickItems.length === 0}
+            style={{ width: "100%", background: quickItems.length > 0 ? "#38bdf8" : "#1e2d45", border: "none", borderRadius: 8, padding: "12px", color: quickItems.length > 0 ? "#060a12" : "#475569", fontSize: 14, fontWeight: 700, cursor: quickItems.length > 0 ? "pointer" : "default" }}>
+            Log {quickItems.length > 0 ? `${quickItems.length} Item${quickItems.length !== 1 ? "s" : ""}` : "Quick Order"}
+          </button>
+        </div>
+      )}
 
       {dayVendors.length === 0 ? (
         <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:32, textAlign:"center" }}>
@@ -1273,8 +1424,8 @@ function HistoryView({ history, user }) {
                 <div key={entry.id} style={{ background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none" }}>
                   <div style={{ padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                     <div>
-                      <div style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>📦 {entry.vendor}</div>
-                      <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{entry.day} · {fmtDate(entry.date)} · {entry.totalItems} item{entry.totalItems!==1?"s":""}</div>
+                      <div style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{entry.type === "quick" ? "⚡" : "📦"} {entry.vendor}{entry.type === "quick" ? <span style={{ background:"rgba(56,189,248,0.15)", border:"1px solid rgba(56,189,248,0.3)", borderRadius:4, padding:"1px 6px", color:"#38bdf8", fontSize:9, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>QUICK ORDER</span> : ""}</div>
+                      <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{entry.day} · {fmtDate(entry.date)} · {entry.totalItems} item{entry.totalItems!==1?"s":""}{entry.note ? ` · ${entry.note}` : ""}</div>
                     </div>
                     <button onClick={() => printVendorPDF({ vendorName: entry.vendor, items: entry.lines, weekNum: entry.weekNumber, date: fmtDate(entry.date), businessName: user.business?.name || "", orderedBy: entry.orderedBy || user.name })}
                       style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"5px 12px", color:"#94a3b8", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}
@@ -2493,17 +2644,12 @@ function ImportView({ inventory, saveInventory, vendors }) {
 
     try {
       // Convert to base64
-      const base64 = await new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result.split(",")[1]);
-        r.onerror = () => reject(new Error("Read failed"));
-        r.readAsDataURL(file);
-      });
+      const base64 = await compressImage(file);
 
       const mediaType = file.type || "image/jpeg";
 
       // Call Claude API to extract items from the invoice/photo
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/claude", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3639,15 +3785,13 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }
     if (!file) return;
     setParseError(""); setParsedPrices([]); setParsing(true);
     try {
-      const base64 = await new Promise((resolve, reject) => {
-        const r = new FileReader(); r.onload = () => resolve(r.result.split(",")[1]); r.onerror = () => reject(new Error("Read failed")); r.readAsDataURL(file);
-      });
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const base64 = await compressImage(file);
+      const response = await fetch("/api/claude", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514", max_tokens: 4000,
           messages: [{ role: "user", content: [
-            { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
             { type: "text", text: `Extract ALL item prices from this invoice/receipt. Return ONLY a JSON array, no markdown. Each object: {"name": "item name", "price": number, "unit": "Case/Each/Lbs/etc"}. Extract every line item you can see with its price. Return ONLY the JSON array.` }
           ]}]
         })
@@ -4028,15 +4172,13 @@ function OnboardingFlow({ user, step, vendors, saveVendors, inventory, saveInven
     if (!file) return;
     setImporting(true); setImportResult(null);
     try {
-      const base64 = await new Promise((resolve, reject) => {
-        const r = new FileReader(); r.onload = () => resolve(r.result.split(",")[1]); r.onerror = () => reject(new Error("Read failed")); r.readAsDataURL(file);
-      });
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const base64 = await compressImage(file);
+      const response = await fetch("/api/claude", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514", max_tokens: 4000,
           messages: [{ role: "user", content: [
-            { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
             { type: "text", text: `Extract ALL inventory items from this image. Return ONLY a JSON array, no markdown. Each object: {"name":"item name","order_unit":"Case","vendor":"","max_stock":10,"reorder":2,"upu":1,"section":""}` }
           ]}]
         })
