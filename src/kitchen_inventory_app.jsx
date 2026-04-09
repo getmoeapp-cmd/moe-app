@@ -3832,12 +3832,13 @@ My inventory items are: ${itemNames}
 For each line item on the invoice, return:
 - "invoice_name": the exact name as printed on the invoice
 - "matched_name": the closest matching item from my inventory list above (or "" if no match)
-- "price": the unit price as a number (not the extended/total price)
+- "price": the TOTAL line price (the extended amount for all units on that line, not the per-unit price)
 - "unit": the unit of measure (Case, Each, Lb, Gal, etc.)
 - "qty": quantity ordered (number)
 
 Return ONLY a JSON array, no markdown, no explanation. Example:
-[{"invoice_name":"MOZZ WM 5LB","matched_name":"Mozzarella","price":4.29,"unit":"Lb","qty":5}]` }
+[{"invoice_name":"MOZZ WM 5LB","matched_name":"Mozzarella","price":85.16,"unit":"Case","qty":4}]
+In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total, not $21.29.` }
           ]}]
         })
       });
@@ -3912,7 +3913,16 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
 
   // ── Match parsed prices to inventory items ──────────────────────────────
   const matchItem = (parsedIdx, itemId) => {
-    setParsedPrices(prev => prev.map((p, i) => i === parsedIdx ? { ...p, matched: itemId } : p));
+    const item = allItems.find(i => i.id === itemId);
+    const upu = item?.upu || 1;
+    setParsedPrices(prev => prev.map((p, i) => {
+      if (i !== parsedIdx) return p;
+      // If UPU > 1 and the qty hasn't already been expanded, multiply it
+      const currentQty = p.qty || 1;
+      const alreadyExpanded = p._upu && p._upu > 1;
+      const newQty = (!alreadyExpanded && upu > 1) ? currentQty * upu : currentQty;
+      return { ...p, matched: itemId, qty: newQty, _upu: upu };
+    }));
   };
 
   const saveParsedPrices = (source) => {
@@ -3920,8 +3930,10 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
     parsedPrices.forEach(p => {
       if (!p.matched || isNaN(p.price)) return;
       const item = allItems.find(i => i.id === p.matched);
+      const qty = Math.max(1, p.qty || 1);
+      const perUnit = p.price / qty;
       if (!newPH[p.matched]) newPH[p.matched] = [];
-      newPH[p.matched].push({ price: p.price, date: new Date().toISOString(), weekKey: wk, vendor: item?.vendor || "", source });
+      newPH[p.matched].push({ price: Math.round(perUnit * 100) / 100, date: new Date().toISOString(), weekKey: wk, vendor: item?.vendor || "", source });
     });
     savePriceHistory(newPH);
     setParsedPrices([]);
@@ -3929,33 +3941,42 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
   };
 
   // ── Auto-match by name similarity ───────────────────────────────────────
+  const autoMatchItem = (p) => {
+    let match = null;
+    // 1. Try AI's suggested match first
+    if (p.suggestedMatch) {
+      match = allItems.find(i => i.name.toLowerCase() === p.suggestedMatch.toLowerCase());
+      if (!match) match = allItems.find(i => i.name.toLowerCase().includes(p.suggestedMatch.toLowerCase()) || p.suggestedMatch.toLowerCase().includes(i.name.toLowerCase()));
+    }
+    // 2. Exact name match
+    if (!match) {
+      const lower = (p.name || "").toLowerCase().replace(/[^a-z0-9 ]/g, "");
+      match = allItems.find(i => i.name.toLowerCase() === lower);
+      // 3. Fuzzy — check if key words overlap
+      if (!match) {
+        const words = lower.split(/\s+/).filter(w => w.length > 2);
+        let bestMatch = null, bestScore = 0;
+        allItems.forEach(item => {
+          const iWords = item.name.toLowerCase().replace(/[^a-z0-9 ]/g, "").split(/\s+/).filter(w => w.length > 2);
+          const overlap = words.filter(w => iWords.some(iw => iw.includes(w) || w.includes(iw))).length;
+          const score = overlap / Math.max(words.length, iWords.length, 1);
+          if (score > bestScore && score >= 0.4) { bestScore = score; bestMatch = item; }
+        });
+        match = bestMatch;
+      }
+    }
+    if (!match) return p;
+    // Auto-expand qty by UPU if item has units-per-package > 1
+    // e.g. Frank's Red Hot: invoice says 1 Case, UPU=4 → qty becomes 4 so price tracks per gallon
+    const upu = match.upu || 1;
+    const invoiceQty = p.qty || 1;
+    const expandedQty = invoiceQty * upu;
+    return { ...p, matched: match.id, qty: expandedQty, _upu: upu };
+  };
+
   React.useEffect(() => {
     if (parsedPrices.length === 0) return;
-    setParsedPrices(prev => prev.map(p => {
-      if (p.matched) return p;
-      // 1. Try AI's suggested match first
-      if (p.suggestedMatch) {
-        const aiMatch = allItems.find(i => i.name.toLowerCase() === p.suggestedMatch.toLowerCase());
-        if (aiMatch) return { ...p, matched: aiMatch.id };
-        // Partial match on AI suggestion
-        const aiPartial = allItems.find(i => i.name.toLowerCase().includes(p.suggestedMatch.toLowerCase()) || p.suggestedMatch.toLowerCase().includes(i.name.toLowerCase()));
-        if (aiPartial) return { ...p, matched: aiPartial.id };
-      }
-      // 2. Exact name match
-      const lower = (p.name || "").toLowerCase().replace(/[^a-z0-9 ]/g, "");
-      const exact = allItems.find(i => i.name.toLowerCase() === lower);
-      if (exact) return { ...p, matched: exact.id };
-      // 3. Fuzzy — check if key words overlap
-      const words = lower.split(/\s+/).filter(w => w.length > 2);
-      let bestMatch = null, bestScore = 0;
-      allItems.forEach(item => {
-        const iWords = item.name.toLowerCase().replace(/[^a-z0-9 ]/g, "").split(/\s+/).filter(w => w.length > 2);
-        const overlap = words.filter(w => iWords.some(iw => iw.includes(w) || w.includes(iw))).length;
-        const score = overlap / Math.max(words.length, iWords.length, 1);
-        if (score > bestScore && score >= 0.4) { bestScore = score; bestMatch = item; }
-      });
-      return bestMatch ? { ...p, matched: bestMatch.id } : p;
-    }));
+    setParsedPrices(prev => prev.map(p => p.matched ? p : autoMatchItem(p)));
   }, [parsedPrices.length]);
 
   // ── Build dashboard data ────────────────────────────────────────────────
@@ -4202,8 +4223,9 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
           {/* Header row */}
           <div style={{ display:"flex", gap:8, padding:"8px 16px", background:"#080c14", borderRadius:"12px 12px 0 0", border:"1px solid #1e2d45", borderBottom:"none" }}>
             <span style={{ flex:1, minWidth:120, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>Invoice Item</span>
-            <span style={{ width:80, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", textAlign:"right" }}>Price</span>
+            <span style={{ width:80, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", textAlign:"right" }}>Total $</span>
             <span style={{ width:50, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", textAlign:"center" }}>Qty</span>
+            <span style={{ width:70, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", textAlign:"right" }}>Per Unit</span>
             <span style={{ width:60, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>Unit</span>
             <span style={{ minWidth:140, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>Match To</span>
             <span style={{ width:28 }} />
@@ -4213,6 +4235,7 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
               const matchedItem = p.matched ? allItems.find(i => i.id === p.matched) : null;
               const updateField = (field, val) => setParsedPrices(prev => prev.map((pp, i) => i === idx ? { ...pp, [field]: val } : pp));
               const removeRow = () => setParsedPrices(prev => prev.filter((_, i) => i !== idx));
+              const perUnit = (p.qty && p.qty > 0) ? (p.price / p.qty) : p.price;
               return (
                 <div key={p.id} style={{ padding:"8px 16px", display:"flex", alignItems:"center", gap:8, background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none" }}>
                   {/* Editable name */}
@@ -4222,10 +4245,10 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
                       onFocus={e => e.currentTarget.style.borderColor="#1e2d45"}
                       onBlur={e => e.currentTarget.style.borderColor="transparent"} />
                   </div>
-                  {/* Editable price */}
+                  {/* Editable total price */}
                   <div style={{ width:80 }}>
                     <input type="number" value={p.price} step="0.01" onChange={e => updateField("price", parseFloat(e.target.value) || 0)}
-                      style={{ width:"100%", background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#4ade80", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"right", outline:"none", boxSizing:"border-box" }}
+                      style={{ width:"100%", background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#f1f5f9", fontSize:13, fontWeight:600, fontFamily:"'DM Mono',monospace", textAlign:"right", outline:"none", boxSizing:"border-box" }}
                       onFocus={e => e.currentTarget.style.borderColor="#1e2d45"}
                       onBlur={e => e.currentTarget.style.borderColor="transparent"} />
                   </div>
@@ -4235,6 +4258,11 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
                       style={{ width:"100%", background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#94a3b8", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"center", outline:"none", boxSizing:"border-box" }}
                       onFocus={e => e.currentTarget.style.borderColor="#1e2d45"}
                       onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                  </div>
+                  {/* Per unit — calculated, not editable */}
+                  <div style={{ width:70, textAlign:"right" }}>
+                    <span style={{ color:"#4ade80", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>${perUnit.toFixed(2)}</span>
+                    {p._upu > 1 && <div style={{ color:"#475569", fontSize:8, fontFamily:"'DM Mono',monospace" }}>{p._upu}/pkg</div>}
                   </div>
                   {/* Editable unit */}
                   <div style={{ width:60 }}>
