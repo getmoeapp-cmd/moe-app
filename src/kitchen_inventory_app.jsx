@@ -4190,7 +4190,7 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12, flexWrap:"wrap", gap:10 }}>
             <div>
               <div style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{parsedPrices.length} prices extracted</div>
-              <div style={{ color:"#475569", fontSize:12 }}>{parsedPrices.filter(p => p.matched).length} matched to inventory items — click to fix unmatched</div>
+              <div style={{ color:"#475569", fontSize:12 }}>{parsedPrices.filter(p => p.matched).length} matched · Click any field to edit · ✕ to remove</div>
             </div>
             <div style={{ display:"flex", gap:8 }}>
               <button onClick={() => { setParsedPrices([]); setMode("dashboard"); }} style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 14px", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>Cancel</button>
@@ -4199,25 +4199,62 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
               </button>
             </div>
           </div>
-          <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden", maxHeight:500, overflowY:"auto" }}>
+          {/* Header row */}
+          <div style={{ display:"flex", gap:8, padding:"8px 16px", background:"#080c14", borderRadius:"12px 12px 0 0", border:"1px solid #1e2d45", borderBottom:"none" }}>
+            <span style={{ flex:1, minWidth:120, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>Invoice Item</span>
+            <span style={{ width:80, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", textAlign:"right" }}>Price</span>
+            <span style={{ width:50, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", textAlign:"center" }}>Qty</span>
+            <span style={{ width:60, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>Unit</span>
+            <span style={{ minWidth:140, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>Match To</span>
+            <span style={{ width:28 }} />
+          </div>
+          <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden", maxHeight:500, overflowY:"auto" }}>
             {parsedPrices.map((p, idx) => {
               const matchedItem = p.matched ? allItems.find(i => i.id === p.matched) : null;
+              const updateField = (field, val) => setParsedPrices(prev => prev.map((pp, i) => i === idx ? { ...pp, [field]: val } : pp));
+              const removeRow = () => setParsedPrices(prev => prev.filter((_, i) => i !== idx));
               return (
-                <div key={p.id} style={{ padding:"10px 16px", display:"flex", alignItems:"center", gap:12, background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none", flexWrap:"wrap" }}>
-                  <div style={{ flex:1, minWidth:160 }}>
-                    <div style={{ color:"#f1f5f9", fontSize:13 }}>{p.name}</div>
-                    <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{p.unit || "—"}</div>
+                <div key={p.id} style={{ padding:"8px 16px", display:"flex", alignItems:"center", gap:8, background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none" }}>
+                  {/* Editable name */}
+                  <div style={{ flex:1, minWidth:120 }}>
+                    <input value={p.name} onChange={e => updateField("name", e.target.value)}
+                      style={{ width:"100%", background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#f1f5f9", fontSize:12, outline:"none", boxSizing:"border-box" }}
+                      onFocus={e => e.currentTarget.style.borderColor="#1e2d45"}
+                      onBlur={e => e.currentTarget.style.borderColor="transparent"} />
                   </div>
-                  <span style={{ color:"#4ade80", fontSize:15, fontFamily:"'DM Mono',monospace", fontWeight:700, minWidth:70, textAlign:"right" }}>${Number(p.price).toFixed(2)}</span>
-                  {matchedItem ? (
-                    <span style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:6, padding:"3px 10px", color:"#4ade80", fontSize:11, fontFamily:"'DM Mono',monospace" }}>✓ {matchedItem.name}</span>
-                  ) : (
-                    <select onChange={e => { if (e.target.value) matchItem(idx, parseInt(e.target.value)); }}
-                      style={{ background:"#080c14", border:"1px solid #7f1d1d", borderRadius:6, padding:"4px 8px", color:"#fca5a5", fontSize:11, outline:"none", cursor:"pointer", maxWidth:160 }}>
+                  {/* Editable price */}
+                  <div style={{ width:80 }}>
+                    <input type="number" value={p.price} step="0.01" onChange={e => updateField("price", parseFloat(e.target.value) || 0)}
+                      style={{ width:"100%", background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#4ade80", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"right", outline:"none", boxSizing:"border-box" }}
+                      onFocus={e => e.currentTarget.style.borderColor="#1e2d45"}
+                      onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                  </div>
+                  {/* Editable qty */}
+                  <div style={{ width:50 }}>
+                    <input type="number" value={p.qty || 1} min={1} onChange={e => updateField("qty", parseInt(e.target.value) || 1)}
+                      style={{ width:"100%", background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#94a3b8", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"center", outline:"none", boxSizing:"border-box" }}
+                      onFocus={e => e.currentTarget.style.borderColor="#1e2d45"}
+                      onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                  </div>
+                  {/* Editable unit */}
+                  <div style={{ width:60 }}>
+                    <input value={p.unit || ""} onChange={e => updateField("unit", e.target.value)} placeholder="—"
+                      style={{ width:"100%", background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", outline:"none", boxSizing:"border-box" }}
+                      onFocus={e => e.currentTarget.style.borderColor="#1e2d45"}
+                      onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                  </div>
+                  {/* Match dropdown */}
+                  <div style={{ minWidth:140 }}>
+                    <select value={p.matched || ""} onChange={e => { if (e.target.value) matchItem(idx, parseInt(e.target.value)); else updateField("matched", null); }}
+                      style={{ width:"100%", background:"#080c14", border:`1px solid ${matchedItem ? "#16a34a" : "#7f1d1d"}`, borderRadius:6, padding:"4px 6px", color:matchedItem ? "#4ade80" : "#fca5a5", fontSize:11, outline:"none", cursor:"pointer" }}>
                       <option value="">Match to item...</option>
                       {allItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                     </select>
-                  )}
+                  </div>
+                  {/* Delete row */}
+                  <button onClick={removeRow} style={{ width:28, background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:14, padding:0, flexShrink:0 }}
+                    onMouseEnter={e => e.currentTarget.style.color="#ef4444"}
+                    onMouseLeave={e => e.currentTarget.style.color="#475569"}>✕</button>
                 </div>
               );
             })}
