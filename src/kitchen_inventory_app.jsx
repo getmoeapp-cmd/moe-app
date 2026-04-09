@@ -266,24 +266,55 @@ const getStatus = (item, stock) => {
 const flatItems = (inventory) => inventory.flatMap(s => s.items.map(i => ({ ...i, section: s.section })));
 
 // Compress image to max 1200px wide, JPEG quality 0.7 — keeps it under Vercel's 4.5MB limit
-const compressImage = (file, maxWidth = 1200, quality = 0.7) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const img = new Image();
-    img.onload = () => {
+const compressImage = (file, maxWidth = 1200, quality = 0.7) => new Promise(async (resolve, reject) => {
+  try {
+    // Handle PDFs — render first page to image using PDF.js
+    if (file.type === "application/pdf") {
+      // Load PDF.js from CDN if not loaded
+      if (!window.pdfjsLib) {
+        await new Promise((res, rej) => {
+          const s = document.createElement("script");
+          s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+          s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(); };
+          s.onerror = () => rej(new Error("Failed to load PDF viewer"));
+          document.head.appendChild(s);
+        });
+      }
+      const arrayBuf = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuf }).promise;
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 2 }); // 2x for clarity
       const canvas = document.createElement("canvas");
-      let w = img.width, h = img.height;
+      canvas.width = viewport.width; canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      // Compress the rendered page
+      let w = canvas.width, h = canvas.height;
       if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-      const dataUrl = canvas.toDataURL("image/jpeg", quality);
-      resolve(dataUrl.split(",")[1]); // return base64 only
+      const outCanvas = document.createElement("canvas");
+      outCanvas.width = w; outCanvas.height = h;
+      outCanvas.getContext("2d").drawImage(canvas, 0, 0, w, h);
+      resolve(outCanvas.toDataURL("image/jpeg", quality).split(",")[1]);
+      return;
+    }
+
+    // Handle images
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let w = img.width, h = img.height;
+        if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality).split(",")[1]);
+      };
+      img.onerror = () => reject(new Error("Image load failed"));
+      img.src = e.target.result;
     };
-    img.onerror = () => reject(new Error("Image load failed"));
-    img.src = e.target.result;
-  };
-  reader.onerror = () => reject(new Error("File read failed"));
-  reader.readAsDataURL(file);
+    reader.onerror = () => reject(new Error("File read failed"));
+    reader.readAsDataURL(file);
+  } catch (err) { reject(err); }
 });
 
 // Get vendors ordering today
@@ -2780,7 +2811,7 @@ Be thorough — extract every single item you can see. If quantities are shown, 
             onMouseEnter={e => { e.currentTarget.style.borderColor = "#e2e8f0"; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = "#1e2d45"; }}>
             <div style={{ fontSize:40, marginBottom:12 }}>📸</div>
-            <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:700, marginBottom:6 }}>Photo of Invoice</div>
+            <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:700, marginBottom:6 }}>Photo or PDF of Invoice</div>
             <div style={{ color:"#475569", fontSize:12 }}>Take a photo or upload an image — AI will extract the items</div>
           </button>
         </div>
@@ -2824,10 +2855,10 @@ French Fries, Case, , 12, 3, Freezer`}
         <div style={{ marginBottom:20 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
             <button onClick={reset} style={{ background:"none", border:"1px solid #1e2d45", borderRadius:6, color:"#94a3b8", padding:"4px 10px", cursor:"pointer", fontSize:12 }}>← Back</button>
-            <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:600 }}>Photo of Invoice / Order Sheet</span>
+            <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:600 }}>Photo or PDF of Invoice / Order Sheet</span>
           </div>
           <div style={{ background:"#0f1a2e", border:"2px dashed #1e2d45", borderRadius:16, padding:"40px 24px", textAlign:"center" }}>
-            <input ref={photoRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} style={{ display:"none" }} />
+            <input ref={photoRef} type="file" accept="image/*,application/pdf" onChange={handlePhotoUpload} style={{ display:"none" }} />
             <div style={{ fontSize:36, marginBottom:12 }}>📸</div>
             <button onClick={() => photoRef.current?.click()}
               style={{ background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:"10px 24px", color:"#080c14", fontSize:14, fontWeight:700, cursor:"pointer", marginBottom:12 }}>
@@ -4134,10 +4165,10 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
             <div style={{ background:"#0f1a2e", border:"2px dashed #1e2d45", borderRadius:16, padding:"32px 20px", textAlign:"center", cursor:"pointer" }}
               onClick={() => photoRef.current?.click()}
               onMouseEnter={e => e.currentTarget.style.borderColor="#e2e8f0"} onMouseLeave={e => e.currentTarget.style.borderColor="#1e2d45"}>
-              <input ref={photoRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} style={{ display:"none" }} />
+              <input ref={photoRef} type="file" accept="image/*,application/pdf" onChange={handlePhotoUpload} style={{ display:"none" }} />
               <div style={{ fontSize:32, marginBottom:8 }}>📸</div>
-              <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600, marginBottom:4 }}>Photo of Invoice</div>
-              <div style={{ color:"#475569", fontSize:12 }}>AI extracts item prices</div>
+              <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600, marginBottom:4 }}>Photo or PDF of Invoice</div>
+              <div style={{ color:"#475569", fontSize:12 }}>AI extracts item prices from photos & PDFs</div>
             </div>
             <div style={{ background:"#0f1a2e", border:"2px dashed #1e2d45", borderRadius:16, padding:"32px 20px", textAlign:"center", cursor:"pointer" }}
               onClick={() => fileRef.current?.click()}
@@ -4397,9 +4428,9 @@ function OnboardingFlow({ user, step, vendors, saveVendors, inventory, saveInven
                 <button onClick={() => photoRef.current?.click()}
                   style={{ background:"#0f1a2e", border:"2px dashed #1e2d45", borderRadius:14, padding:"28px 20px", cursor:"pointer", textAlign:"center" }}
                   onMouseEnter={e => e.currentTarget.style.borderColor="#e2e8f0"} onMouseLeave={e => e.currentTarget.style.borderColor="#1e2d45"}>
-                  <input ref={photoRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoImport} style={{ display:"none" }} />
+                  <input ref={photoRef} type="file" accept="image/*,application/pdf" onChange={handlePhotoImport} style={{ display:"none" }} />
                   <div style={{ fontSize:32, marginBottom:8 }}>📸</div>
-                  <div style={{ color:"#f1f5f9", fontSize:15, fontWeight:600, marginBottom:4 }}>Take a Photo of an Invoice</div>
+                  <div style={{ color:"#f1f5f9", fontSize:15, fontWeight:600, marginBottom:4 }}>Upload Invoice Photo or PDF</div>
                   <div style={{ color:"#475569", fontSize:12 }}>AI will extract all items automatically</div>
                 </button>
                 {importing && (
