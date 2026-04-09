@@ -3786,21 +3786,45 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }
     setParseError(""); setParsedPrices([]); setParsing(true);
     try {
       const base64 = await compressImage(file);
+      // Build a list of inventory item names so Claude can match against them
+      const itemNames = allItems.map(i => i.name).join(", ");
       const response = await fetch("/api/claude", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514", max_tokens: 4000,
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
-            { type: "text", text: `Extract ALL item prices from this invoice/receipt. Return ONLY a JSON array, no markdown. Each object: {"name": "item name", "price": number, "unit": "Case/Each/Lbs/etc"}. Extract every line item you can see with its price. Return ONLY the JSON array.` }
+            { type: "text", text: `Extract ALL item prices from this invoice/receipt image.
+
+My inventory items are: ${itemNames}
+
+For each line item on the invoice, return:
+- "invoice_name": the exact name as printed on the invoice
+- "matched_name": the closest matching item from my inventory list above (or "" if no match)
+- "price": the unit price as a number (not the extended/total price)
+- "unit": the unit of measure (Case, Each, Lb, Gal, etc.)
+- "qty": quantity ordered (number)
+
+Return ONLY a JSON array, no markdown, no explanation. Example:
+[{"invoice_name":"MOZZ WM 5LB","matched_name":"Mozzarella","price":4.29,"unit":"Lb","qty":5}]` }
           ]}]
         })
       });
       const data = await response.json();
+      if (data.error) { setParseError(data.error.message || "API error"); setParsing(false); return; }
       const text = (data.content || []).map(c => c.text || "").join("");
       const items = JSON.parse(text.replace(/```json|```/g, "").trim());
-      if (Array.isArray(items) && items.length > 0) setParsedPrices(items.map((p, i) => ({ ...p, id: Date.now() + i, matched: null })));
-      else setParseError("No prices found in image.");
+      if (Array.isArray(items) && items.length > 0) {
+        setParsedPrices(items.map((p, i) => ({
+          id: Date.now() + i,
+          name: p.invoice_name || p.name || "",
+          price: typeof p.price === "number" ? p.price : parseFloat(p.price) || 0,
+          unit: p.unit || "",
+          qty: p.qty || 1,
+          matched: null,
+          suggestedMatch: p.matched_name || "",
+        })));
+      } else setParseError("No prices found in image.");
     } catch (err) { setParseError("Failed to process: " + err.message); }
     setParsing(false);
   };
@@ -3859,9 +3883,28 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }
     if (parsedPrices.length === 0) return;
     setParsedPrices(prev => prev.map(p => {
       if (p.matched) return p;
-      const lower = p.name.toLowerCase();
-      const match = allItems.find(i => i.name.toLowerCase() === lower) || allItems.find(i => lower.includes(i.name.toLowerCase()) || i.name.toLowerCase().includes(lower));
-      return match ? { ...p, matched: match.id } : p;
+      // 1. Try AI's suggested match first
+      if (p.suggestedMatch) {
+        const aiMatch = allItems.find(i => i.name.toLowerCase() === p.suggestedMatch.toLowerCase());
+        if (aiMatch) return { ...p, matched: aiMatch.id };
+        // Partial match on AI suggestion
+        const aiPartial = allItems.find(i => i.name.toLowerCase().includes(p.suggestedMatch.toLowerCase()) || p.suggestedMatch.toLowerCase().includes(i.name.toLowerCase()));
+        if (aiPartial) return { ...p, matched: aiPartial.id };
+      }
+      // 2. Exact name match
+      const lower = (p.name || "").toLowerCase().replace(/[^a-z0-9 ]/g, "");
+      const exact = allItems.find(i => i.name.toLowerCase() === lower);
+      if (exact) return { ...p, matched: exact.id };
+      // 3. Fuzzy — check if key words overlap
+      const words = lower.split(/\s+/).filter(w => w.length > 2);
+      let bestMatch = null, bestScore = 0;
+      allItems.forEach(item => {
+        const iWords = item.name.toLowerCase().replace(/[^a-z0-9 ]/g, "").split(/\s+/).filter(w => w.length > 2);
+        const overlap = words.filter(w => iWords.some(iw => iw.includes(w) || w.includes(iw))).length;
+        const score = overlap / Math.max(words.length, iWords.length, 1);
+        if (score > bestScore && score >= 0.4) { bestScore = score; bestMatch = item; }
+      });
+      return bestMatch ? { ...p, matched: bestMatch.id } : p;
     }));
   }, [parsedPrices.length]);
 
