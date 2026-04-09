@@ -4220,72 +4220,68 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
               </button>
             </div>
           </div>
-          {/* Header row */}
-          <div style={{ display:"flex", gap:8, padding:"8px 16px", background:"#080c14", borderRadius:"12px 12px 0 0", border:"1px solid #1e2d45", borderBottom:"none" }}>
-            <span style={{ flex:1, minWidth:120, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>Invoice Item</span>
-            <span style={{ width:80, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", textAlign:"right" }}>Total $</span>
-            <span style={{ width:50, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", textAlign:"center" }}>Qty</span>
-            <span style={{ width:70, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", textAlign:"right" }}>Per Unit</span>
-            <span style={{ width:60, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>Unit</span>
-            <span style={{ minWidth:140, color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>Match To</span>
-            <span style={{ width:28 }} />
-          </div>
-          <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden", maxHeight:500, overflowY:"auto" }}>
-            {parsedPrices.map((p, idx) => {
-              const matchedItem = p.matched ? allItems.find(i => i.id === p.matched) : null;
-              const updateField = (field, val) => setParsedPrices(prev => prev.map((pp, i) => i === idx ? { ...pp, [field]: val } : pp));
-              const removeRow = () => setParsedPrices(prev => prev.filter((_, i) => i !== idx));
-              const perUnit = (p.qty && p.qty > 0) ? (p.price / p.qty) : p.price;
-              return (
-                <div key={p.id} style={{ padding:"8px 16px", display:"flex", alignItems:"center", gap:8, background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none" }}>
-                  {/* Editable name */}
-                  <div style={{ flex:1, minWidth:120 }}>
-                    <input value={p.name} onChange={e => updateField("name", e.target.value)}
-                      style={{ width:"100%", background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#f1f5f9", fontSize:12, outline:"none", boxSizing:"border-box" }}
-                      onFocus={e => e.currentTarget.style.borderColor="#1e2d45"}
-                      onBlur={e => e.currentTarget.style.borderColor="transparent"} />
-                  </div>
-                  {/* Editable total price */}
-                  <div style={{ width:80 }}>
-                    <input type="number" value={p.price} step="0.01" onChange={e => updateField("price", parseFloat(e.target.value) || 0)}
-                      style={{ width:"100%", background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#f1f5f9", fontSize:13, fontWeight:600, fontFamily:"'DM Mono',monospace", textAlign:"right", outline:"none", boxSizing:"border-box" }}
-                      onFocus={e => e.currentTarget.style.borderColor="#1e2d45"}
-                      onBlur={e => e.currentTarget.style.borderColor="transparent"} />
-                  </div>
-                  {/* Editable qty */}
-                  <div style={{ width:50 }}>
-                    <input type="number" value={p.qty || 1} min={1} onChange={e => updateField("qty", parseInt(e.target.value) || 1)}
-                      style={{ width:"100%", background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#94a3b8", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"center", outline:"none", boxSizing:"border-box" }}
-                      onFocus={e => e.currentTarget.style.borderColor="#1e2d45"}
-                      onBlur={e => e.currentTarget.style.borderColor="transparent"} />
-                  </div>
-                  {/* Per unit — calculated, not editable */}
-                  <div style={{ width:70, textAlign:"right" }}>
-                    <span style={{ color:"#4ade80", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>${perUnit.toFixed(2)}</span>
-                    {p._upu > 1 && <div style={{ color:"#475569", fontSize:8, fontFamily:"'DM Mono',monospace" }}>{p._upu}/pkg</div>}
-                  </div>
-                  {/* Editable unit */}
-                  <div style={{ width:60 }}>
-                    <input value={p.unit || ""} onChange={e => updateField("unit", e.target.value)} placeholder="—"
-                      style={{ width:"100%", background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", outline:"none", boxSizing:"border-box" }}
-                      onFocus={e => e.currentTarget.style.borderColor="#1e2d45"}
-                      onBlur={e => e.currentTarget.style.borderColor="transparent"} />
-                  </div>
-                  {/* Match dropdown */}
-                  <div style={{ minWidth:140 }}>
-                    <select value={p.matched || ""} onChange={e => { if (e.target.value) matchItem(idx, parseInt(e.target.value)); else updateField("matched", null); }}
-                      style={{ width:"100%", background:"#080c14", border:`1px solid ${matchedItem ? "#16a34a" : "#7f1d1d"}`, borderRadius:6, padding:"4px 6px", color:matchedItem ? "#4ade80" : "#fca5a5", fontSize:11, outline:"none", cursor:"pointer" }}>
-                      <option value="">Match to item...</option>
-                      {allItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                    </select>
-                  </div>
-                  {/* Delete row */}
-                  <button onClick={removeRow} style={{ width:28, background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:14, padding:0, flexShrink:0 }}
-                    onMouseEnter={e => e.currentTarget.style.color="#ef4444"}
-                    onMouseLeave={e => e.currentTarget.style.color="#475569"}>✕</button>
-                </div>
-              );
-            })}
+          <div style={{ overflowX:"auto", border:"1px solid #1e2d45", borderRadius:12 }}>
+            <table style={{ width:"100%", minWidth:700, borderCollapse:"collapse", background:"#0f1a2e" }}>
+              <thead>
+                <tr style={{ background:"#080c14" }}>
+                  <th style={{ padding:"8px 10px", textAlign:"left", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", whiteSpace:"nowrap" }}>Invoice Item</th>
+                  <th style={{ padding:"8px 10px", textAlign:"right", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:80 }}>Total $</th>
+                  <th style={{ padding:"8px 10px", textAlign:"center", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:50 }}>Qty</th>
+                  <th style={{ padding:"8px 10px", textAlign:"right", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:80 }}>Per Unit</th>
+                  <th style={{ padding:"8px 10px", textAlign:"left", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:55 }}>Unit</th>
+                  <th style={{ padding:"8px 10px", textAlign:"left", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", minWidth:140 }}>Match To</th>
+                  <th style={{ width:30 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {parsedPrices.map((p, idx) => {
+                  const matchedItem = p.matched ? allItems.find(i => i.id === p.matched) : null;
+                  const updateField = (field, val) => setParsedPrices(prev => prev.map((pp, i) => i === idx ? { ...pp, [field]: val } : pp));
+                  const removeRow = () => setParsedPrices(prev => prev.filter((_, i) => i !== idx));
+                  const perUnit = (p.qty && p.qty > 0) ? (p.price / p.qty) : p.price;
+                  const rowBg = idx % 2 === 0 ? "#0f1a2e" : "#0a1220";
+                  return (
+                    <tr key={p.id} style={{ background:rowBg, borderTop:idx>0?"1px solid #080c14":"none" }}>
+                      <td style={{ padding:"6px 10px" }}>
+                        <input value={p.name} onChange={e => updateField("name", e.target.value)}
+                          style={{ width:"100%", minWidth:120, background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#f1f5f9", fontSize:12, outline:"none", boxSizing:"border-box" }}
+                          onFocus={e => e.currentTarget.style.borderColor="#1e2d45"} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                      </td>
+                      <td style={{ padding:"6px 10px" }}>
+                        <input type="number" value={p.price} step="0.01" onChange={e => updateField("price", parseFloat(e.target.value) || 0)}
+                          style={{ width:70, background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#f1f5f9", fontSize:13, fontWeight:600, fontFamily:"'DM Mono',monospace", textAlign:"right", outline:"none", boxSizing:"border-box" }}
+                          onFocus={e => e.currentTarget.style.borderColor="#1e2d45"} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                      </td>
+                      <td style={{ padding:"6px 10px", textAlign:"center" }}>
+                        <input type="number" value={p.qty || 1} min={1} onChange={e => updateField("qty", parseInt(e.target.value) || 1)}
+                          style={{ width:40, background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 4px", color:"#94a3b8", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"center", outline:"none", boxSizing:"border-box" }}
+                          onFocus={e => e.currentTarget.style.borderColor="#1e2d45"} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                      </td>
+                      <td style={{ padding:"6px 10px", textAlign:"right" }}>
+                        <span style={{ color:"#4ade80", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>${perUnit.toFixed(2)}</span>
+                        {p._upu > 1 && <div style={{ color:"#475569", fontSize:8, fontFamily:"'DM Mono',monospace" }}>{p._upu}/pkg</div>}
+                      </td>
+                      <td style={{ padding:"6px 10px" }}>
+                        <input value={p.unit || ""} onChange={e => updateField("unit", e.target.value)} placeholder="—"
+                          style={{ width:45, background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 4px", color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", outline:"none", boxSizing:"border-box" }}
+                          onFocus={e => e.currentTarget.style.borderColor="#1e2d45"} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                      </td>
+                      <td style={{ padding:"6px 10px" }}>
+                        <select value={p.matched || ""} onChange={e => { if (e.target.value) matchItem(idx, parseInt(e.target.value)); else updateField("matched", null); }}
+                          style={{ width:"100%", minWidth:130, background:"#080c14", border:`1px solid ${matchedItem ? "#16a34a" : "#7f1d1d"}`, borderRadius:6, padding:"4px 6px", color:matchedItem ? "#4ade80" : "#fca5a5", fontSize:11, outline:"none", cursor:"pointer" }}>
+                          <option value="">Match to item...</option>
+                          {allItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                        </select>
+                      </td>
+                      <td style={{ padding:"6px 4px", textAlign:"center" }}>
+                        <button onClick={removeRow} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:14, padding:0 }}
+                          onMouseEnter={e => e.currentTarget.style.color="#ef4444"} onMouseLeave={e => e.currentTarget.style.color="#475569"}>✕</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
