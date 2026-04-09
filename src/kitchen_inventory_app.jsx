@@ -247,6 +247,25 @@ const getWeekNumber = (d = new Date()) => { const date = new Date(Date.UTC(d.get
 const getToday = () => new Date().getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
 const fmtDate = (d) => new Date(d).toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" });
 
+// Get Monday's date for a given week number and year
+const getWeekMonday = (weekNum, year = new Date().getFullYear()) => {
+  const jan1 = new Date(year, 0, 1);
+  const jan1Day = jan1.getDay() || 7; // Mon=1..Sun=7
+  const daysToFirstMonday = jan1Day <= 1 ? (1 - jan1Day) : (8 - jan1Day);
+  const firstMonday = new Date(year, 0, 1 + daysToFirstMonday);
+  const monday = new Date(firstMonday);
+  monday.setDate(monday.getDate() + (weekNum - 1) * 7);
+  // Adjust if week 1 starts before Jan 1
+  if (weekNum === 1 && jan1Day > 4) monday.setDate(monday.getDate() - 7);
+  return monday;
+};
+
+// Format: "WK15 · Mon Apr 7"
+const fmtWeekLabel = (weekNum, year) => {
+  const mon = getWeekMonday(weekNum, year);
+  return `WK${weekNum} · Mon ${mon.toLocaleDateString("en-US", { month:"short", day:"numeric" })}`;
+};
+
 // ─── STOCK HELPERS ────────────────────────────────────────────────────────────
 const calcOrderQty = (item, stock) => {
   const s = stock ?? 0;
@@ -343,7 +362,7 @@ const printVendorPDF = ({ vendorName, items, weekNum, date, businessName, ordere
     <style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}.biz{font-size:24px;font-weight:900;color:#111;margin:0 0 2px;text-transform:uppercase;letter-spacing:1px}.vendor{font-size:22px;font-weight:700;color:#444;margin:0 0 6px}.meta{color:#666;font-size:12px;margin-bottom:24px;padding-bottom:12px;border-bottom:2px solid #e5e7eb}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1e293b;color:#fff;padding:10px 14px;text-align:left}th:last-child{text-align:center}td{padding:10px 14px;border-bottom:1px solid #e5e7eb}tr:nth-child(even) td{background:#f9fafb}.footer{margin-top:20px;color:#999;font-size:11px;border-top:1px solid #e5e7eb;padding-top:12px}@media print{body{padding:16px}}</style></head><body>
     ${businessName ? `<div class="biz">${businessName}</div>` : ""}
     <div class="vendor">${vendorName}</div>
-    <h1>Order — Week ${weekNum}</h1>
+    <h1>Order — Week ${weekNum} (Mon ${(() => { const m = new Date(); const day = m.getDay(); const diff = m.getDate() - day + (day === 0 ? -6 : 1); m.setDate(diff); return m.toLocaleDateString("en-US", { month:"short", day:"numeric" }); })()})</h1>
     <div class="meta">${date} · ${totalItems} item${totalItems!==1?"s":""} · Ordered by: <strong>${orderedBy || "—"}</strong></div>
     <table><thead><tr><th>Item</th><th style="text-align:center">Location</th><th style="text-align:center">Qty to Order</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="footer">MOE · Make Ordering Easy · Printed ${new Date().toLocaleDateString()}</div>
@@ -672,7 +691,7 @@ function MoeApp() {
         </div>
         <div style={{ padding:"14px 20px", borderBottom:"1px solid #1e2d45" }}>
           <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{user.name}</div>
-          <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · WK {weekNum} · {DAYS[getToday()]}</div>
+          <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · WK{weekNum} · {DAYS[getToday()]}</div>
         </div>
         <div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
           {[
@@ -740,7 +759,7 @@ function MoeApp() {
               {todayVendors.length} due
             </button>
           )}
-          <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:5, padding:"2px 6px", color:"#a5b4fc", fontSize:10, fontFamily:"'DM Mono',monospace", fontWeight:600, whiteSpace:"nowrap" }}>WK{weekNum}</span>
+          <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:5, padding:"2px 6px", color:"#a5b4fc", fontSize:10, fontFamily:"'DM Mono',monospace", fontWeight:600, whiteSpace:"nowrap" }}>{fmtWeekLabel(weekNum)}</span>
           {flash && <span style={{ color:"#22c55e", fontSize:11, fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap" }}>{flash}</span>}
         </div>
       </header>
@@ -1231,7 +1250,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, use
     <div>
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
         <div>
-          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 4px" }}>Orders — {DAYS[selectedDay]}, Week {weekNum}</h2>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 4px" }}>Orders — {DAYS[selectedDay]}, {fmtWeekLabel(weekNum)}</h2>
           <p style={{ color:"#475569", fontSize:13, margin:0 }}>{dayVendors.length} vendor{dayVendors.length!==1?"s":""} {isPast ? "scheduled for " + DAYS[selectedDay] : "ordering today"}</p>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
@@ -1447,7 +1466,8 @@ function HistoryView({ history, user }) {
         weekKeys.map(weekKey => (
           <div key={weekKey} style={{ marginBottom:20 }}>
             <div style={{ background:"#080c14", border:"1px solid #1e2d45", borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"10px 16px" }}>
-              <span style={{ color:"#a5b4fc", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{weekKey}</span>
+              <span style={{ color:"#a5b4fc", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{weekKey.split("-WK")[0]}-WK{weekKey.split("-WK")[1]}</span>
+              <span style={{ color:"#64748b", fontSize:12, marginLeft:8 }}>Mon {getWeekMonday(parseInt(weekKey.split("-WK")[1]), parseInt(weekKey.split("-WK")[0])).toLocaleDateString("en-US", { month:"short", day:"numeric" })}</span>
               <span style={{ color:"#475569", fontSize:12, marginLeft:10 }}>{byWeek[weekKey].length} order{byWeek[weekKey].length!==1?"s":""}</span>
             </div>
             <div style={{ border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
@@ -3783,14 +3803,20 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }
 
   // Build list of past weeks for the picker (current + past 12 weeks)
   const weekOptions = [];
+  const weekDates = {};
   for (let i = 0; i < 13; i++) {
     const d = new Date(); d.setDate(d.getDate() - (i * 7));
     const yr = d.getFullYear();
-    const jan1 = new Date(yr, 0, 1);
-    const weekNum = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
-    const key = `${yr}-WK${String(weekNum).padStart(2, "0")}`;
-    if (!weekOptions.some(w => w.key === key)) weekOptions.push({ key, label: i === 0 ? `This week (WK${weekNum})` : `WK${weekNum} — ${d.toLocaleDateString("en-US", { month:"short", day:"numeric" })}` });
+    const wkNum = getWeekNumber(d);
+    const key = `${yr}-WK${String(wkNum).padStart(2, "0")}`;
+    if (!weekOptions.some(w => w.key === key)) {
+      const mon = getWeekMonday(wkNum, yr);
+      const monStr = mon.toLocaleDateString("en-US", { month:"short", day:"numeric" });
+      weekOptions.push({ key, label: i === 0 ? `This week · Mon ${monStr}` : `WK${wkNum} · Mon ${monStr}` });
+      weekDates[key] = d.toISOString();
+    }
   }
+  const getSelectedDate = () => weekDates[selectedWeek] || new Date().toISOString();
 
   // ── Manual price entry ──────────────────────────────────────────────────
   const [manualPrices, setManualPrices] = useState({});
@@ -3798,12 +3824,14 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }
 
   const saveManualPrices = () => {
     const newPH = { ...priceHistory };
-    Object.entries(manualPrices).forEach(([id, price]) => {
-      const p = parseFloat(price);
-      if (isNaN(p) || p <= 0) return;
+    Object.entries(manualPrices).forEach(([id, entry]) => {
+      const total = parseFloat(entry.total);
+      if (isNaN(total) || total <= 0) return;
+      const qty = Math.max(1, parseInt(entry.qty) || 1);
+      const perUnit = Math.round((total / qty) * 100) / 100;
       const item = allItems.find(i => String(i.id) === String(id));
       if (!newPH[id]) newPH[id] = [];
-      newPH[id].push({ price: p, date: new Date().toISOString(), weekKey: wk, vendor: item?.vendor || "", source: "manual" });
+      newPH[id].push({ price: perUnit, date: getSelectedDate(), weekKey: wk, vendor: item?.vendor || "", source: "manual" });
     });
     savePriceHistory(newPH);
     setManualPrices({});
@@ -3933,7 +3961,7 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
       const qty = Math.max(1, p.qty || 1);
       const perUnit = p.price / qty;
       if (!newPH[p.matched]) newPH[p.matched] = [];
-      newPH[p.matched].push({ price: Math.round(perUnit * 100) / 100, date: new Date().toISOString(), weekKey: wk, vendor: item?.vendor || "", source });
+      newPH[p.matched].push({ price: Math.round(perUnit * 100) / 100, date: getSelectedDate(), weekKey: wk, vendor: item?.vendor || "", source });
     });
     savePriceHistory(newPH);
     setParsedPrices([]);
@@ -4139,34 +4167,57 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
       {mode === "enter" && (
         <div>
           <div style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
-            <span style={{ color:"#a5b4fc", fontSize:12 }}>Enter prices from your latest invoice. </span>
-            <span style={{ color:"#64748b", fontSize:12 }}>Only fill in items that have a price — skip the rest.</span>
+            <span style={{ color:"#a5b4fc", fontSize:12 }}>Enter the total price and quantity from your invoice. </span>
+            <span style={{ color:"#64748b", fontSize:12 }}>MOE calculates the per-unit price automatically.</span>
           </div>
           <div style={{ marginBottom:12 }}>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items..."
-              style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 14px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box" }} />
+              style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 14px", color:"#f1f5f9", fontSize:16, outline:"none", boxSizing:"border-box" }} />
           </div>
-          <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden", maxHeight:500, overflowY:"auto" }}>
-            <div style={{ display:"grid", gridTemplateColumns:"2fr 80px 100px", background:"#080c14", padding:"8px 16px", gap:8, position:"sticky", top:0, zIndex:2 }}>
-              {["Item", "Last Price", "New Price"].map(h => (
-                <span key={h} style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
-              ))}
-            </div>
-            {manualItems.map((item, idx) => {
-              const hist = priceHistory[item.id];
-              const lastPrice = hist?.length > 0 ? [...hist].sort((a,b) => new Date(b.date) - new Date(a.date))[0].price : null;
-              return (
-                <div key={item.id} style={{ display:"grid", gridTemplateColumns:"2fr 80px 100px", padding:"8px 16px", gap:8, alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #080c14" }}>
-                  <div>
-                    <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500 }}>{item.name}</div>
-                    <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{item.order_unit}{item.vendor ? ` · ${item.vendor}` : ""}</div>
-                  </div>
-                  <span style={{ color:"#64748b", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{lastPrice !== null ? `$${lastPrice.toFixed(2)}` : "—"}</span>
-                  <input type="number" step="0.01" min="0" value={manualPrices[item.id] || ""} onChange={e => updateManualPrice(item.id, e.target.value)}
-                    placeholder="$0.00" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"6px 8px", color:"#4ade80", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:600, outline:"none", textAlign:"right", width:"100%", boxSizing:"border-box" }} />
-                </div>
-              );
-            })}
+          <div style={{ overflowX:"auto", border:"1px solid #1e2d45", borderRadius:12 }}>
+            <table style={{ width:"100%", minWidth:600, borderCollapse:"collapse", background:"#0f1a2e" }}>
+              <thead>
+                <tr style={{ background:"#080c14", position:"sticky", top:0, zIndex:2 }}>
+                  <th style={{ padding:"8px 10px", textAlign:"left", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>Item</th>
+                  <th style={{ padding:"8px 10px", textAlign:"right", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:75 }}>Last</th>
+                  <th style={{ padding:"8px 10px", textAlign:"right", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:85 }}>Total $</th>
+                  <th style={{ padding:"8px 10px", textAlign:"center", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:50 }}>Qty</th>
+                  <th style={{ padding:"8px 10px", textAlign:"right", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:80 }}>Per Unit</th>
+                </tr>
+              </thead>
+              <tbody style={{ maxHeight:400, overflowY:"auto" }}>
+                {manualItems.map((item, idx) => {
+                  const hist = priceHistory[item.id];
+                  const lastPrice = hist?.length > 0 ? [...hist].sort((a,b) => new Date(b.date) - new Date(a.date))[0].price : null;
+                  const entry = manualPrices[item.id] || {};
+                  const total = parseFloat(entry.total) || 0;
+                  const qty = parseInt(entry.qty) || 1;
+                  const perUnit = total > 0 ? (total / qty) : 0;
+                  return (
+                    <tr key={item.id} style={{ background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #080c14" }}>
+                      <td style={{ padding:"8px 10px" }}>
+                        <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500 }}>{item.name}</div>
+                        <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{item.order_unit}{item.vendor ? ` · ${item.vendor}` : ""}{item.upu > 1 ? ` · ${item.upu}/pkg` : ""}</div>
+                      </td>
+                      <td style={{ padding:"8px 10px", textAlign:"right" }}>
+                        <span style={{ color:"#64748b", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{lastPrice !== null ? `$${lastPrice.toFixed(2)}` : "—"}</span>
+                      </td>
+                      <td style={{ padding:"8px 10px" }}>
+                        <input type="number" step="0.01" min="0" value={entry.total || ""} onChange={e => updateManualPrice(item.id, { ...entry, total: e.target.value })}
+                          placeholder="$0.00" style={{ width:75, background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"6px 8px", color:"#f1f5f9", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:600, outline:"none", textAlign:"right", boxSizing:"border-box" }} />
+                      </td>
+                      <td style={{ padding:"8px 10px", textAlign:"center" }}>
+                        <input type="number" min="1" value={entry.qty || ""} onChange={e => updateManualPrice(item.id, { ...entry, qty: e.target.value })}
+                          placeholder="1" style={{ width:40, background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"6px 4px", color:"#94a3b8", fontSize:12, fontFamily:"'DM Mono',monospace", outline:"none", textAlign:"center", boxSizing:"border-box" }} />
+                      </td>
+                      <td style={{ padding:"8px 10px", textAlign:"right" }}>
+                        {total > 0 ? <span style={{ color:"#4ade80", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>${perUnit.toFixed(2)}</span> : <span style={{ color:"#1e2d45" }}>—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
           <div style={{ marginTop:16, display:"flex", gap:10 }}>
             <button onClick={saveManualPrices}
