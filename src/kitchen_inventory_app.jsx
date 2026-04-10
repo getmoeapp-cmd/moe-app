@@ -4296,17 +4296,17 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
                       <td style={{ padding:"6px 10px" }}>
                         <input value={p.name} onChange={e => updateField("name", e.target.value)}
                           style={{ width:"100%", minWidth:120, background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#f1f5f9", fontSize:12, outline:"none", boxSizing:"border-box" }}
-                          onFocus={e => e.currentTarget.style.borderColor="#1e2d45"} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                          onFocus={e => { e.currentTarget.style.borderColor="#1e2d45"; e.target.select(); }} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
                       </td>
                       <td style={{ padding:"6px 10px" }}>
                         <input type="number" value={p.price} step="0.01" onChange={e => updateField("price", parseFloat(e.target.value) || 0)}
                           style={{ width:70, background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 6px", color:"#f1f5f9", fontSize:13, fontWeight:600, fontFamily:"'DM Mono',monospace", textAlign:"right", outline:"none", boxSizing:"border-box" }}
-                          onFocus={e => e.currentTarget.style.borderColor="#1e2d45"} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                          onFocus={e => { e.currentTarget.style.borderColor="#1e2d45"; e.target.select(); }} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
                       </td>
                       <td style={{ padding:"6px 10px", textAlign:"center" }}>
                         <input type="number" value={p.qty || 1} min={1} onChange={e => updateField("qty", parseInt(e.target.value) || 1)}
                           style={{ width:40, background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 4px", color:"#94a3b8", fontSize:12, fontFamily:"'DM Mono',monospace", textAlign:"center", outline:"none", boxSizing:"border-box" }}
-                          onFocus={e => e.currentTarget.style.borderColor="#1e2d45"} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                          onFocus={e => { e.currentTarget.style.borderColor="#1e2d45"; e.target.select(); }} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
                       </td>
                       <td style={{ padding:"6px 10px", textAlign:"right" }}>
                         <span style={{ color:"#4ade80", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>${perUnit.toFixed(2)}</span>
@@ -4315,7 +4315,7 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
                       <td style={{ padding:"6px 10px" }}>
                         <input value={p.unit || ""} onChange={e => updateField("unit", e.target.value)} placeholder="—"
                           style={{ width:45, background:"transparent", border:"1px solid transparent", borderRadius:4, padding:"4px 4px", color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", outline:"none", boxSizing:"border-box" }}
-                          onFocus={e => e.currentTarget.style.borderColor="#1e2d45"} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
+                          onFocus={e => { e.currentTarget.style.borderColor="#1e2d45"; e.target.select(); }} onBlur={e => e.currentTarget.style.borderColor="transparent"} />
                       </td>
                       <td style={{ padding:"6px 10px" }}>
                         <select value={p.matched || ""} onChange={e => { if (e.target.value) matchItem(idx, parseInt(e.target.value)); else updateField("matched", null); }}
