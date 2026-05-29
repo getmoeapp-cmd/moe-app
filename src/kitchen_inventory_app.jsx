@@ -395,6 +395,7 @@ function MoeApp() {
     manager: ["inventory", "waste", "orders", "history", "insights", "prices", "backend", "settings"],
     employee: ["inventory", "waste", "history"],
   }); // { [itemId]: [{ price, date, weekKey, vendor, source }] } // [{ id, itemId, itemName, qty, unit, reason, loggedBy, date, weekKey }]
+  const [autoSubmit, setAutoSubmit]     = useState(true); // auto-submit missed orders when a new week starts
 
   const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
 
@@ -435,11 +436,19 @@ function MoeApp() {
       const ph = await load("priceHistory", {});
       const perms = await load("permissions", null);
       const ob = await load("onboarding", null);
+      const autoSub = await load("autoSubmit", true);
+      const lastAutoWeek = await load("lastAutoWeek", null);
       setStock(st); setVendors(vd); setHistory(hi); setInventory(inv);
       setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl); setPriceHistory(ph);
       if (perms) setPermissions(perms);
       setOnboarding(ob);
+      setAutoSubmit(autoSub !== false);
       setDataLoaded(true);
+
+      // ── Auto-submit missed orders from completed weeks ──────────────────
+      if (autoSub !== false) {
+        runAutoSubmit({ vendors: vd, inventory: inv, stock: st, history: hi, usageLog: ul, lastAutoWeek });
+      }
     };
     init();
   }, [user, group]);
@@ -475,6 +484,85 @@ function MoeApp() {
     const newStock = { ...stock, [id]: isNaN(n) ? 0 : Math.max(0, n) };
     setStock(newStock);
     save("stock", newStock);
+  };
+
+  // ── Auto-submit missed orders for completed weeks ────────────────────────
+  // Runs on load. For each week between lastAutoWeek and the current week (exclusive),
+  // any vendor with an order day that week but no submitted order gets one auto-generated.
+  const runAutoSubmit = ({ vendors: vds, inventory: inv, stock: stk, history: hist, usageLog: ul, lastAutoWeek }) => {
+    const curWeek = getWeekNumber();
+    const curYear = new Date().getFullYear();
+    const curKey = `${curYear}-WK${String(curWeek).padStart(2,"0")}`;
+
+    // Only check the immediately previous week (keep it simple + safe)
+    const prevDate = new Date(); prevDate.setDate(prevDate.getDate() - 7);
+    const prevWeek = getWeekNumber(prevDate);
+    const prevYear = prevDate.getFullYear();
+    const prevKey = `${prevYear}-WK${String(prevWeek).padStart(2,"0")}`;
+
+    // If we already ran auto-submit for this transition, skip
+    if (lastAutoWeek === curKey) return;
+
+    const allItemsList = inv.flatMap(s => s.items.map(i => ({ ...i, section: s.section })));
+    const prevWeekOrders = (hist || []).filter(h => h.weekNumber === prevWeek && h.year === prevYear && h.type !== "quick");
+
+    let newUsageLog = { ...ul };
+    let newHistory = [...(hist || [])];
+    let autoCount = 0;
+
+    vds.forEach(v => {
+      if (!v.orderDays || v.orderDays.length === 0) return;
+      const hasOrder = prevWeekOrders.some(h => (h.vendor || "").toLowerCase() === v.name.toLowerCase());
+      if (hasOrder) return; // already submitted that week
+
+      // Estimate the order: use the average qty from history for each item, else par-based
+      const vendorItems = allItemsList.filter(i => (i.vendor || "").trim().toLowerCase() === v.name.toLowerCase());
+      const orderLines = vendorItems.map(item => {
+        // Average qty ordered in past weeks for this item
+        const pastQtys = [];
+        Object.values(ul).forEach(weekData => {
+          Object.values(weekData).forEach(items => {
+            if (items[item.id]) pastQtys.push(items[item.id].qty);
+          });
+        });
+        let qty;
+        if (pastQtys.length > 0) {
+          qty = Math.round(pastQtys.reduce((a,b)=>a+b,0) / pastQtys.length);
+        } else {
+          qty = calcOrderQty(item, stk[item.id] ?? 0);
+        }
+        return { id: item.id, name: item.name, section: item.section, order_unit: item.order_unit, vendor: item.vendor, qty, currentStock: stk[item.id] ?? 0 };
+      }).filter(l => l.qty > 0);
+
+      if (orderLines.length === 0) return;
+
+      // Log usage
+      if (!newUsageLog[prevKey]) newUsageLog[prevKey] = {};
+      if (!newUsageLog[prevKey][v.name]) newUsageLog[prevKey][v.name] = {};
+      orderLines.forEach(line => {
+        newUsageLog[prevKey][v.name][line.id] = {
+          name: line.name, qty: line.qty, order_unit: line.order_unit,
+          stockBefore: line.currentStock, maxStock: vendorItems.find(i => i.id === line.id)?.max_stock || 0,
+        };
+      });
+
+      // History entry
+      newHistory = [{
+        id: `auto_${Date.now()}_${v.name.replace(/\s/g,"")}`, vendor: v.name,
+        weekNumber: prevWeek, year: prevYear, day: "Auto-submitted",
+        date: getWeekMonday(prevWeek, prevYear).toISOString(),
+        lines: orderLines, totalItems: orderLines.length, orderedBy: "MOE (auto)",
+        type: "auto", note: "Auto-submitted — order was not manually placed",
+      }, ...newHistory];
+      autoCount++;
+    });
+
+    if (autoCount > 0) {
+      setUsageLog(newUsageLog); save("usageLog", newUsageLog);
+      setHistory(newHistory); save("history", newHistory);
+      showFlash(`✓ Auto-submitted ${autoCount} missed order${autoCount !== 1 ? "s" : ""} from last week`);
+    }
+    save("lastAutoWeek", curKey);
   };
 
   // ── Submit order for a vendor ────────────────────────────────────────────
@@ -714,9 +802,48 @@ function MoeApp() {
   ];
 
   return (
-    <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif", overflowX:"hidden", width:"100%", maxWidth:"100vw" }}>
+    <div style={{ minHeight:"100vh", background:"radial-gradient(1200px 600px at 50% -10%, #0d1626 0%, #080c14 55%)", fontFamily:"'DM Sans',sans-serif", overflowX:"hidden", width:"100%", maxWidth:"100vw" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      <style>{`*,*::before,*::after{box-sizing:border-box}html{width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%}body{margin:0;padding:0;width:100%;max-width:100vw;overflow-x:hidden;background:#080c14}#root{width:100%;max-width:100vw;overflow-x:hidden}input,select,textarea,button{font-size:16px}input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}input[type=number]{-moz-appearance:textfield}`}</style>
+      <style>{`
+        *,*::before,*::after{box-sizing:border-box}
+        html{width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%}
+        body{margin:0;padding:0;width:100%;max-width:100vw;overflow-x:hidden;background:#080c14;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+        #root{width:100%;max-width:100vw;overflow-x:hidden}
+        input,select,textarea,button{font-size:16px;font-family:'DM Sans',sans-serif}
+        input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+        input[type=number]{-moz-appearance:textfield}
+
+        /* Smooth interactions everywhere */
+        button{transition:transform .12s ease, filter .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;}
+        button:not(:disabled):hover{filter:brightness(1.08)}
+        button:not(:disabled):active{transform:translateY(1px) scale(0.99)}
+        input,select,textarea{transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;}
+        input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px rgba(56,189,248,0.12)}
+        a{transition:color .15s ease}
+
+        /* Custom dark scrollbars */
+        ::-webkit-scrollbar{width:10px;height:10px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:#1e2d45;border-radius:8px;border:2px solid #080c14}
+        ::-webkit-scrollbar-thumb:hover{background:#2d3f5f}
+        *{scrollbar-width:thin;scrollbar-color:#1e2d45 transparent}
+
+        /* Subtle card lift utility */
+        .moe-lift{transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease}
+        .moe-lift:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,0.35);border-color:#2d3f5f}
+
+        /* Nav item hover */
+        .moe-nav:hover{background:#0f1a2e !important}
+
+        /* Fade-in for views */
+        @keyframes moeFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+        .moe-fade{animation:moeFade .25s ease both}
+
+        /* Flash toast pop */
+        @keyframes moePop{0%{opacity:0;transform:translateY(10px) scale(0.96)}100%{opacity:1;transform:translateY(0) scale(1)}}
+      `}</style>
+
+      <MoeIcons />
 
       {/* Sidebar overlay */}
       {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200 }} />}
@@ -733,32 +860,30 @@ function MoeApp() {
         </div>
         <div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
           {[
-            ...(canAccess("inventory") ? [{ key:"inventory", label:"Inventory", icon:"📋", desc:"Count stock by location" }] : []),
-            ...(canAccess("waste") ? [{ key:"waste", label:"Waste Log", icon:"🗑️", desc:"Track what's going in the trash" }] : []),
-            ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"📦", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
-            ...(canAccess("history") ? [{ key:"history", label:"History", icon:"📚", desc:"Past orders by week" }] : []),
-            ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"📊", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-            ...(canAccess("prices") ? [{ key:"prices", label:"Price Tracker", icon:"💲", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-            ...(canAccess("backend") ? [{ key:"backend", label:"Backend", icon:"🔧", desc:"Add & edit items" }] : []),
-            ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"⚙️", desc:"Vendors & team" }] : []),
-            ...(canAccess("import") ? [{ key:"import", label:"Import Items", icon:"📤", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+            ...(canAccess("inventory") ? [{ key:"inventory", label:"Inventory", icon:"inventory", desc:"Count stock by location" }] : []),
+            ...(canAccess("waste") ? [{ key:"waste", label:"Waste Log", icon:"waste", desc:"Track what's going in the trash" }] : []),
+            ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
+            ...(canAccess("history") ? [{ key:"history", label:"History", icon:"history", desc:"Past orders by week" }] : []),
+            ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+            ...(canAccess("prices") ? [{ key:"prices", label:"Price Tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+            ...(canAccess("backend") ? [{ key:"backend", label:"Backend", icon:"backend", desc:"Add & edit items" }] : []),
+            ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Vendors & team" }] : []),
+            ...(canAccess("import") ? [{ key:"import", label:"Import Items", icon:"doc", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
             ...(user.role === "owner" ? [
-              { key:"subscription", label:"Subscription", icon:"💳", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
-              { key:"admin", label:"Admin", icon:"👑", desc:"Signups & accounts" },
+              { key:"subscription", label:"Subscription", icon:"subscription", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
+              { key:"admin", label:"Admin", icon:"admin", desc:"Signups & accounts" },
             ] : []),
           ].map(item => {
             const isActive = view === item.key;
             return (
-              <button key={item.key} onClick={() => { if (!item.locked) { setView(item.key); setSidebarOpen(false); } else { setView("subscription"); setSidebarOpen(false); } }}
-                style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#080c14":"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #e2e8f0":"3px solid transparent", opacity:item.locked?0.5:1 }}
-                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "#080c14"; }}
-                onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
-                <span style={{ fontSize:18 }}>{item.icon}</span>
+              <button key={item.key} className="moe-nav" onClick={() => { if (!item.locked) { setView(item.key); setSidebarOpen(false); } else { setView("subscription"); setSidebarOpen(false); } }}
+                style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#0f1a2e":"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #38bdf8":"3px solid transparent", opacity:item.locked?0.5:1 }}>
+                <Icon name={item.icon} size={19} color={isActive ? "#38bdf8" : "#64748b"} />
                 <div style={{ textAlign:"left", flex:1 }}>
-                  <div style={{ color:isActive?"#e2e8f0":"#94a3b8", fontSize:14, fontWeight:isActive?600:400 }}>{item.label}{item.locked ? " 🔒" : ""}</div>
+                  <div style={{ color:isActive?"#f1f5f9":"#94a3b8", fontSize:14, fontWeight:isActive?600:400, display:"flex", alignItems:"center", gap:6 }}>{item.label}{item.locked ? <Icon name="alert" size={12} color="#d97706" /> : null}</div>
                   <div style={{ color:item.locked?"#d97706":"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>
                 </div>
-                {item.badge > 0 && <span style={{ background:"#422006", color:"#fbbf24", borderRadius:10, padding:"2px 8px", fontSize:10, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
+                {item.badge > 0 && <span style={{ background:"rgba(56,189,248,0.15)", color:"#38bdf8", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
               </button>
             );
           })}
@@ -811,7 +936,7 @@ function MoeApp() {
       )}
 
       {/* Main content */}
-      <main style={{ maxWidth:1200, margin:"0 auto", padding:"16px", boxSizing:"border-box", width:"100%" }}>
+      <main key={view} className="moe-fade" style={{ maxWidth:1200, margin:"0 auto", padding:"16px", boxSizing:"border-box", width:"100%" }}>
         {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
         {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
         {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} submitOrderForWeek={submitOrderForWeek} history={history} user={user} />}
@@ -820,12 +945,45 @@ function MoeApp() {
         {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} />}
         {view === "import" && canAccess("import") && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && canAccess("backend") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
-        {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} allFeatures={ALL_FEATURES} />}
+        {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} allFeatures={ALL_FEATURES} autoSubmit={autoSubmit} setAutoSubmit={(v) => { setAutoSubmit(v); save("autoSubmit", v); }} />}
         {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
         {view === "admin" && user.role === "owner" && <AdminView />}
       </main>
     </div>
   );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ICON SYSTEM — clean SVG icons (replaces emojis), defined once as a sprite
+// ═══════════════════════════════════════════════════════════════════════════════
+function MoeIcons() {
+  return (
+    <svg width="0" height="0" style={{ position:"absolute" }} aria-hidden="true">
+      <defs>
+        <symbol id="ic-inventory" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 7l9-4 9 4-9 4-9-4zm0 0v10l9 4 9-4V7M12 11v10"/></symbol>
+        <symbol id="ic-waste" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M8 6V4h8v2m-9 0l1 14h8l1-14M10 10v6M14 10v6"/></symbol>
+        <symbol id="ic-orders" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M5 4h14l-1 16H6L5 4zm3 0V3a4 4 0 018 0v1M9 11h6"/></symbol>
+        <symbol id="ic-history" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2M3 12a9 9 0 109-9 9 9 0 00-7 3.5M3 4v3.5H6.5"/></symbol>
+        <symbol id="ic-insights" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+        <symbol id="ic-prices" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M12 2v20M17 6H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></symbol>
+        <symbol id="ic-backend" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 5h18v4H3zM3 11h18v4H3zM3 17h18v2H3z"/></symbol>
+        <symbol id="ic-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.8"/><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M19.4 13a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1V21a2 2 0 01-4 0v-.2A1.6 1.6 0 005 19.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00-1.1-2.7H1a2 2 0 010-4h.2A1.6 1.6 0 002.6 5l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V1a2 2 0 014 0v.2a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H23a2 2 0 010 4h-.2a1.6 1.6 0 00-1.4 1z" transform="scale(0.82) translate(2.6 2.6)"/></symbol>
+        <symbol id="ic-subscription" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M2 7h20v10H2zM2 10h20M6 14h4"/></symbol>
+        <symbol id="ic-admin" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 18l2-11 4 4 4-7 4 7 4-4 2 11H3z"/></symbol>
+        <symbol id="ic-bolt" viewBox="0 0 24 24"><path fill="currentColor" d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></symbol>
+        <symbol id="ic-alert" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></symbol>
+        <symbol id="ic-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" d="M20 6L9 17l-5-5"/></symbol>
+        <symbol id="ic-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M12 5v14M5 12h14"/></symbol>
+        <symbol id="ic-camera" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 8h3l2-2h8l2 2h3v12H3zM12 17a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/></symbol>
+        <symbol id="ic-doc" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M6 2h8l4 4v16H6zM14 2v4h4M9 13h6M9 17h6"/></symbol>
+      </defs>
+    </svg>
+  );
+}
+
+// Render an icon by name. <Icon name="orders" size={18} color="#38bdf8" />
+function Icon({ name, size = 18, color = "currentColor", style = {} }) {
+  return <svg width={size} height={size} style={{ display:"inline-block", verticalAlign:"middle", color, flexShrink:0, ...style }}><use href={`#ic-${name}`} /></svg>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1336,7 +1494,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
           {isPast && <span style={{ background:"#422006", border:"1px solid #d97706", borderRadius:6, padding:"3px 8px", color:"#fbbf24", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>Past day</span>}
           <button onClick={() => setShowQuick(!showQuick)}
             style={{ background: showQuick ? "#38bdf8" : "transparent", border: `1px solid ${showQuick ? "#38bdf8" : "#1e2d45"}`, borderRadius: 8, padding: "7px 14px", color: showQuick ? "#060a12" : "#38bdf8", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-            ⚡ Quick Order
+            <Icon name="bolt" size={14} color={showQuick ? "#060a12" : "#38bdf8"} style={{ marginRight:6 }} />Quick Order
           </button>
         </div>
       </div>
@@ -1345,7 +1503,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
       {missedOrders.length > 0 && (
         <div style={{ background:"rgba(251,191,36,0.08)", border:"1px solid rgba(251,191,36,0.4)", borderRadius:12, padding:"14px 16px", marginBottom:16 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-            <span style={{ fontSize:16 }}>⚠️</span>
+            <Icon name="alert" size={16} color="#fbbf24" />
             <span style={{ color:"#fbbf24", fontSize:14, fontWeight:700 }}>Possible missed orders this week</span>
           </div>
           <p style={{ color:"#94a3b8", fontSize:12.5, margin:"0 0 12px", lineHeight:1.5 }}>
@@ -1379,7 +1537,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
         <div style={{ background: "#0f1a2e", border: "1px solid #1e3a5f", borderRadius: 12, padding: 20, marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <div>
-              <div style={{ color: "#38bdf8", fontSize: 14, fontWeight: 700 }}>⚡ Quick Order</div>
+              <div style={{ color: "#38bdf8", fontSize: 14, fontWeight: 700, display:"flex", alignItems:"center", gap:6 }}><Icon name="bolt" size={15} color="#38bdf8" />Quick Order</div>
               <div style={{ color: "#475569", fontSize: 11, marginTop: 2 }}>Log an emergency run or off-schedule purchase</div>
             </div>
           </div>
@@ -1593,7 +1751,7 @@ function HistoryView({ history, user }) {
                 <div key={entry.id} style={{ background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none" }}>
                   <div style={{ padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                     <div>
-                      <div style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{entry.type === "quick" ? "⚡" : "📦"} {entry.vendor}{entry.type === "quick" ? <span style={{ background:"rgba(56,189,248,0.15)", border:"1px solid rgba(56,189,248,0.3)", borderRadius:4, padding:"1px 6px", color:"#38bdf8", fontSize:9, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>QUICK ORDER</span> : ""}</div>
+                      <div style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{entry.type === "quick" ? "⚡" : (entry.type === "auto" ? "🤖" : "📦")} {entry.vendor}{entry.type === "quick" ? <span style={{ background:"rgba(56,189,248,0.15)", border:"1px solid rgba(56,189,248,0.3)", borderRadius:4, padding:"1px 6px", color:"#38bdf8", fontSize:9, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>QUICK ORDER</span> : ""}{entry.type === "auto" ? <span style={{ background:"rgba(168,85,247,0.15)", border:"1px solid rgba(168,85,247,0.3)", borderRadius:4, padding:"1px 6px", color:"#c084fc", fontSize:9, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>AUTO</span> : ""}{entry.backfill && entry.type !== "auto" ? <span style={{ background:"rgba(251,191,36,0.15)", border:"1px solid rgba(251,191,36,0.3)", borderRadius:4, padding:"1px 6px", color:"#fbbf24", fontSize:9, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>BACKFILL</span> : ""}</div>
                       <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{entry.day} · {fmtDate(entry.date)} · {entry.totalItems} item{entry.totalItems!==1?"s":""}{entry.note ? ` · ${entry.note}` : ""}</div>
                     </div>
                     <button onClick={() => printVendorPDF({ vendorName: entry.vendor, items: entry.lines, weekNum: entry.weekNumber, date: fmtDate(entry.date), businessName: user.business?.name || "", orderedBy: entry.orderedBy || user.name })}
@@ -1616,7 +1774,7 @@ function HistoryView({ history, user }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SETTINGS VIEW — Manage vendors & their order days (owner only)
 // ═══════════════════════════════════════════════════════════════════════════════
-function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, currentPlan, isTrialing, permissions, savePermissions, userRole, allFeatures }) {
+function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, currentPlan, isTrialing, permissions, savePermissions, userRole, allFeatures, autoSubmit, setAutoSubmit }) {
   const [activeTab, setActiveTab] = useState("vendors");
   const [localVendors, setLocalVendors] = useState(vendors);
   const [dirty, setDirty] = useState(false);
@@ -1708,6 +1866,23 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
       {/* ── VENDORS TAB ── */}
       {activeTab === "vendors" && (
         <>
+          {/* Auto-submit toggle */}
+          {setAutoSubmit && (
+            <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px", marginBottom:16 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>Auto-submit missed orders</div>
+                  <div style={{ color:"#64748b", fontSize:12, marginTop:3, lineHeight:1.5 }}>
+                    If an order isn't submitted by the end of the week, MOE auto-submits it based on your typical order — so no week is ever missing from your insights.
+                  </div>
+                </div>
+                <button onClick={() => setAutoSubmit(!autoSubmit)}
+                  style={{ flexShrink:0, width:52, height:30, borderRadius:15, border:"none", cursor:"pointer", background: autoSubmit ? "#38bdf8" : "#1e2d45", position:"relative", transition:"background 0.2s" }}>
+                  <span style={{ position:"absolute", top:3, left: autoSubmit ? 25 : 3, width:24, height:24, borderRadius:"50%", background:"#fff", transition:"left 0.2s" }} />
+                </button>
+              </div>
+            </div>
+          )}
           {dirty && (
             <div style={{ marginBottom:16 }}>
               <button onClick={handleSave}
