@@ -530,10 +530,14 @@ function MoeApp() {
   };
 
   // ── Log a quick/emergency order (off-schedule purchase) ──────────────
-  const logQuickOrder = (items, source, note) => {
+  const logQuickOrder = (items, source, note, targetWeek) => {
     if (!items || items.length === 0) return;
-    const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2,"0")}`;
+    // targetWeek = { weekNum, year } or null for current week
+    const wkNum = targetWeek?.weekNum || getWeekNumber();
+    const yr = targetWeek?.year || new Date().getFullYear();
+    const wk = `${yr}-WK${String(wkNum).padStart(2,"0")}`;
     const sourceName = source || "Quick Order";
+    const isBackfill = targetWeek && (wkNum !== getWeekNumber() || yr !== new Date().getFullYear());
 
     // 1. Log usage
     const newUsageLog = { ...usageLog };
@@ -549,15 +553,49 @@ function MoeApp() {
     setUsageLog(newUsageLog); save("usageLog", newUsageLog);
 
     // 2. Save to history
+    const entryDate = isBackfill ? getWeekMonday(wkNum, yr).toISOString() : new Date().toISOString();
     const entry = {
       id: `qord_${Date.now()}`, vendor: sourceName,
-      weekNumber: getWeekNumber(), year: new Date().getFullYear(),
-      day: DAYS[getToday()], date: new Date().toISOString(),
+      weekNumber: wkNum, year: yr,
+      day: isBackfill ? "Backfilled" : DAYS[getToday()], date: entryDate,
       lines: items, totalItems: items.length,
-      orderedBy: user?.name || "", type: "quick", note: note || "",
+      orderedBy: user?.name || "", type: "quick", note: note || "", backfill: isBackfill,
     };
     setHistory(prev => { const h = [entry, ...prev]; save("history", h); return h; });
-    showFlash(`✓ Quick order logged — ${items.length} item${items.length !== 1 ? "s" : ""}`);
+    showFlash(isBackfill ? `✓ Backfilled WK${wkNum} — ${items.length} item${items.length !== 1 ? "s" : ""}` : `✓ Quick order logged — ${items.length} item${items.length !== 1 ? "s" : ""}`);
+  };
+
+  // Submit a regular vendor order to a SPECIFIC past week (backfill missed orders)
+  const submitOrderForWeek = (vendorName, wkNum, yr) => {
+    const allItemsList = flatItems(inventory);
+    const vendorItems = allItemsList.filter(i => (i.vendor || "").trim().toLowerCase() === vendorName.toLowerCase());
+    const orderLines = vendorItems.map(item => ({
+      id: item.id, name: item.name, section: item.section,
+      order_unit: item.order_unit, vendor: item.vendor,
+      qty: calcOrderQty(item, stock[item.id] ?? 0),
+      currentStock: stock[item.id] ?? 0,
+    })).filter(l => l.qty > 0);
+    if (orderLines.length === 0) { showFlash("Nothing to order — stock is above reorder points"); return; }
+
+    const wk = `${yr}-WK${String(wkNum).padStart(2,"0")}`;
+    const newUsageLog = { ...usageLog };
+    if (!newUsageLog[wk]) newUsageLog[wk] = {};
+    if (!newUsageLog[wk][vendorName]) newUsageLog[wk][vendorName] = {};
+    orderLines.forEach(line => {
+      newUsageLog[wk][vendorName][line.id] = {
+        name: line.name, qty: line.qty, order_unit: line.order_unit,
+        stockBefore: line.currentStock, maxStock: vendorItems.find(i => i.id === line.id)?.max_stock || 0,
+      };
+    });
+    setUsageLog(newUsageLog); save("usageLog", newUsageLog);
+
+    const entry = {
+      id: `ord_${Date.now()}`, vendor: vendorName, weekNumber: wkNum, year: yr,
+      day: "Backfilled", date: getWeekMonday(wkNum, yr).toISOString(),
+      lines: orderLines, totalItems: orderLines.length, orderedBy: user?.name || "", backfill: true,
+    };
+    setHistory(prev => { const h = [entry, ...prev]; save("history", h); return h; });
+    showFlash(`✓ Backfilled ${vendorName} order for WK${wkNum}`);
   };
 
   // ── Save vendors ─────────────────────────────────────────────────────────
@@ -776,7 +814,7 @@ function MoeApp() {
       <main style={{ maxWidth:1200, margin:"0 auto", padding:"16px", boxSizing:"border-box", width:"100%" }}>
         {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
         {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
-        {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} user={user} />}
+        {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} submitOrderForWeek={submitOrderForWeek} history={history} user={user} />}
         {view === "history" && canAccess("history") && <HistoryView history={history} user={user} />}
         {view === "insights" && canAccess("insights") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
         {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} />}
@@ -1210,13 +1248,31 @@ function InventoryView({ inventory, stock, updateStock, vendors }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ORDERS VIEW — Shows vendors ordering today, submit per vendor
 // ═══════════════════════════════════════════════════════════════════════════════
-function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, user }) {
+function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, submitOrderForWeek, history, user }) {
   const [selectedDay, setSelectedDay] = useState(getToday());
   const dayVendors = vendors.filter(v => v.orderDays && v.orderDays.includes(selectedDay));
   const allItems = flatItems(inventory);
   const weekNum = getWeekNumber();
+  const curYear = new Date().getFullYear();
   const [submitted, setSubmitted] = useState({});
   const isPast = selectedDay !== getToday();
+  const [backfillDone, setBackfillDone] = useState({});
+
+  // ── Detect missed orders this week ──────────────────────────────────────
+  // For each vendor, check if their order day(s) earlier this week have a submitted order
+  const today = getToday();
+  const thisWeekOrders = (history || []).filter(h => h.weekNumber === weekNum && h.year === curYear && h.type !== "quick");
+  const missedOrders = [];
+  vendors.forEach(v => {
+    if (!v.orderDays || v.orderDays.length === 0) return;
+    // order days that have already passed this week (before today)
+    const passedDays = v.orderDays.filter(d => d < today);
+    if (passedDays.length === 0) return;
+    const hasOrder = thisWeekOrders.some(h => (h.vendor || "").toLowerCase() === v.name.toLowerCase());
+    if (!hasOrder && !backfillDone[v.name]) {
+      missedOrders.push({ vendor: v.name, days: passedDays });
+    }
+  });
 
   // Quick order state
   const [showQuick, setShowQuick] = useState(false);
@@ -1224,6 +1280,19 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, use
   const [quickItems, setQuickItems] = useState([]); // [{ id, name, qty, order_unit, vendor, section }]
   const [quickSource, setQuickSource] = useState("");
   const [quickNote, setQuickNote] = useState("");
+  const [quickWeek, setQuickWeek] = useState("current"); // "current" or "YYYY-WKnn"
+
+  // Build last 8 weeks for backfill picker
+  const backfillWeeks = [];
+  for (let i = 0; i < 8; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i * 7);
+    const wn = getWeekNumber(d); const yr = d.getFullYear();
+    const key = `${yr}-WK${String(wn).padStart(2,"0")}`;
+    if (!backfillWeeks.some(w => w.key === key)) {
+      const mon = getWeekMonday(wn, yr).toLocaleDateString("en-US", { month:"short", day:"numeric" });
+      backfillWeeks.push({ key, wn, yr, label: i === 0 ? `This week · Mon ${mon}` : `WK${wn} · Mon ${mon}` });
+    }
+  }
 
   const addQuickItem = (item) => {
     if (quickItems.find(q => q.id === item.id)) return;
@@ -1235,8 +1304,13 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, use
 
   const submitQuickOrder = () => {
     if (quickItems.length === 0) return;
-    logQuickOrder(quickItems, quickSource || "Quick Order", quickNote);
-    setQuickItems([]); setQuickSource(""); setQuickNote(""); setShowQuick(false);
+    let targetWeek = null;
+    if (quickWeek !== "current") {
+      const w = backfillWeeks.find(b => b.key === quickWeek);
+      if (w) targetWeek = { weekNum: w.wn, year: w.yr };
+    }
+    logQuickOrder(quickItems, quickSource || "Quick Order", quickNote, targetWeek);
+    setQuickItems([]); setQuickSource(""); setQuickNote(""); setQuickWeek("current"); setShowQuick(false);
   };
 
   const filteredItems = quickSearch.trim() ? allItems.filter(i => i.name.toLowerCase().includes(quickSearch.toLowerCase())).slice(0, 8) : [];
@@ -1267,6 +1341,39 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, use
         </div>
       </div>
 
+      {/* ── MISSED ORDER ALERT ── */}
+      {missedOrders.length > 0 && (
+        <div style={{ background:"rgba(251,191,36,0.08)", border:"1px solid rgba(251,191,36,0.4)", borderRadius:12, padding:"14px 16px", marginBottom:16 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+            <span style={{ fontSize:16 }}>⚠️</span>
+            <span style={{ color:"#fbbf24", fontSize:14, fontWeight:700 }}>Possible missed orders this week</span>
+          </div>
+          <p style={{ color:"#94a3b8", fontSize:12.5, margin:"0 0 12px", lineHeight:1.5 }}>
+            These vendors had an order day earlier this week ({fmtWeekLabel(weekNum)}) but no order was submitted. If you ordered, backfill it so your insights stay accurate.
+          </p>
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {missedOrders.map(m => (
+              <div key={m.vendor} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, background:"#0c1220", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 14px", flexWrap:"wrap" }}>
+                <div>
+                  <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>📦 {m.vendor}</span>
+                  <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginLeft:8 }}>due {m.days.map(d => DAYS_SHORT[d]).join(", ")}</span>
+                </div>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button onClick={() => { submitOrderForWeek(m.vendor, weekNum, curYear); setBackfillDone(prev => ({ ...prev, [m.vendor]: true })); }}
+                    style={{ background:"#38bdf8", border:"none", borderRadius:7, padding:"7px 14px", color:"#060a12", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                    Backfill order
+                  </button>
+                  <button onClick={() => setBackfillDone(prev => ({ ...prev, [m.vendor]: true }))}
+                    style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:7, padding:"7px 12px", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
+                    Skip
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── QUICK ORDER PANEL ── */}
       {showQuick && (
         <div style={{ background: "#0f1a2e", border: "1px solid #1e3a5f", borderRadius: 12, padding: 20, marginBottom: 20 }}>
@@ -1289,6 +1396,17 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, use
               <input value={quickNote} onChange={e => setQuickNote(e.target.value)} placeholder="e.g. ran out mid-week"
                 style={{ width: "100%", background: "#080c14", border: "1px solid #1e2d45", borderRadius: 8, padding: "8px 12px", color: "#f1f5f9", fontSize: 16, outline: "none", boxSizing: "border-box" }} />
             </div>
+          </div>
+
+          {/* Week picker for backfilling */}
+          <div style={{ marginBottom:14 }}>
+            <label style={{ display: "block", color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'DM Mono',monospace" }}>Log to week</label>
+            <select value={quickWeek} onChange={e => setQuickWeek(e.target.value)}
+              style={{ width:"100%", background:"#080c14", border:`1px solid ${quickWeek !== "current" ? "#d97706" : "#1e2d45"}`, borderRadius:8, padding:"8px 12px", color: quickWeek !== "current" ? "#fbbf24" : "#f1f5f9", fontSize:14, outline:"none", cursor:"pointer" }}>
+              <option value="current">This week (now)</option>
+              {backfillWeeks.slice(1).map(w => <option key={w.key} value={w.key}>Backfill · {w.label}</option>)}
+            </select>
+            {quickWeek !== "current" && <div style={{ color:"#fbbf24", fontSize:11, marginTop:4 }}>⚠️ Backfilling a past week — use this for orders you forgot to submit</div>}
           </div>
 
           {/* Search items */}
