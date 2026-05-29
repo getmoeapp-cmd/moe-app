@@ -4328,6 +4328,23 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors, 
   const [manualPrices, setManualPrices] = useState({});
   const updateManualPrice = (itemId, price) => setManualPrices(prev => ({ ...prev, [itemId]: price }));
 
+  // ── Inline price edit (dashboard) ────────────────────────────────────────
+  const [editingId, setEditingId] = useState(null);
+  const [editVal, setEditVal] = useState("");
+  const startEdit = (itemId, current) => { setEditingId(itemId); setEditVal(current != null ? String(current) : ""); };
+  const saveEdit = (itemId) => {
+    const price = parseFloat(editVal);
+    if (isNaN(price) || price < 0) { setEditingId(null); return; }
+    const rounded = Math.round(price * 100) / 100;
+    const item = allItems.find(i => String(i.id) === String(itemId));
+    const newPH = { ...priceHistory };
+    if (!newPH[itemId]) newPH[itemId] = [];
+    const curWkKey = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2,"0")}`;
+    newPH[itemId] = [...newPH[itemId], { price: rounded, perUnit: rounded, qty: 1, unit: item?.order_unit || "", date: new Date().toISOString(), weekKey: curWkKey, vendor: item?.vendor || "", source: "manual" }];
+    savePriceHistory(newPH);
+    setEditingId(null); setEditVal("");
+  };
+
   const saveManualPrices = () => {
     const newPH = { ...priceHistory };
     Object.entries(manualPrices).forEach(([id, entry]) => {
@@ -4639,7 +4656,7 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
     <div>
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:12 }}>
         <div>
-          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0 }}>💲 Price Tracker</h2>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:0, display:"flex", alignItems:"center", gap:8 }}><Icon name="prices" size={20} color="#38bdf8" />Price Tracker</h2>
           <p style={{ color:"#475569", fontSize:13, margin:"4px 0 0" }}>Track vendor prices week to week — flag increases automatically</p>
         </div>
       </div>
@@ -4663,7 +4680,6 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
       <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap", alignItems:"center" }}>
         {[
           { key:"dashboard", label:"Dashboard" },
-          { key:"enter", label:"Enter Prices" },
           { key:"upload", label:"Upload Invoice" },
         ].map(tab => (
           <button key={tab.key} onClick={() => { setMode(tab.key); setParsedPrices([]); setParseError(""); }}
@@ -4683,8 +4699,8 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
         </div>
       </div>
 
-      {/* Week picker — shown when entering or uploading prices */}
-      {(mode === "enter" || mode === "upload") && (
+      {/* Week picker — shown when uploading prices */}
+      {(mode === "upload") && (
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, flexWrap:"wrap" }}>
           <span style={{ color:"#94a3b8", fontSize:12, fontWeight:600 }}>Prices for:</span>
           <select value={selectedWeek} onChange={e => setSelectedWeek(e.target.value)}
@@ -4849,104 +4865,88 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
       {/* ── DASHBOARD ── */}
       {mode === "dashboard" && (
         <>
-          {filteredTracked.length === 0 ? (
-            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:32, textAlign:"center" }}>
-              <div style={{ fontSize:36, marginBottom:12 }}>💲</div>
-              <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No prices tracked yet</div>
-              <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Enter prices manually or upload an invoice to start tracking</div>
-            </div>
-          ) : (
-            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden" }}>
-              <div style={{ display:"grid", gridTemplateColumns:"2fr 100px 100px 80px", background:"#080c14", padding:"8px 16px", gap:8 }}>
-                {["Item", "Current", "Previous", "Change"].map(h => (
-                  <span key={h} style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
-                ))}
-              </div>
-              {filteredTracked.sort((a,b) => a.name.localeCompare(b.name)).map((e, idx) => (
-                <div key={e.id} style={{ display:"grid", gridTemplateColumns:"2fr 100px 100px 80px", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #080c14" }}>
-                  <div>
-                    <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500 }}>{e.name}</div>
-                    <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{e.vendor}{e.vendor ? " · " : ""}{e.unit} · {e.totalEntries} entries</div>
-                  </div>
-                  <span style={{ color:"#f1f5f9", fontSize:14, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>${e.currentPrice.toFixed(2)}</span>
-                  <span style={{ color:"#64748b", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{e.previousPrice !== null ? `$${e.previousPrice.toFixed(2)}` : "—"}</span>
-                  {e.change != null ? (
-                    <span style={{ background:e.change > 0 ? "#450a0a" : e.change < 0 ? "#052e16" : "transparent", border:`1px solid ${e.change > 0 ? "#7f1d1d" : e.change < 0 ? "#16a34a" : "#1e2d45"}`, color:e.change > 0 ? "#fca5a5" : e.change < 0 ? "#4ade80" : "#475569", borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"center" }}>
-                      {e.change > 0 ? "+" : ""}{e.changePct}%
-                    </span>
-                  ) : <span style={{ color:"#334155", fontSize:11 }}>—</span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+          {(() => {
+            // Merge tracked + untracked items into one editable list
+            const trackedMap = {};
+            filteredTracked.forEach(e => { trackedMap[e.id] = e; });
+            const rows = allItems
+              .filter(i => (filterVendor === "ALL" || (i.vendor || "") === filterVendor) && (!search || i.name.toLowerCase().includes(search.toLowerCase())))
+              .map(item => {
+                const t = trackedMap[item.id];
+                return {
+                  id: item.id, name: item.name, vendor: item.vendor || "", unit: item.order_unit,
+                  currentPrice: t ? t.currentPrice : null,
+                  previousPrice: t ? t.previousPrice : null,
+                  change: t ? t.change : null, changePct: t ? t.changePct : null,
+                };
+              })
+              .sort((a, b) => a.name.localeCompare(b.name));
 
-      {/* ── MANUAL ENTRY ── */}
-      {mode === "enter" && (
-        <div>
-          <div style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
-            <span style={{ color:"#a5b4fc", fontSize:12 }}>Enter the total price and quantity from your invoice. </span>
-            <span style={{ color:"#64748b", fontSize:12 }}>MOE calculates the per-unit price automatically.</span>
-          </div>
-          <div style={{ marginBottom:12 }}>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items..."
-              style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 14px", color:"#f1f5f9", fontSize:16, outline:"none", boxSizing:"border-box" }} />
-          </div>
-          <div style={{ overflowX:"auto", border:"1px solid #1e2d45", borderRadius:12 }}>
-            <table style={{ width:"100%", minWidth:600, borderCollapse:"collapse", background:"#0f1a2e" }}>
-              <thead>
-                <tr style={{ background:"#080c14", position:"sticky", top:0, zIndex:2 }}>
-                  <th style={{ padding:"8px 10px", textAlign:"left", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px" }}>Item</th>
-                  <th style={{ padding:"8px 10px", textAlign:"right", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:75 }}>Last</th>
-                  <th style={{ padding:"8px 10px", textAlign:"right", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:85 }}>Total $</th>
-                  <th style={{ padding:"8px 10px", textAlign:"center", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:50 }}>Qty</th>
-                  <th style={{ padding:"8px 10px", textAlign:"right", color:"#64748b", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", width:80 }}>Per Unit</th>
-                </tr>
-              </thead>
-              <tbody style={{ maxHeight:400, overflowY:"auto" }}>
-                {manualItems.map((item, idx) => {
-                  const hist = priceHistory[item.id];
-                  const lastPrice = hist?.length > 0 ? [...hist].sort((a,b) => new Date(b.date) - new Date(a.date))[0].price : null;
-                  const entry = manualPrices[item.id] || {};
-                  const total = parseFloat(entry.total) || 0;
-                  const qty = parseInt(entry.qty) || 1;
-                  const perUnit = total > 0 ? (total / qty) : 0;
+            if (rows.length === 0) {
+              return (
+                <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:32, textAlign:"center" }}>
+                  <Icon name="prices" size={32} color="#38bdf8" style={{ marginBottom:10 }} />
+                  <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No items found</div>
+                  <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Add items in Backend, or adjust your filters</div>
+                </div>
+              );
+            }
+
+            return (
+              <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, overflow:"hidden" }}>
+                <div style={{ display:"grid", gridTemplateColumns:"2fr 110px 90px 70px", background:"#080c14", padding:"9px 16px", gap:8 }}>
+                  {["Item", "Current price", "Last", "Change"].map(h => (
+                    <span key={h} style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
+                  ))}
+                </div>
+                {rows.map((e, idx) => {
+                  const isEditing = editingId === e.id;
                   return (
-                    <tr key={item.id} style={{ background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #080c14" }}>
-                      <td style={{ padding:"8px 10px" }}>
-                        <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500 }}>{item.name}</div>
-                        <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{item.order_unit}{item.vendor ? ` · ${item.vendor}` : ""}{item.upu > 1 ? ` · ${item.upu}/pkg` : ""}</div>
-                      </td>
-                      <td style={{ padding:"8px 10px", textAlign:"right" }}>
-                        <span style={{ color:"#64748b", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{lastPrice !== null ? `$${lastPrice.toFixed(2)}` : "—"}</span>
-                      </td>
-                      <td style={{ padding:"8px 10px" }}>
-                        <input type="number" step="0.01" min="0" value={entry.total || ""} onChange={e => updateManualPrice(item.id, { ...entry, total: e.target.value })}
-                          placeholder="$0.00" style={{ width:75, background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"6px 8px", color:"#f1f5f9", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:600, outline:"none", textAlign:"right", boxSizing:"border-box" }} />
-                      </td>
-                      <td style={{ padding:"8px 10px", textAlign:"center" }}>
-                        <input type="number" min="1" value={entry.qty || ""} onChange={e => updateManualPrice(item.id, { ...entry, qty: e.target.value })}
-                          placeholder="1" style={{ width:40, background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"6px 4px", color:"#94a3b8", fontSize:12, fontFamily:"'DM Mono',monospace", outline:"none", textAlign:"center", boxSizing:"border-box" }} />
-                      </td>
-                      <td style={{ padding:"8px 10px", textAlign:"right" }}>
-                        {total > 0 ? <span style={{ color:"#4ade80", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>${perUnit.toFixed(2)}</span> : <span style={{ color:"#1e2d45" }}>—</span>}
-                      </td>
-                    </tr>
+                    <div key={e.id} style={{ display:"grid", gridTemplateColumns:"2fr 110px 90px 70px", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#0c1220":"#0a1018", borderTop:"1px solid #080c14" }}>
+                      <div style={{ minWidth:0 }}>
+                        <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.name}</div>
+                        <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{e.vendor}{e.vendor ? " · " : ""}{e.unit}</div>
+                      </div>
+                      {/* Current price — editable */}
+                      {isEditing ? (
+                        <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                          <span style={{ color:"#64748b", fontSize:13 }}>$</span>
+                          <input type="number" inputMode="decimal" autoFocus value={editVal}
+                            onFocus={ev => ev.target.select()}
+                            onChange={ev => setEditVal(ev.target.value)}
+                            onKeyDown={ev => { if (ev.key === "Enter") saveEdit(e.id); if (ev.key === "Escape") setEditingId(null); }}
+                            onBlur={() => saveEdit(e.id)}
+                            style={{ width:62, background:"#080c14", border:"1px solid #38bdf8", borderRadius:6, padding:"5px 8px", color:"#f1f5f9", fontSize:14, fontFamily:"'DM Mono',monospace", fontWeight:600, outline:"none", textAlign:"right" }} />
+                        </div>
+                      ) : (
+                        <button onClick={() => startEdit(e.id, e.currentPrice)}
+                          style={{ display:"flex", alignItems:"center", gap:6, background:"transparent", border:"none", cursor:"pointer", padding:0, textAlign:"left" }}>
+                          {e.currentPrice != null ? (
+                            <span style={{ color:"#f1f5f9", fontSize:14, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>${e.currentPrice.toFixed(2)}</span>
+                          ) : (
+                            <span style={{ color:"#475569", fontSize:12, fontStyle:"italic" }}>set price</span>
+                          )}
+                          <Icon name="prices" size={12} color="#334155" />
+                        </button>
+                      )}
+                      {/* Last price */}
+                      <span style={{ color:"#64748b", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{e.previousPrice != null ? `$${e.previousPrice.toFixed(2)}` : "—"}</span>
+                      {/* Change */}
+                      {e.change != null ? (
+                        <span style={{ background:e.change > 0 ? "#450a0a" : e.change < 0 ? "#052e16" : "transparent", border:`1px solid ${e.change > 0 ? "#7f1d1d" : e.change < 0 ? "#16a34a" : "#1e2d45"}`, color:e.change > 0 ? "#fca5a5" : e.change < 0 ? "#4ade80" : "#475569", borderRadius:6, padding:"3px 6px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"center" }}>
+                          {e.change > 0 ? "+" : ""}{e.changePct}%
+                        </span>
+                      ) : <span style={{ color:"#334155", fontSize:11 }}>—</span>}
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ marginTop:16, display:"flex", gap:10 }}>
-            <button onClick={saveManualPrices}
-              style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:"10px 24px", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
-              Save Prices
-            </button>
-            <button onClick={() => { setMode("dashboard"); setManualPrices({}); }}
-              style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 16px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>Cancel</button>
-          </div>
-        </div>
+              </div>
+            );
+          })()}
+          <p style={{ color:"#475569", fontSize:12, margin:"12px 2px 0", lineHeight:1.5 }}>
+            Tap any price to edit it. Set it once — it carries over to every order. The price check after each order is where you confirm or adjust what changed.
+          </p>
+        </>
       )}
 
       {/* ── UPLOAD INVOICE ── */}
