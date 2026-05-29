@@ -1728,54 +1728,211 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
 // HISTORY VIEW — Past orders organized by week number, PDF per vendor
 // ═══════════════════════════════════════════════════════════════════════════════
 function HistoryView({ history, user }) {
-  // Group by year-week
-  const byWeek = {};
-  history.forEach(entry => {
-    const key = `${entry.year}-WK${String(entry.weekNumber).padStart(2,"0")}`;
-    if (!byWeek[key]) byWeek[key] = [];
-    byWeek[key].push(entry);
+  const [search, setSearch] = useState("");
+  const [filterVendor, setFilterVendor] = useState("ALL");
+  const [filterType, setFilterType] = useState("ALL");
+  const [expandedOrders, setExpandedOrders] = useState({});
+  const [collapsedMonths, setCollapsedMonths] = useState({});
+
+  const typeOf = (e) => e.type === "quick" ? "quick" : e.type === "auto" ? "auto" : e.backfill ? "backfill" : "regular";
+  const typeMeta = {
+    quick:    { label:"QUICK",    icon:"bolt",    color:"#38bdf8", bg:"rgba(56,189,248,0.15)" },
+    auto:     { label:"AUTO",     icon:"check",   color:"#c084fc", bg:"rgba(168,85,247,0.15)" },
+    backfill: { label:"BACKFILL", icon:"history", color:"#fbbf24", bg:"rgba(251,191,36,0.15)" },
+    regular:  { label:"",         icon:"orders",  color:"#94a3b8", bg:"transparent" },
+  };
+
+  // All vendors that appear in history
+  const allVendors = [...new Set(history.map(e => e.vendor))].sort();
+
+  // Apply filters
+  const filtered = history.filter(e => {
+    if (filterVendor !== "ALL" && e.vendor !== filterVendor) return false;
+    if (filterType !== "ALL" && typeOf(e) !== filterType) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const inVendor = (e.vendor || "").toLowerCase().includes(q);
+      const inItems = (e.lines || []).some(l => (l.name || "").toLowerCase().includes(q));
+      const inNote = (e.note || "").toLowerCase().includes(q);
+      if (!inVendor && !inItems && !inNote) return false;
+    }
+    return true;
   });
-  const weekKeys = Object.keys(byWeek).sort().reverse();
+
+  // Stats
+  const now = new Date();
+  const thisMonthCount = history.filter(e => { const d = new Date(e.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).length;
+  const vendorCounts = {};
+  history.forEach(e => { if (typeOf(e) !== "auto") vendorCounts[e.vendor] = (vendorCounts[e.vendor] || 0) + 1; });
+  const topVendor = Object.entries(vendorCounts).sort((a,b) => b[1]-a[1])[0];
+
+  // Group filtered → month → week
+  const byMonth = {};
+  filtered.forEach(entry => {
+    const d = new Date(entry.date);
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth()).padStart(2,"0")}`;
+    const monthLabel = d.toLocaleDateString("en-US", { month:"long", year:"numeric" });
+    const weekKey = `${entry.year}-WK${String(entry.weekNumber).padStart(2,"0")}`;
+    if (!byMonth[monthKey]) byMonth[monthKey] = { label: monthLabel, weeks: {} };
+    if (!byMonth[monthKey].weeks[weekKey]) byMonth[monthKey].weeks[weekKey] = [];
+    byMonth[monthKey].weeks[weekKey].push(entry);
+  });
+  const monthKeys = Object.keys(byMonth).sort().reverse();
 
   return (
     <div>
-      <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 4px" }}>Order History</h2>
-      <p style={{ color:"#475569", fontSize:13, margin:"0 0 20px" }}>Past orders by week</p>
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
+        <div>
+          <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:"0 0 4px" }}>Order History</h2>
+          <p style={{ color:"#64748b", fontSize:13, margin:0 }}>{history.length} order{history.length!==1?"s":""} across all time</p>
+        </div>
+      </div>
 
-      {weekKeys.length === 0 ? (
-        <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:48, textAlign:"center" }}>
-          <div style={{ fontSize:36, marginBottom:12 }}>📚</div>
+      {/* Stats */}
+      {history.length > 0 && (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:10, marginBottom:16 }}>
+          <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"12px 16px" }}>
+            <div style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{history.length}</div>
+            <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Total orders</div>
+          </div>
+          <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"12px 16px" }}>
+            <div style={{ color:"#38bdf8", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{thisMonthCount}</div>
+            <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>This month</div>
+          </div>
+          {topVendor && (
+            <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"12px 16px" }}>
+              <div style={{ color:"#e2e8f0", fontSize:15, fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{topVendor[0]}</div>
+              <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Most ordered ({topVendor[1]}×)</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Search + filters */}
+      {history.length > 0 && (
+        <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
+          <div style={{ position:"relative", flex:"1 1 200px" }}>
+            <Icon name="prices" size={15} color="#475569" style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)" }} />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vendor or item..."
+              style={{ width:"100%", background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px 9px 34px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+          </div>
+          <select value={filterVendor} onChange={e => setFilterVendor(e.target.value)}
+            style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:13, outline:"none", cursor:"pointer" }}>
+            <option value="ALL">All vendors</option>
+            {allVendors.map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+          <select value={filterType} onChange={e => setFilterType(e.target.value)}
+            style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:13, outline:"none", cursor:"pointer" }}>
+            <option value="ALL">All types</option>
+            <option value="regular">Regular</option>
+            <option value="quick">Quick orders</option>
+            <option value="auto">Auto-submitted</option>
+            <option value="backfill">Backfilled</option>
+          </select>
+        </div>
+      )}
+
+      {history.length === 0 ? (
+        <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:48, textAlign:"center" }}>
+          <Icon name="history" size={36} color="#38bdf8" style={{ marginBottom:12 }} />
           <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No orders yet</div>
           <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Submitted orders will appear here</div>
         </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:40, textAlign:"center" }}>
+          <div style={{ color:"#94a3b8", fontSize:15, fontWeight:600 }}>No orders match your filters</div>
+          <button onClick={() => { setSearch(""); setFilterVendor("ALL"); setFilterType("ALL"); }}
+            style={{ marginTop:12, background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 16px", color:"#60a5fa", fontSize:13, cursor:"pointer" }}>Clear filters</button>
+        </div>
       ) : (
-        weekKeys.map(weekKey => (
-          <div key={weekKey} style={{ marginBottom:20 }}>
-            <div style={{ background:"#080c14", border:"1px solid #1e2d45", borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"10px 16px" }}>
-              <span style={{ color:"#a5b4fc", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{weekKey.split("-WK")[0]}-WK{weekKey.split("-WK")[1]}</span>
-              <span style={{ color:"#64748b", fontSize:12, marginLeft:8 }}>Mon {getWeekMonday(parseInt(weekKey.split("-WK")[1]), parseInt(weekKey.split("-WK")[0])).toLocaleDateString("en-US", { month:"short", day:"numeric" })}</span>
-              <span style={{ color:"#475569", fontSize:12, marginLeft:10 }}>{byWeek[weekKey].length} order{byWeek[weekKey].length!==1?"s":""}</span>
-            </div>
-            <div style={{ border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
-              {byWeek[weekKey].map((entry, idx) => (
-                <div key={entry.id} style={{ background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none" }}>
-                  <div style={{ padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                    <div>
-                      <div style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{entry.type === "quick" ? "⚡" : (entry.type === "auto" ? "🤖" : "📦")} {entry.vendor}{entry.type === "quick" ? <span style={{ background:"rgba(56,189,248,0.15)", border:"1px solid rgba(56,189,248,0.3)", borderRadius:4, padding:"1px 6px", color:"#38bdf8", fontSize:9, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>QUICK ORDER</span> : ""}{entry.type === "auto" ? <span style={{ background:"rgba(168,85,247,0.15)", border:"1px solid rgba(168,85,247,0.3)", borderRadius:4, padding:"1px 6px", color:"#c084fc", fontSize:9, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>AUTO</span> : ""}{entry.backfill && entry.type !== "auto" ? <span style={{ background:"rgba(251,191,36,0.15)", border:"1px solid rgba(251,191,36,0.3)", borderRadius:4, padding:"1px 6px", color:"#fbbf24", fontSize:9, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>BACKFILL</span> : ""}</div>
-                      <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{entry.day} · {fmtDate(entry.date)} · {entry.totalItems} item{entry.totalItems!==1?"s":""}{entry.note ? ` · ${entry.note}` : ""}</div>
+        monthKeys.map(monthKey => {
+          const month = byMonth[monthKey];
+          const weekKeys = Object.keys(month.weeks).sort().reverse();
+          const monthTotal = Object.values(month.weeks).reduce((sum, arr) => sum + arr.length, 0);
+          const isCollapsed = collapsedMonths[monthKey];
+          return (
+            <div key={monthKey} style={{ marginBottom:18 }}>
+              {/* Month header */}
+              <button onClick={() => setCollapsedMonths(prev => ({ ...prev, [monthKey]: !prev[monthKey] }))}
+                style={{ width:"100%", display:"flex", alignItems:"center", gap:10, background:"transparent", border:"none", padding:"4px 0 10px", cursor:"pointer" }}>
+                <Icon name="history" size={14} color="#475569" style={{ transform: isCollapsed ? "rotate(-90deg)" : "none", transition:"transform 0.2s" }} />
+                <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{month.label}</span>
+                <span style={{ color:"#475569", fontSize:12 }}>{monthTotal} order{monthTotal!==1?"s":""}</span>
+                <div style={{ flex:1, height:1, background:"#1e2d45" }} />
+              </button>
+
+              {!isCollapsed && weekKeys.map(weekKey => {
+                const orders = month.weeks[weekKey];
+                const wn = parseInt(weekKey.split("-WK")[1]);
+                const yr = parseInt(weekKey.split("-WK")[0]);
+                const mon = getWeekMonday(wn, yr).toLocaleDateString("en-US", { month:"short", day:"numeric" });
+                return (
+                  <div key={weekKey} style={{ marginBottom:12 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 4px" }}>
+                      <span style={{ color:"#a5b4fc", fontSize:12, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>WK{wn}</span>
+                      <span style={{ color:"#64748b", fontSize:11 }}>Mon {mon}</span>
+                      <span style={{ color:"#475569", fontSize:11 }}>· {orders.length} order{orders.length!==1?"s":""}</span>
                     </div>
-                    <button onClick={() => printVendorPDF({ vendorName: entry.vendor, items: entry.lines, weekNum: entry.weekNumber, date: fmtDate(entry.date), businessName: user.business?.name || "", orderedBy: entry.orderedBy || user.name })}
-                      style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"5px 12px", color:"#94a3b8", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#94a3b8"; }}>
-                      🖨 PDF
-                    </button>
+                    <div style={{ border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden" }}>
+                      {orders.map((entry, idx) => {
+                        const t = typeMeta[typeOf(entry)];
+                        const isOpen = expandedOrders[entry.id];
+                        return (
+                          <div key={entry.id} style={{ background:idx%2===0?"#0c1220":"#0a1018", borderTop:idx>0?"1px solid #080c14":"none" }}>
+                            <div style={{ padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
+                              <button onClick={() => setExpandedOrders(prev => ({ ...prev, [entry.id]: !prev[entry.id] }))}
+                                style={{ flex:1, background:"none", border:"none", textAlign:"left", cursor:"pointer", padding:0, minWidth:0 }}>
+                                <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                                  <Icon name={t.icon} size={15} color={t.color} />
+                                  <span style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{entry.vendor}</span>
+                                  {t.label && <span style={{ background:t.bg, border:`1px solid ${t.color}40`, borderRadius:4, padding:"1px 6px", color:t.color, fontSize:9, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{t.label}</span>}
+                                </div>
+                                <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:3 }}>{entry.day} · {fmtDate(entry.date)} · {entry.totalItems} item{entry.totalItems!==1?"s":""}{entry.note ? ` · ${entry.note}` : ""}</div>
+                              </button>
+                              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                                <button onClick={() => setExpandedOrders(prev => ({ ...prev, [entry.id]: !prev[entry.id] }))}
+                                  style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:12, padding:"4px" }}>
+                                  {isOpen ? "Hide" : "View"}
+                                </button>
+                                <button onClick={() => printVendorPDF({ vendorName: entry.vendor, items: entry.lines, weekNum: entry.weekNumber, date: fmtDate(entry.date), businessName: user.business?.name || "", orderedBy: entry.orderedBy || user.name })}
+                                  style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"5px 10px", color:"#94a3b8", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}>
+                                  <Icon name="doc" size={13} /> PDF
+                                </button>
+                              </div>
+                            </div>
+                            {/* Expanded line items */}
+                            {isOpen && (
+                              <div style={{ padding:"0 16px 14px", background:"#080c14" }}>
+                                <div style={{ paddingTop:12, borderTop:"1px solid #1e2d45" }}>
+                                  {(entry.lines || []).length === 0 ? (
+                                    <div style={{ color:"#475569", fontSize:12 }}>No line items recorded</div>
+                                  ) : (
+                                    <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                                      <tbody>
+                                        {entry.lines.map((line, li) => (
+                                          <tr key={li} style={{ borderBottom: li < entry.lines.length-1 ? "1px solid #0f1a2e" : "none" }}>
+                                            <td style={{ padding:"6px 0", color:"#e2e8f0", fontSize:13 }}>{line.name}</td>
+                                            <td style={{ padding:"6px 0", color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", textAlign:"left", width:90 }}>{line.section || ""}</td>
+                                            <td style={{ padding:"6px 0", textAlign:"right", color:"#38bdf8", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace", width:70 }}>{line.qty} <span style={{ color:"#475569", fontSize:10 }}>{line.order_unit}</span></td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  )}
+                                  {entry.orderedBy && <div style={{ color:"#475569", fontSize:11, marginTop:10, fontFamily:"'DM Mono',monospace" }}>Ordered by {entry.orderedBy}</div>}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );
