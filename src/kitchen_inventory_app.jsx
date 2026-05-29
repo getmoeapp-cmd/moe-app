@@ -4574,11 +4574,13 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
     return null;
   };
 
-  // Orders awaiting price review (not yet costed) — only when feature is on
-  const ordersToReview = foodCost
-    ? (history || []).filter(o => !o.costed && (o.lines || []).length > 0)
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
-    : [];
+  // All orders with line items, newest first (the dashboard is order-driven)
+  const allOrders = (history || [])
+    .filter(o => (o.lines || []).length > 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  const pendingOrders = allOrders.filter(o => !o.costed);
+  const reviewedOrders = allOrders.filter(o => o.costed);
+  const [openOrders, setOpenOrders] = useState({}); // re-opened confirmed orders
 
   // Weekly food spend from costed orders
   const weeklySpend = {};
@@ -4645,12 +4647,111 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
     return total;
   };
 
+  // Re-open a confirmed order to edit its prices again
+  const reopenOrder = (order) => {
+    // seed review edits from the saved line prices/status
+    const seed = {};
+    (order.lines || []).forEach((line, idx) => {
+      seed[idx] = { price: line.unitPrice != null ? String(line.unitPrice) : (standingPrice(line.id) != null ? String(standingPrice(line.id)) : ""), status: line.delivered || "delivered" };
+    });
+    setReviewEdits(prev => ({ ...prev, [order.id]: seed }));
+    const newHistory = (history || []).map(o => o.id === order.id ? { ...o, costed: false } : o);
+    saveHistory(newHistory);
+    setOpenOrders(prev => ({ ...prev, [order.id]: true }));
+  };
+
   const statusOpts = [
     { v:"delivered", label:"Delivered" },
     { v:"out_of_stock", label:"Out of stock" },
     { v:"damaged", label:"Damaged" },
     { v:"not_ordered", label:"Not on order" },
   ];
+
+  // Full editable order card (used for pending + re-opened orders)
+  const renderOrderCard = (order, editable) => {
+    const wn = order.weekNumber;
+    const mon = getWeekMonday(wn, order.year).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+    return (
+      <div key={order.id} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, overflow:"hidden" }}>
+        <div style={{ background:"#0f1a2e", padding:"12px 16px", borderBottom:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <Icon name="orders" size={16} color="#38bdf8" />
+            <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{order.vendor}</span>
+            <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>WK{wn} · Mon {mon}</span>
+          </div>
+          <div style={{ color:"#34d399", fontSize:18, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${reviewTotal(order).toFixed(2)}</div>
+        </div>
+        <div style={{ padding:"4px 0" }}>
+          {(order.lines || []).map((line, idx) => {
+            const e = getLineEdit(order.id, idx, line);
+            const last = lastOrderedPrice(line.id, order.date);
+            const changed = last != null && Math.abs((parseFloat(e.price)||0) - last) > 0.001;
+            const notDelivered = e.status !== "delivered";
+            return (
+              <div key={idx} style={{ padding:"10px 16px", borderBottom: idx < order.lines.length-1 ? "1px solid #0f1a2e" : "none", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", opacity: notDelivered ? 0.55 : 1 }}>
+                <div style={{ flex:"1 1 140px", minWidth:0 }}>
+                  <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{line.name}</div>
+                  <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{line.qty} {line.order_unit}{line.qty!==1?"s":""}</div>
+                </div>
+                <div style={{ textAlign:"right", minWidth:60 }}>
+                  <div style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace" }}>LAST</div>
+                  <div style={{ color:"#64748b", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{last != null ? `$${last.toFixed(2)}` : "—"}</div>
+                </div>
+                <div style={{ minWidth:80 }}>
+                  <div style={{ color: changed ? "#fbbf24" : "#475569", fontSize:9, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{changed ? "CHANGED" : "PRICE"}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:2 }}>
+                    <span style={{ color:"#64748b", fontSize:13 }}>$</span>
+                    <input type="number" inputMode="decimal" value={e.price} disabled={notDelivered}
+                      onFocus={ev => ev.target.select()}
+                      onChange={ev => setLineEdit(order.id, idx, { price: ev.target.value, status: e.status, id: line.id })}
+                      style={{ width:62, background:"#080c14", border:`1px solid ${changed ? "#d97706" : "#1e2d45"}`, borderRadius:6, padding:"6px 8px", color: changed ? "#fbbf24" : "#f1f5f9", fontSize:14, outline:"none", fontFamily:"'DM Mono',monospace", textAlign:"right" }} />
+                  </div>
+                </div>
+                <select value={e.status} onChange={ev => setLineEdit(order.id, idx, { status: ev.target.value, price: e.price, id: line.id })}
+                  style={{ background:"#080c14", border:`1px solid ${notDelivered ? "#7f1d1d" : "#1e2d45"}`, borderRadius:6, padding:"6px 8px", color: notDelivered ? "#fca5a5" : "#94a3b8", fontSize:11, outline:"none", cursor:"pointer" }}>
+                  {statusOpts.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                </select>
+                <div style={{ minWidth:64, textAlign:"right" }}>
+                  <div style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace" }}>TOTAL</div>
+                  <div style={{ color: notDelivered ? "#475569" : "#34d399", fontSize:14, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{notDelivered ? "—" : `$${((parseFloat(e.price)||0)*(line.qty||0)).toFixed(2)}`}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ padding:"12px 16px", borderTop:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
+          <span style={{ color:"#64748b", fontSize:12 }}>Order total <strong style={{ color:"#34d399", fontFamily:"'DM Mono',monospace" }}>${reviewTotal(order).toFixed(2)}</strong></span>
+          <button onClick={() => { confirmReview(order); setOpenOrders(prev => { const n = {...prev}; delete n[order.id]; return n; }); }}
+            style={{ background:"#34d399", border:"none", borderRadius:8, padding:"9px 20px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+            Confirm prices
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Collapsed confirmed order row — tap to re-open
+  const renderConfirmedRow = (order) => {
+    const wn = order.weekNumber;
+    const mon = getWeekMonday(wn, order.year).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+    const notDelivered = (order.lines || []).filter(l => l.delivered && l.delivered !== "delivered").length;
+    return (
+      <div key={order.id} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
+          <Icon name="check" size={15} color="#34d399" />
+          <span style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{order.vendor}</span>
+          <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>WK{wn} · Mon {mon} · {order.totalItems} item{order.totalItems!==1?"s":""}{notDelivered ? ` · ${notDelivered} not delivered` : ""}</span>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <span style={{ color:"#34d399", fontSize:16, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${(order.total || 0).toFixed(2)}</span>
+          <button onClick={() => reopenOrder(order)}
+            style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:7, padding:"6px 12px", color:"#60a5fa", fontSize:12, cursor:"pointer" }}>
+            Edit
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -4715,11 +4816,11 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
         </div>
       )}
 
-      {/* ── FOOD COST: WEEKLY SPEND + ORDERS TO REVIEW ── */}
-      {foodCost && mode === "dashboard" && (
+      {/* ── ORDERS (review pending, view/edit confirmed) + WEEKLY SPEND ── */}
+      {mode === "dashboard" && (
         <>
-          {/* Weekly spend summary */}
-          {spendWeeks.length > 0 && (
+          {/* Weekly spend summary — only when food cost add-on is on */}
+          {foodCost && spendWeeks.length > 0 && (
             <div style={{ marginBottom:20 }}>
               <div style={{ color:"#34d399", fontSize:13, fontWeight:700, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
                 <Icon name="prices" size={15} color="#34d399" /> Weekly Food Spend
@@ -4746,85 +4847,33 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
             </div>
           )}
 
-          {/* Orders to review */}
-          {ordersToReview.length > 0 && (
+          {/* Orders — review pending, view/edit confirmed */}
+          {allOrders.length > 0 && (
             <div style={{ marginBottom:24 }}>
-              <div style={{ color:"#fbbf24", fontSize:13, fontWeight:700, marginBottom:4, display:"flex", alignItems:"center", gap:6 }}>
-                <Icon name="doc" size={15} color="#fbbf24" /> Price check ({ordersToReview.length})
-              </div>
-              <p style={{ color:"#64748b", fontSize:12, margin:"0 0 12px", lineHeight:1.5 }}>
-                Last price is carried over — only edit what changed. Mark anything that didn't arrive. Confirm to add it to your weekly spend.
-              </p>
+              {pendingOrders.length > 0 && (
+                <>
+                  <div style={{ color:"#fbbf24", fontSize:13, fontWeight:700, marginBottom:4, display:"flex", alignItems:"center", gap:6 }}>
+                    <Icon name="doc" size={15} color="#fbbf24" /> Price check ({pendingOrders.length})
+                  </div>
+                  <p style={{ color:"#64748b", fontSize:12, margin:"0 0 12px", lineHeight:1.5 }}>
+                    Last price is carried over — only edit what changed. Mark anything that didn't arrive.{foodCost ? " Confirm to add it to your weekly spend." : " Confirm to lock in the prices."}
+                  </p>
+                </>
+              )}
               <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-                {ordersToReview.map(order => {
-                  const wn = order.weekNumber;
-                  const mon = getWeekMonday(wn, order.year).toLocaleDateString("en-US",{month:"short",day:"numeric"});
-                  return (
-                    <div key={order.id} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, overflow:"hidden" }}>
-                      {/* Vendor header — mirrors the receipt */}
-                      <div style={{ background:"#0f1a2e", padding:"12px 16px", borderBottom:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                          <Icon name="orders" size={16} color="#38bdf8" />
-                          <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{order.vendor}</span>
-                          <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>WK{wn} · Mon {mon}</span>
-                        </div>
-                        <div style={{ color:"#34d399", fontSize:18, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${reviewTotal(order).toFixed(2)}</div>
-                      </div>
-                      {/* Line items */}
-                      <div style={{ padding:"4px 0" }}>
-                        {(order.lines || []).map((line, idx) => {
-                          const e = getLineEdit(order.id, idx, line);
-                          const last = lastOrderedPrice(line.id, order.date);
-                          const changed = last != null && Math.abs((parseFloat(e.price)||0) - last) > 0.001;
-                          const notDelivered = e.status !== "delivered";
-                          return (
-                            <div key={idx} style={{ padding:"10px 16px", borderBottom: idx < order.lines.length-1 ? "1px solid #0f1a2e" : "none", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", opacity: notDelivered ? 0.55 : 1 }}>
-                              <div style={{ flex:"1 1 140px", minWidth:0 }}>
-                                <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{line.name}</div>
-                                <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{line.qty} {line.order_unit}{line.qty!==1?"s":""}</div>
-                              </div>
-                              {/* Last price */}
-                              <div style={{ textAlign:"right", minWidth:60 }}>
-                                <div style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace" }}>LAST</div>
-                                <div style={{ color:"#64748b", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{last != null ? `$${last.toFixed(2)}` : "—"}</div>
-                              </div>
-                              {/* Current price (editable) */}
-                              <div style={{ minWidth:80 }}>
-                                <div style={{ color: changed ? "#fbbf24" : "#475569", fontSize:9, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{changed ? "CHANGED" : "PRICE"}</div>
-                                <div style={{ display:"flex", alignItems:"center", gap:2 }}>
-                                  <span style={{ color:"#64748b", fontSize:13 }}>$</span>
-                                  <input type="number" inputMode="decimal" value={e.price} disabled={notDelivered}
-                                    onFocus={ev => ev.target.select()}
-                                    onChange={ev => setLineEdit(order.id, idx, { price: ev.target.value, status: e.status, id: line.id })}
-                                    style={{ width:62, background:"#080c14", border:`1px solid ${changed ? "#d97706" : "#1e2d45"}`, borderRadius:6, padding:"6px 8px", color: changed ? "#fbbf24" : "#f1f5f9", fontSize:14, outline:"none", fontFamily:"'DM Mono',monospace", textAlign:"right" }} />
-                                </div>
-                              </div>
-                              {/* Delivery status */}
-                              <select value={e.status} onChange={ev => setLineEdit(order.id, idx, { status: ev.target.value, price: e.price, id: line.id })}
-                                style={{ background:"#080c14", border:`1px solid ${notDelivered ? "#7f1d1d" : "#1e2d45"}`, borderRadius:6, padding:"6px 8px", color: notDelivered ? "#fca5a5" : "#94a3b8", fontSize:11, outline:"none", cursor:"pointer" }}>
-                                {statusOpts.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
-                              </select>
-                              {/* Line total */}
-                              <div style={{ minWidth:64, textAlign:"right" }}>
-                                <div style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace" }}>TOTAL</div>
-                                <div style={{ color: notDelivered ? "#475569" : "#34d399", fontSize:14, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{notDelivered ? "—" : `$${((parseFloat(e.price)||0)*(line.qty||0)).toFixed(2)}`}</div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {/* Confirm */}
-                      <div style={{ padding:"12px 16px", borderTop:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
-                        <span style={{ color:"#64748b", fontSize:12 }}>Order total <strong style={{ color:"#34d399", fontFamily:"'DM Mono',monospace" }}>${reviewTotal(order).toFixed(2)}</strong></span>
-                        <button onClick={() => confirmReview(order)}
-                          style={{ background:"#34d399", border:"none", borderRadius:8, padding:"9px 20px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                          Confirm prices
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                {pendingOrders.map(order => renderOrderCard(order, true))}
               </div>
+
+              {reviewedOrders.length > 0 && (
+                <>
+                  <div style={{ color:"#64748b", fontSize:13, fontWeight:700, margin:"22px 0 12px", display:"flex", alignItems:"center", gap:6 }}>
+                    <Icon name="check" size={15} color="#34d399" /> Confirmed orders
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {reviewedOrders.map(order => openOrders[order.id] ? renderOrderCard(order, true) : renderConfirmedRow(order))}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </>
@@ -4863,90 +4912,14 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
       )}
 
       {/* ── DASHBOARD ── */}
-      {mode === "dashboard" && (
-        <>
-          {(() => {
-            // Merge tracked + untracked items into one editable list
-            const trackedMap = {};
-            filteredTracked.forEach(e => { trackedMap[e.id] = e; });
-            const rows = allItems
-              .filter(i => (filterVendor === "ALL" || (i.vendor || "") === filterVendor) && (!search || i.name.toLowerCase().includes(search.toLowerCase())))
-              .map(item => {
-                const t = trackedMap[item.id];
-                return {
-                  id: item.id, name: item.name, vendor: item.vendor || "", unit: item.order_unit,
-                  currentPrice: t ? t.currentPrice : null,
-                  previousPrice: t ? t.previousPrice : null,
-                  change: t ? t.change : null, changePct: t ? t.changePct : null,
-                };
-              })
-              .sort((a, b) => a.name.localeCompare(b.name));
-
-            if (rows.length === 0) {
-              return (
-                <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:32, textAlign:"center" }}>
-                  <Icon name="prices" size={32} color="#38bdf8" style={{ marginBottom:10 }} />
-                  <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No items found</div>
-                  <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Add items in Backend, or adjust your filters</div>
-                </div>
-              );
-            }
-
-            return (
-              <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, overflow:"hidden" }}>
-                <div style={{ display:"grid", gridTemplateColumns:"2fr 110px 90px 70px", background:"#080c14", padding:"9px 16px", gap:8 }}>
-                  {["Item", "Current price", "Last", "Change"].map(h => (
-                    <span key={h} style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
-                  ))}
-                </div>
-                {rows.map((e, idx) => {
-                  const isEditing = editingId === e.id;
-                  return (
-                    <div key={e.id} style={{ display:"grid", gridTemplateColumns:"2fr 110px 90px 70px", padding:"10px 16px", gap:8, alignItems:"center", background:idx%2===0?"#0c1220":"#0a1018", borderTop:"1px solid #080c14" }}>
-                      <div style={{ minWidth:0 }}>
-                        <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.name}</div>
-                        <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{e.vendor}{e.vendor ? " · " : ""}{e.unit}</div>
-                      </div>
-                      {/* Current price — editable */}
-                      {isEditing ? (
-                        <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                          <span style={{ color:"#64748b", fontSize:13 }}>$</span>
-                          <input type="number" inputMode="decimal" autoFocus value={editVal}
-                            onFocus={ev => ev.target.select()}
-                            onChange={ev => setEditVal(ev.target.value)}
-                            onKeyDown={ev => { if (ev.key === "Enter") saveEdit(e.id); if (ev.key === "Escape") setEditingId(null); }}
-                            onBlur={() => saveEdit(e.id)}
-                            style={{ width:62, background:"#080c14", border:"1px solid #38bdf8", borderRadius:6, padding:"5px 8px", color:"#f1f5f9", fontSize:14, fontFamily:"'DM Mono',monospace", fontWeight:600, outline:"none", textAlign:"right" }} />
-                        </div>
-                      ) : (
-                        <button onClick={() => startEdit(e.id, e.currentPrice)}
-                          style={{ display:"flex", alignItems:"center", gap:6, background:"transparent", border:"none", cursor:"pointer", padding:0, textAlign:"left" }}>
-                          {e.currentPrice != null ? (
-                            <span style={{ color:"#f1f5f9", fontSize:14, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>${e.currentPrice.toFixed(2)}</span>
-                          ) : (
-                            <span style={{ color:"#475569", fontSize:12, fontStyle:"italic" }}>set price</span>
-                          )}
-                          <Icon name="prices" size={12} color="#334155" />
-                        </button>
-                      )}
-                      {/* Last price */}
-                      <span style={{ color:"#64748b", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{e.previousPrice != null ? `$${e.previousPrice.toFixed(2)}` : "—"}</span>
-                      {/* Change */}
-                      {e.change != null ? (
-                        <span style={{ background:e.change > 0 ? "#450a0a" : e.change < 0 ? "#052e16" : "transparent", border:`1px solid ${e.change > 0 ? "#7f1d1d" : e.change < 0 ? "#16a34a" : "#1e2d45"}`, color:e.change > 0 ? "#fca5a5" : e.change < 0 ? "#4ade80" : "#475569", borderRadius:6, padding:"3px 6px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"center" }}>
-                          {e.change > 0 ? "+" : ""}{e.changePct}%
-                        </span>
-                      ) : <span style={{ color:"#334155", fontSize:11 }}>—</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-          <p style={{ color:"#475569", fontSize:12, margin:"12px 2px 0", lineHeight:1.5 }}>
-            Tap any price to edit it. Set it once — it carries over to every order. The price check after each order is where you confirm or adjust what changed.
-          </p>
-        </>
+      {mode === "dashboard" && allOrders.length === 0 && (
+        <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:36, textAlign:"center" }}>
+          <Icon name="orders" size={34} color="#38bdf8" style={{ marginBottom:12 }} />
+          <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No orders yet</div>
+          <div style={{ color:"#475569", fontSize:13, marginTop:6, lineHeight:1.6, maxWidth:380, margin:"6px auto 0" }}>
+            Submit an order and it shows up here grouped by vendor — like that vendor's receipt. You'll set each item's price once, then just confirm or tweak what changed each week.
+          </div>
+        </div>
       )}
 
       {/* ── UPLOAD INVOICE ── */}
