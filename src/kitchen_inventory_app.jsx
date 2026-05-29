@@ -385,6 +385,7 @@ function MoeApp() {
   const [loginError, setLoginError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [usageLog, setUsageLog]     = useState({});
+  const [stockSnapshots, setStockSnapshots] = useState({}); // { [weekKey]: { [itemId]: count, _ts } }
   const [subscription, setSubscription] = useState(null); // { plan, status, trialStart, trialEnd, subscribedAt }
   const [team, setTeam]                 = useState([]); // [{ id, email, name, role, addedAt }]
   const [wasteLog, setWasteLog]         = useState([]);
@@ -430,6 +431,7 @@ function MoeApp() {
       const hi = await load("history", []);
       const inv = await load("inventory", DEFAULT_INVENTORY);
       const ul = await load("usageLog", {});
+      const snaps = await load("stockSnapshots", {});
       const sub = await load("subscription", null);
       const tm = await load("team", []);
       const wl = await load("wasteLog", []);
@@ -440,6 +442,7 @@ function MoeApp() {
       const lastAutoWeek = await load("lastAutoWeek", null);
       setStock(st); setVendors(vd); setHistory(hi); setInventory(inv);
       setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl); setPriceHistory(ph);
+      setStockSnapshots(snaps || {});
       if (perms) setPermissions(perms);
       setOnboarding(ob);
       setAutoSubmit(autoSub !== false);
@@ -484,6 +487,13 @@ function MoeApp() {
     const newStock = { ...stock, [id]: isNaN(n) ? 0 : Math.max(0, n) };
     setStock(newStock);
     save("stock", newStock);
+    // Record a snapshot of the current week's stock count (latest count of the week wins)
+    const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2,"0")}`;
+    setStockSnapshots(prev => {
+      const next = { ...prev, [wk]: { ...(prev[wk] || {}), [id]: newStock[id], _ts: new Date().toISOString() } };
+      save("stockSnapshots", next);
+      return next;
+    });
   };
 
   // ── Auto-submit missed orders for completed weeks ────────────────────────
@@ -941,7 +951,7 @@ function MoeApp() {
         {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
         {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} submitOrderForWeek={submitOrderForWeek} history={history} user={user} />}
         {view === "history" && canAccess("history") && <HistoryView history={history} user={user} />}
-        {view === "insights" && canAccess("insights") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} />}
+        {view === "insights" && canAccess("insights") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} stockSnapshots={stockSnapshots} history={history} />}
         {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} />}
         {view === "import" && canAccess("import") && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && canAccess("backend") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
@@ -2447,74 +2457,87 @@ function BackendSection({ section, stock, vendors, saveItemField, addItem, remov
 // ═══════════════════════════════════════════════════════════════════════════════
 // INSIGHTS VIEW — Analyzes ordering patterns, suggests new par levels after 3 weeks
 // ═══════════════════════════════════════════════════════════════════════════════
-function InsightsView({ inventory, usageLog, vendors, applyParSuggestion }) {
-  const [accepted, setAccepted] = useState({});
+function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockSnapshots = {}, history = [] }) {
   const [dismissed, setDismissed] = useState({});
   const [filterVendor, setFilterVendor] = useState("ALL");
   const [expanded, setExpanded] = useState({});
 
   const allItems = flatItems(inventory);
-  const weeks = Object.keys(usageLog).sort();
 
-  // Build per-item ordering history
-  const itemStats = {};
-  weeks.forEach(wk => {
-    const weekData = usageLog[wk] || {};
-    Object.entries(weekData).forEach(([vendorName, items]) => {
-      Object.entries(items).forEach(([itemId, data]) => {
-        if (!itemStats[itemId]) {
-          itemStats[itemId] = {
-            id: Number(itemId), name: data.name, vendor: vendorName,
-            order_unit: data.order_unit, max_stock: data.maxStock,
-            weeklyQty: [], weeks: [],
-          };
-        }
-        itemStats[itemId].weeklyQty.push(data.qty);
-        itemStats[itemId].weeks.push(wk);
-      });
+  // All weeks we have a stock snapshot for, sorted chronologically
+  const snapWeeks = Object.keys(stockSnapshots).sort();
+
+  // Helper: units received for an item during a given week (from orders placed that week)
+  const receivedUnits = (itemId, weekKey) => {
+    let units = 0;
+    const item = allItems.find(i => i.id === Number(itemId));
+    const upu = item?.upu || 1;
+    const weekData = usageLog[weekKey] || {};
+    Object.values(weekData).forEach(items => {
+      if (items[itemId]) units += (items[itemId].qty || 0) * upu;
     });
+    return units;
+  };
+
+  // Build per-item USAGE stats by comparing consecutive weekly stock snapshots
+  // usage[w] = snapshot[w] + receivedDuring(w → w+1) - snapshot[w+1]
+  const itemStats = {};
+  allItems.forEach(item => {
+    const id = item.id;
+    const weeklyUsage = [];
+    const usageWeeks = [];
+    for (let i = 0; i < snapWeeks.length - 1; i++) {
+      const wkA = snapWeeks[i], wkB = snapWeeks[i + 1];
+      const startCount = stockSnapshots[wkA]?.[id];
+      const endCount = stockSnapshots[wkB]?.[id];
+      // Need both counts to compute usage
+      if (startCount === undefined || endCount === undefined) continue;
+      const received = receivedUnits(id, wkA);
+      const usage = startCount + received - endCount;
+      // Only count plausible (non-negative) usage
+      if (usage >= 0) { weeklyUsage.push(usage); usageWeeks.push(wkB); }
+    }
+    if (weeklyUsage.length > 0) {
+      itemStats[id] = {
+        id, name: item.name, vendor: item.vendor || "—",
+        order_unit: item.order_unit || "unit", upu: item.upu || 1,
+        max_stock: item.max_stock || 0, reorder: item.reorder || 0,
+        weeklyUsage, weeks: usageWeeks,
+      };
+    }
   });
 
-  // Update from current inventory (unit, UPU, max_stock may have changed)
-  Object.values(itemStats).forEach(stat => {
-    const item = allItems.find(i => i.id === stat.id);
-    if (item) { stat.max_stock = item.max_stock; stat.name = item.name; stat.order_unit = item.order_unit; stat.upu = item.upu || 1; }
-    else stat.upu = stat.upu || 1;
-  });
-
-  // Build per-item ordering insights for items with 3+ weeks of data
-  // NOTE: weeklyQty is in ORDER UNITS (cases) — the number of cases ordered each week.
-  // We do NOT compare against max_stock (which is in individual units/bags) — that would mix units.
-  // Instead we surface the typical weekly case order so owners can sanity-check ordering patterns.
+  // Build usage insights for items with 2+ weeks of usage data
   const suggestions = Object.values(itemStats)
-    .filter(stat => stat.weeklyQty.length >= 3)
+    .filter(stat => stat.weeklyUsage.length >= 2)
     .map(stat => {
-      const ordered = stat.weeklyQty.filter(q => q > 0); // weeks an order was actually placed
-      const totalCases = stat.weeklyQty.reduce((a, b) => a + b, 0);
-      const avg = Math.round((totalCases / stat.weeklyQty.length) * 10) / 10; // avg cases/week incl. zero weeks
-      const avgWhenOrdered = ordered.length ? Math.round((ordered.reduce((a,b)=>a+b,0) / ordered.length) * 10) / 10 : 0;
-      const peak = Math.max(...stat.weeklyQty);
-      const min = Math.min(...stat.weeklyQty);
-      const orderFreq = Math.round((ordered.length / stat.weeklyQty.length) * 100); // % of weeks an order was placed
-      // Suggested weekly par = peak case order (covers the busiest week)
-      const suggested = peak;
-      return { ...stat, avg, avgWhenOrdered, peak, min, suggested, orderFreq, orderedWeeks: ordered.length, totalCases };
+      const total = stat.weeklyUsage.reduce((a, b) => a + b, 0);
+      const avg = Math.round((total / stat.weeklyUsage.length) * 10) / 10;
+      const peak = Math.max(...stat.weeklyUsage);
+      const min = Math.min(...stat.weeklyUsage);
+      // Recommended carry = peak usage + ~20% buffer, rounded up
+      const recommendedPar = Math.ceil(peak * 1.2);
+      const overStock = stat.max_stock - recommendedPar; // how many units you could cut
+      return { ...stat, avg, peak, min, total, recommendedPar, overStock };
     })
-    .sort((a, b) => b.totalCases - a.totalCases);
+    .sort((a, b) => b.overStock - a.overStock); // biggest savings first
 
   const activeSuggestions = suggestions
     .filter(s => filterVendor === "ALL" || s.vendor === filterVendor)
     .filter(s => !dismissed[s.id]);
 
-  const buildingData = Object.values(itemStats).filter(s => s.weeklyQty.length > 0 && s.weeklyQty.length < 3);
-  const usedVendors = [...new Set(Object.values(itemStats).map(s => s.vendor))].sort();
+  // Items being tracked but not enough usage data yet
+  const buildingData = allItems.filter(item => {
+    const st = itemStats[item.id];
+    return !st || st.weeklyUsage.length < 2;
+  }).filter(item => {
+    // only show items that have at least one snapshot (i.e. they've been counted)
+    return snapWeeks.some(wk => stockSnapshots[wk]?.[item.id] !== undefined);
+  });
 
-  // Helper: describe qty with unit + package breakdown
-  const unitLabel = (stat) => {
-    const u = stat.order_unit || "unit";
-    return u.toLowerCase().replace(/s$/, "");
-  };
-  const pkgNote = (stat) => stat.upu > 1 ? ` (${stat.upu}/${unitLabel(stat)})` : "";
+  const usedVendors = [...new Set(Object.values(itemStats).map(s => s.vendor))].sort();
+  const unitLabel = (stat) => (stat.order_unit || "unit").toLowerCase().replace(/s$/, "");
+  const overStockItems = activeSuggestions.filter(s => s.overStock >= 1);
 
   return (
     <div>
@@ -2523,7 +2546,7 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion }) {
         <div>
           <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:0 }}>Insights</h2>
           <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>
-            Ordering patterns from {weeks.length} week{weeks.length !== 1 ? "s" : ""} · {Object.keys(itemStats).length} items
+            Actual usage per week, measured from your stock counts
           </p>
         </div>
         {usedVendors.length > 1 && (
@@ -2536,127 +2559,133 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion }) {
       </div>
 
       {/* Not enough data */}
-      {weeks.length < 3 && (
+      {snapWeeks.length < 2 && (
         <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:40, textAlign:"center", marginBottom:20 }}>
-          <div style={{ fontSize:40, marginBottom:16 }}>📊</div>
-          <div style={{ color:"#f1f5f9", fontSize:17, fontWeight:600, marginBottom:8 }}>Building your insights</div>
-          <div style={{ color:"#64748b", fontSize:14, lineHeight:1.7, maxWidth:380, margin:"0 auto" }}>
-            MOE needs 3 weeks of orders to spot patterns and suggest par levels.
-            {weeks.length > 0 ? ` You're ${weeks.length} week${weeks.length !== 1 ? "s" : ""} in — ${3 - weeks.length} to go.` : " Submit your first order to get started."}
+          <Icon name="insights" size={36} color="#38bdf8" style={{ marginBottom:14 }} />
+          <div style={{ color:"#f1f5f9", fontSize:17, fontWeight:600, marginBottom:8 }}>Measuring your usage</div>
+          <div style={{ color:"#64748b", fontSize:14, lineHeight:1.7, maxWidth:420, margin:"0 auto" }}>
+            MOE figures out how much you actually use each week by comparing your stock counts week to week, plus what you received.
+            Count your inventory each week — after 2 counts, you'll see real usage here.
+            {snapWeeks.length === 1 ? " You've done your first count — one more week to go." : ""}
           </div>
-          {weeks.length > 0 && (
-            <div style={{ display:"flex", justifyContent:"center", gap:6, marginTop:20 }}>
-              {[0,1,2].map(i => <div key={i} style={{ width:40, height:6, borderRadius:3, background: i < weeks.length ? "#38bdf8" : "#1e2d45" }} />)}
-            </div>
-          )}
         </div>
       )}
 
-      {/* ORDERING PATTERNS */}
-      {activeSuggestions.length > 0 && (
-        <div style={{ marginBottom:28 }}>
+      {/* Savings callout */}
+      {overStockItems.length > 0 && (
+        <div style={{ background:"linear-gradient(135deg, rgba(52,211,153,0.1), rgba(52,211,153,0.03))", border:"1px solid rgba(52,211,153,0.3)", borderRadius:14, padding:"16px 18px", marginBottom:24 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-            <h3 style={{ color:"#f1f5f9", fontSize:15, fontWeight:700, margin:0 }}>Ordering patterns</h3>
-            <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:20, padding:"2px 10px", color:"#60a5fa", fontSize:12, fontWeight:600 }}>{activeSuggestions.length}</span>
+            <Icon name="check" size={16} color="#34d399" />
+            <span style={{ color:"#34d399", fontSize:14, fontWeight:700 }}>You're carrying more than you use</span>
           </div>
-          <p style={{ color:"#64748b", fontSize:12.5, margin:"0 0 14px" }}>How many you actually order each week, by the {activeSuggestions[0] ? unitLabel(activeSuggestions[0]) : "case"}. Use this to set par levels and spot over-ordering.</p>
+          <p style={{ color:"#94a3b8", fontSize:13, margin:0, lineHeight:1.6 }}>
+            {overStockItems.length} item{overStockItems.length !== 1 ? "s are" : " is"} stocked higher than your actual weekly usage. Trimming to what you really use frees up cash and cuts spoilage — details below.
+          </p>
+        </div>
+      )}
 
-          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-            {activeSuggestions.map(s => {
-              const isOpen = expanded[s.id];
-              return (
-                <div key={s.id} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, overflow:"hidden" }}>
-                  <div style={{ padding:"16px 18px" }}>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
-                      {/* Left: name + unit */}
-                      <div style={{ flex:1, minWidth:160 }}>
-                        <div style={{ color:"#f1f5f9", fontSize:15, fontWeight:600 }}>{s.name}</div>
-                        <div style={{ color:"#64748b", fontSize:12, marginTop:3 }}>
-                          {s.vendor} · by the {unitLabel(s)}{pkgNote(s)}
-                        </div>
-                      </div>
-
-                      {/* Right: typical weekly order */}
-                      <div style={{ display:"flex", alignItems:"center", gap:16 }}>
-                        <div style={{ textAlign:"center" }}>
-                          <div style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.avg}</div>
-                          <div style={{ color:"#64748b", fontSize:10, marginTop:1 }}>avg/wk</div>
-                        </div>
-                        <div style={{ textAlign:"center" }}>
-                          <div style={{ color:"#38bdf8", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.peak}</div>
-                          <div style={{ color:"#64748b", fontSize:10, marginTop:1 }}>peak/wk</div>
-                        </div>
-                      </div>
+      {/* USAGE CARDS */}
+      {activeSuggestions.length > 0 && (
+        <div style={{ marginBottom:28, display:"flex", flexDirection:"column", gap:12 }}>
+          {activeSuggestions.map(s => {
+            const isOpen = expanded[s.id];
+            const canCut = s.overStock >= 1;
+            const isShort = s.max_stock > 0 && s.recommendedPar > s.max_stock;
+            return (
+              <div key={s.id} className="moe-lift" style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, overflow:"hidden" }}>
+                <div style={{ padding:"16px 18px" }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
+                    <div style={{ flex:1, minWidth:160 }}>
+                      <div style={{ color:"#f1f5f9", fontSize:15, fontWeight:600 }}>{s.name}</div>
+                      <div style={{ color:"#64748b", fontSize:12, marginTop:3 }}>{s.vendor} · counted in {unitLabel(s)}s</div>
                     </div>
-
-                    {/* Plain-English summary */}
-                    <div style={{ marginTop:12, padding:"10px 12px", background:"#080c14", borderRadius:8, color:"#94a3b8", fontSize:12.5, lineHeight:1.6 }}>
-                      Over {s.weeklyQty.length} weeks you ordered this <strong style={{ color:"#e2e8f0" }}>{s.orderedWeeks} time{s.orderedWeeks !== 1 ? "s" : ""}</strong> ({s.orderFreq}% of weeks),
-                      {" "}<strong style={{ color:"#e2e8f0" }}>{s.totalCases}</strong> {unitLabel(s)}{s.totalCases !== 1 ? "s" : ""} total.
-                      {s.peak > s.avgWhenOrdered && s.avgWhenOrdered > 0
-                        ? ` Most weeks you order ${s.avgWhenOrdered}, but busy weeks hit ${s.peak}.`
-                        : ` Steady at about ${s.avgWhenOrdered || s.avg} per order.`}
-                    </div>
-
-                    <div style={{ marginTop:12 }}>
-                      <button onClick={() => setExpanded(prev => ({ ...prev, [s.id]: !prev[s.id] }))}
-                        style={{ background:"none", border:"none", color:"#60a5fa", fontSize:12, cursor:"pointer", padding:0, fontWeight:500 }}>
-                        {isOpen ? "Hide weekly history" : "Show weekly history"}
-                      </button>
+                    {/* Usage numbers */}
+                    <div style={{ display:"flex", alignItems:"center", gap:18 }}>
+                      <div style={{ textAlign:"center" }}>
+                        <div style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.avg}</div>
+                        <div style={{ color:"#64748b", fontSize:10, marginTop:1 }}>used/wk</div>
+                      </div>
+                      <div style={{ textAlign:"center" }}>
+                        <div style={{ color:"#38bdf8", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.peak}</div>
+                        <div style={{ color:"#64748b", fontSize:10, marginTop:1 }}>peak/wk</div>
+                      </div>
+                      {s.max_stock > 0 && (
+                        <div style={{ textAlign:"center" }}>
+                          <div style={{ color:"#94a3b8", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.max_stock}</div>
+                          <div style={{ color:"#64748b", fontSize:10, marginTop:1 }}>you stock</div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Expanded weekly history */}
-                  {isOpen && (
-                    <div style={{ padding:"16px 18px", background:"#080c14", borderTop:"1px solid #1e2d45" }}>
-                      <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:12 }}>{unitLabel(s)}s ordered per week (0 = no order needed)</div>
-                      <div style={{ display:"flex", gap:6, alignItems:"end", height:90 }}>
-                        {s.weeklyQty.map((qty, i) => {
-                          const maxQ = Math.max(...s.weeklyQty, 1);
-                          const pct = (qty / maxQ) * 100;
-                          const isPeak = qty === s.peak && qty > 0;
-                          const wkLabel = s.weeks[i] ? s.weeks[i].split("-WK")[1] : "";
-                          return (
-                            <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
-                              <span style={{ color: isPeak ? "#38bdf8" : (qty === 0 ? "#475569" : "#94a3b8"), fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{qty}</span>
-                              <div style={{ width:"100%", maxWidth:36, height:`${qty === 0 ? 2 : Math.max(6, pct * 0.5)}px`, background: qty === 0 ? "#1e2d45" : (isPeak ? "#38bdf8" : "#1e40af"), borderRadius:"4px 4px 0 0", transition:"height 0.3s" }} />
-                              <span style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace" }}>W{wkLabel}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div style={{ display:"flex", gap:20, marginTop:14, paddingTop:12, borderTop:"1px solid #1e2d45", flexWrap:"wrap" }}>
-                        <div><span style={{ color:"#475569", fontSize:11 }}>Avg/wk </span><span style={{ color:"#e2e8f0", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.avg}</span></div>
-                        <div><span style={{ color:"#475569", fontSize:11 }}>Peak </span><span style={{ color:"#38bdf8", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.peak}</span></div>
-                        <div><span style={{ color:"#475569", fontSize:11 }}>When ordered </span><span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{s.avgWhenOrdered}</span></div>
-                        <div><span style={{ color:"#475569", fontSize:11 }}>Order weeks </span><span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{s.orderedWeeks}/{s.weeklyQty.length}</span></div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+                  {/* Recommendation line */}
+                  <div style={{ marginTop:12, padding:"10px 12px", background:"#080c14", borderRadius:8, color:"#94a3b8", fontSize:12.5, lineHeight:1.6 }}>
+                    {canCut ? (
+                      <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong> {unitLabel(s)}{s.avg !== 1 ? "s" : ""}/week (peak {s.peak}), but you carry <strong style={{ color:"#e2e8f0" }}>{s.max_stock}</strong>. You could drop your par to <strong style={{ color:"#34d399" }}>{s.recommendedPar}</strong> and stop over-ordering <strong style={{ color:"#34d399" }}>{s.overStock}</strong> {unitLabel(s)}{s.overStock !== 1 ? "s" : ""} a week.</>
+                    ) : isShort ? (
+                      <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong>/week (peak {s.peak}), but only carry <strong style={{ color:"#e2e8f0" }}>{s.max_stock}</strong>. Consider raising your par to <strong style={{ color:"#fbbf24" }}>{s.recommendedPar}</strong> so you don't run short on busy weeks.</>
+                    ) : (
+                      <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong> {unitLabel(s)}{s.avg !== 1 ? "s" : ""}/week (peak {s.peak}). Your par of {s.max_stock} is right on target.</>
+                    )}
+                  </div>
 
-      {/* No data after filter */}
-      {weeks.length >= 3 && activeSuggestions.length === 0 && (
-        <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:40, textAlign:"center", marginBottom:20 }}>
-          <div style={{ fontSize:40, marginBottom:16 }}>📊</div>
-          <div style={{ color:"#f1f5f9", fontSize:17, fontWeight:600 }}>No patterns yet</div>
-          <div style={{ color:"#64748b", fontSize:14, marginTop:6 }}>Items need 3+ weeks of orders before patterns show up here.</div>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:12, gap:8 }}>
+                    <button onClick={() => setExpanded(prev => ({ ...prev, [s.id]: !prev[s.id] }))}
+                      style={{ background:"none", border:"none", color:"#60a5fa", fontSize:12, cursor:"pointer", padding:0, fontWeight:500 }}>
+                      {isOpen ? "Hide weekly usage" : "Show weekly usage"}
+                    </button>
+                    {(canCut || isShort) && applyParSuggestion && (
+                      <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
+                        style={{ background: canCut ? "#34d399" : "#38bdf8", border:"none", borderRadius:8, padding:"8px 16px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                        Set par to {s.recommendedPar}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {isOpen && (
+                  <div style={{ padding:"16px 18px", background:"#080c14", borderTop:"1px solid #1e2d45" }}>
+                    <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:12 }}>{unitLabel(s)}s used per week</div>
+                    <div style={{ display:"flex", gap:6, alignItems:"end", height:90 }}>
+                      {s.weeklyUsage.map((u, i) => {
+                        const maxU = Math.max(...s.weeklyUsage, 1);
+                        const pct = (u / maxU) * 100;
+                        const isPeak = u === s.peak;
+                        const wkLabel = s.weeks[i] ? s.weeks[i].split("-WK")[1] : "";
+                        return (
+                          <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                            <span style={{ color: isPeak ? "#38bdf8" : "#94a3b8", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{u}</span>
+                            <div style={{ width:"100%", maxWidth:36, height:`${Math.max(6, pct * 0.5)}px`, background: isPeak ? "#38bdf8" : "#1e40af", borderRadius:"4px 4px 0 0" }} />
+                            <span style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace" }}>W{wkLabel}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display:"flex", gap:20, marginTop:14, paddingTop:12, borderTop:"1px solid #1e2d45", flexWrap:"wrap" }}>
+                      <div><span style={{ color:"#475569", fontSize:11 }}>Avg used </span><span style={{ color:"#e2e8f0", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.avg}</span></div>
+                      <div><span style={{ color:"#475569", fontSize:11 }}>Peak </span><span style={{ color:"#38bdf8", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.peak}</span></div>
+                      <div><span style={{ color:"#475569", fontSize:11 }}>Low </span><span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{s.min}</span></div>
+                      <div><span style={{ color:"#475569", fontSize:11 }}>Weeks </span><span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{s.weeklyUsage.length}</span></div>
+                    </div>
+                    <div style={{ marginTop:10, color:"#475569", fontSize:11, lineHeight:1.5 }}>
+                      Usage = last week's count + what you received − this week's count.
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
       {/* Building data */}
       {buildingData.length > 0 && (
         <div>
-          <h3 style={{ color:"#64748b", fontSize:13, fontWeight:600, margin:"0 0 10px" }}>Still learning ({buildingData.length})</h3>
+          <h3 style={{ color:"#64748b", fontSize:13, fontWeight:600, margin:"0 0 10px" }}>Still measuring ({buildingData.length})</h3>
           <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-            {buildingData.map(s => (
-              <span key={s.id} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:8, padding:"6px 12px", color:"#94a3b8", fontSize:12 }}>
-                {s.name} <span style={{ color:"#475569", fontFamily:"'DM Mono',monospace" }}>{s.weeklyQty.length}/3 wks</span>
+            {buildingData.map(item => (
+              <span key={item.id} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:8, padding:"6px 12px", color:"#94a3b8", fontSize:12 }}>
+                {item.name} <span style={{ color:"#475569", fontFamily:"'DM Mono',monospace" }}>need 2+ counts</span>
               </span>
             ))}
           </div>
