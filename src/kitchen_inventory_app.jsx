@@ -397,6 +397,7 @@ function MoeApp() {
     employee: ["inventory", "waste", "history"],
   }); // { [itemId]: [{ price, date, weekKey, vendor, source }] } // [{ id, itemId, itemName, qty, unit, reason, loggedBy, date, weekKey }]
   const [autoSubmit, setAutoSubmit]     = useState(true); // auto-submit missed orders when a new week starts
+  const [foodCost, setFoodCost]         = useState(false); // optional food-cost add-on (off by default)
 
   const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
 
@@ -420,6 +421,7 @@ function MoeApp() {
 
   // ── Save inventory ────────────────────────────────────────────────────────
   const saveInventory = useCallback((newInv) => { setInventory(newInv); save("inventory", newInv); showFlash(); }, [save]);
+  const saveHistory = useCallback((newHist) => { setHistory(newHist); save("history", newHist); }, [save]);
 
   // ── Load data on login ───────────────────────────────────────────────────
   useEffect(() => {
@@ -439,6 +441,7 @@ function MoeApp() {
       const perms = await load("permissions", null);
       const ob = await load("onboarding", null);
       const autoSub = await load("autoSubmit", true);
+      const fc = await load("foodCost", false);
       const lastAutoWeek = await load("lastAutoWeek", null);
       setStock(st); setVendors(vd); setHistory(hi); setInventory(inv);
       setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl); setPriceHistory(ph);
@@ -446,6 +449,7 @@ function MoeApp() {
       if (perms) setPermissions(perms);
       setOnboarding(ob);
       setAutoSubmit(autoSub !== false);
+      setFoodCost(fc === true);
       setDataLoaded(true);
 
       // ── Auto-submit missed orders from completed weeks ──────────────────
@@ -952,10 +956,10 @@ function MoeApp() {
         {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} submitOrderForWeek={submitOrderForWeek} history={history} user={user} />}
         {view === "history" && canAccess("history") && <HistoryView history={history} user={user} />}
         {view === "insights" && canAccess("insights") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} stockSnapshots={stockSnapshots} history={history} />}
-        {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} />}
+        {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} foodCost={foodCost} history={history} saveHistory={saveHistory} saveInventory={(inv) => { setInventory(inv); save("inventory", inv); }} />}
         {view === "import" && canAccess("import") && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && canAccess("backend") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
-        {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} allFeatures={ALL_FEATURES} autoSubmit={autoSubmit} setAutoSubmit={(v) => { setAutoSubmit(v); save("autoSubmit", v); }} />}
+        {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} allFeatures={ALL_FEATURES} autoSubmit={autoSubmit} setAutoSubmit={(v) => { setAutoSubmit(v); save("autoSubmit", v); }} foodCost={foodCost} setFoodCost={(v) => { setFoodCost(v); save("foodCost", v); }} />}
         {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
         {view === "admin" && user.role === "owner" && <AdminView />}
       </main>
@@ -1941,7 +1945,7 @@ function HistoryView({ history, user }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SETTINGS VIEW — Manage vendors & their order days (owner only)
 // ═══════════════════════════════════════════════════════════════════════════════
-function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, currentPlan, isTrialing, permissions, savePermissions, userRole, allFeatures, autoSubmit, setAutoSubmit }) {
+function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, currentPlan, isTrialing, permissions, savePermissions, userRole, allFeatures, autoSubmit, setAutoSubmit, foodCost, setFoodCost }) {
   const [activeTab, setActiveTab] = useState("vendors");
   const [localVendors, setLocalVendors] = useState(vendors);
   const [dirty, setDirty] = useState(false);
@@ -2046,6 +2050,26 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
                 <button onClick={() => setAutoSubmit(!autoSubmit)}
                   style={{ flexShrink:0, width:52, height:30, borderRadius:15, border:"none", cursor:"pointer", background: autoSubmit ? "#38bdf8" : "#1e2d45", position:"relative", transition:"background 0.2s" }}>
                   <span style={{ position:"absolute", top:3, left: autoSubmit ? 25 : 3, width:24, height:24, borderRadius:"50%", background:"#fff", transition:"left 0.2s" }} />
+                </button>
+              </div>
+            </div>
+          )}
+          {/* Food Cost add-on toggle */}
+          {setFoodCost && (
+            <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px", marginBottom:16 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
+                    Food cost tracking
+                    <span style={{ background:"rgba(52,211,153,0.15)", border:"1px solid rgba(52,211,153,0.3)", borderRadius:4, padding:"1px 6px", color:"#34d399", fontSize:9, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>ADD-ON</span>
+                  </div>
+                  <div style={{ color:"#64748b", fontSize:12, marginTop:3, lineHeight:1.5 }}>
+                    Turn submitted orders into a weekly food spend total. After each order, Price Tracker shows the items you ordered with last week's price carried over — only edit what changed. Leave off and the app works exactly as before.
+                  </div>
+                </div>
+                <button onClick={() => setFoodCost(!foodCost)}
+                  style={{ flexShrink:0, width:52, height:30, borderRadius:15, border:"none", cursor:"pointer", background: foodCost ? "#34d399" : "#1e2d45", position:"relative", transition:"background 0.2s" }}>
+                  <span style={{ position:"absolute", top:3, left: foodCost ? 25 : 3, width:24, height:24, borderRadius:"50%", background:"#fff", transition:"left 0.2s" }} />
                 </button>
               </div>
             </div>
@@ -4267,7 +4291,7 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRICE TRACKER — Track vendor prices, flag increases, upload invoices
 // ═══════════════════════════════════════════════════════════════════════════════
-function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors }) {
+function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors, foodCost = false, history = [], saveHistory, saveInventory }) {
   const [mode, setMode] = useState("dashboard"); // "dashboard" | "enter" | "upload"
   const [filterVendor, setFilterVendor] = useState("ALL");
   const [search, setSearch] = useState("");
@@ -4493,9 +4517,9 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
   const flagged = [];
   const allTracked = [];
   allItems.forEach(item => {
-    const history = priceHistory[item.id];
-    if (!history || history.length === 0) return;
-    const sorted = [...history].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const itemPH = priceHistory[item.id];
+    if (!itemPH || itemPH.length === 0) return;
+    const sorted = [...itemPH].sort((a, b) => new Date(b.date) - new Date(a.date));
     const current = sorted[0];
     const previous = sorted[1];
     const entry = { id: item.id, name: item.name, vendor: item.vendor || "", unit: item.order_unit, currentPrice: current.price, currentDate: current.date, currentWeek: current.weekKey, previousPrice: previous?.price || null, previousDate: previous?.date || null, totalEntries: sorted.length, priceHistory: sorted };
@@ -4512,6 +4536,104 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
 
   // Items for manual entry
   const manualItems = allItems.filter(i => (filterVendor === "ALL" || (i.vendor || "") === filterVendor) && (!search || i.name.toLowerCase().includes(search.toLowerCase())));
+
+  // ══ FOOD COST ADD-ON ═══════════════════════════════════════════════════════
+  // Standing price for an item = most recent price entry's perUnit
+  const standingPrice = (itemId) => {
+    const ph = priceHistory[itemId];
+    if (!ph || ph.length === 0) return null;
+    const sorted = [...ph].sort((a, b) => new Date(b.date) - new Date(a.date));
+    return sorted[0].perUnit ?? sorted[0].price ?? null;
+  };
+  // Last price an item was costed at in a previous order (for comparison)
+  const lastOrderedPrice = (itemId, beforeDate) => {
+    const costedOrders = (history || [])
+      .filter(o => o.costed && new Date(o.date) < new Date(beforeDate))
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+    for (const o of costedOrders) {
+      const line = (o.lines || []).find(l => l.id === itemId && l.unitPrice != null);
+      if (line) return line.unitPrice;
+    }
+    return null;
+  };
+
+  // Orders awaiting price review (not yet costed) — only when feature is on
+  const ordersToReview = foodCost
+    ? (history || []).filter(o => !o.costed && (o.lines || []).length > 0)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+    : [];
+
+  // Weekly food spend from costed orders
+  const weeklySpend = {};
+  if (foodCost) {
+    (history || []).forEach(o => {
+      if (!o.costed) return;
+      const key = `${o.year}-WK${String(o.weekNumber).padStart(2,"0")}`;
+      if (!weeklySpend[key]) weeklySpend[key] = { total: 0, orders: 0, vendors: {} };
+      weeklySpend[key].total += o.total || 0;
+      weeklySpend[key].orders += 1;
+      weeklySpend[key].vendors[o.vendor] = (weeklySpend[key].vendors[o.vendor] || 0) + (o.total || 0);
+    });
+  }
+  const spendWeeks = Object.keys(weeklySpend).sort().reverse();
+
+  // Local editable review state: { [orderId]: { [lineIdx]: { price, status } } }
+  const [reviewEdits, setReviewEdits] = useState({});
+  const getLineEdit = (orderId, idx, line) => {
+    const e = reviewEdits[orderId]?.[idx];
+    if (e) return e;
+    const sp = standingPrice(line.id);
+    return { price: sp != null ? String(sp) : "", status: "delivered" };
+  };
+  const setLineEdit = (orderId, idx, patch) => {
+    setReviewEdits(prev => ({ ...prev, [orderId]: { ...(prev[orderId] || {}), [idx]: { ...getLineEdit(orderId, idx, { id: null }), ...prev[orderId]?.[idx], ...patch } } }));
+  };
+
+  const confirmReview = (order) => {
+    const edits = reviewEdits[order.id] || {};
+    let total = 0;
+    const newLines = (order.lines || []).map((line, idx) => {
+      const e = edits[idx] || getLineEdit(order.id, idx, line);
+      const price = parseFloat(e.price) || 0;
+      const delivered = e.status === "delivered";
+      const lineTotal = delivered ? price * (line.qty || 0) : 0;
+      total += lineTotal;
+      return { ...line, unitPrice: price, delivered: e.status };
+    });
+    // Update standing prices in inventory's priceHistory where changed
+    const newPH = { ...priceHistory };
+    newLines.forEach(line => {
+      if (line.unitPrice > 0 && line.delivered === "delivered") {
+        const sp = standingPrice(line.id);
+        if (sp == null || Math.abs(sp - line.unitPrice) > 0.001) {
+          if (!newPH[line.id]) newPH[line.id] = [];
+          newPH[line.id] = [...newPH[line.id], { price: line.unitPrice, perUnit: line.unitPrice, qty: 1, unit: line.order_unit, date: order.date, weekKey: `${order.year}-WK${String(order.weekNumber).padStart(2,"0")}`, vendor: order.vendor, source: "order-review" }];
+        }
+      }
+    });
+    savePriceHistory(newPH);
+    // Mark order costed
+    const newHistory = (history || []).map(o => o.id === order.id ? { ...o, costed: true, total: Math.round(total * 100) / 100, lines: newLines, costedAt: new Date().toISOString() } : o);
+    saveHistory(newHistory);
+    setReviewEdits(prev => { const n = { ...prev }; delete n[order.id]; return n; });
+  };
+
+  const reviewTotal = (order) => {
+    const edits = reviewEdits[order.id] || {};
+    let total = 0;
+    (order.lines || []).forEach((line, idx) => {
+      const e = edits[idx] || getLineEdit(order.id, idx, line);
+      if (e.status === "delivered") total += (parseFloat(e.price) || 0) * (line.qty || 0);
+    });
+    return total;
+  };
+
+  const statusOpts = [
+    { v:"delivered", label:"Delivered" },
+    { v:"out_of_stock", label:"Out of stock" },
+    { v:"damaged", label:"Damaged" },
+    { v:"not_ordered", label:"Not on order" },
+  ];
 
   return (
     <div>
@@ -4575,6 +4697,121 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
             </span>
           )}
         </div>
+      )}
+
+      {/* ── FOOD COST: WEEKLY SPEND + ORDERS TO REVIEW ── */}
+      {foodCost && mode === "dashboard" && (
+        <>
+          {/* Weekly spend summary */}
+          {spendWeeks.length > 0 && (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ color:"#34d399", fontSize:13, fontWeight:700, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
+                <Icon name="prices" size={15} color="#34d399" /> Weekly Food Spend
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:10 }}>
+                {spendWeeks.slice(0, 4).map((wkKey, i) => {
+                  const w = weeklySpend[wkKey];
+                  const wn = wkKey.split("-WK")[1];
+                  const mon = getWeekMonday(parseInt(wn), parseInt(wkKey.split("-WK")[0])).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+                  const prevW = weeklySpend[spendWeeks[i+1]];
+                  const diff = prevW ? w.total - prevW.total : 0;
+                  return (
+                    <div key={wkKey} style={{ background: i===0 ? "rgba(52,211,153,0.08)" : "#0c1220", border:`1px solid ${i===0 ? "rgba(52,211,153,0.3)" : "#1e2d45"}`, borderRadius:12, padding:"14px 16px" }}>
+                      <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginBottom:4 }}>WK{wn} · Mon {mon}</div>
+                      <div style={{ color: i===0 ? "#34d399" : "#e2e8f0", fontSize:24, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${w.total.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+                      <div style={{ color:"#64748b", fontSize:11, marginTop:3 }}>
+                        {w.orders} order{w.orders!==1?"s":""}
+                        {prevW && diff !== 0 && <span style={{ color: diff > 0 ? "#fca5a5" : "#34d399", marginLeft:6 }}>{diff > 0 ? "▲" : "▼"} ${Math.abs(Math.round(diff))}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Orders to review */}
+          {ordersToReview.length > 0 && (
+            <div style={{ marginBottom:24 }}>
+              <div style={{ color:"#fbbf24", fontSize:13, fontWeight:700, marginBottom:4, display:"flex", alignItems:"center", gap:6 }}>
+                <Icon name="doc" size={15} color="#fbbf24" /> Price check ({ordersToReview.length})
+              </div>
+              <p style={{ color:"#64748b", fontSize:12, margin:"0 0 12px", lineHeight:1.5 }}>
+                Last price is carried over — only edit what changed. Mark anything that didn't arrive. Confirm to add it to your weekly spend.
+              </p>
+              <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+                {ordersToReview.map(order => {
+                  const wn = order.weekNumber;
+                  const mon = getWeekMonday(wn, order.year).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+                  return (
+                    <div key={order.id} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, overflow:"hidden" }}>
+                      {/* Vendor header — mirrors the receipt */}
+                      <div style={{ background:"#0f1a2e", padding:"12px 16px", borderBottom:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <Icon name="orders" size={16} color="#38bdf8" />
+                          <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{order.vendor}</span>
+                          <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>WK{wn} · Mon {mon}</span>
+                        </div>
+                        <div style={{ color:"#34d399", fontSize:18, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${reviewTotal(order).toFixed(2)}</div>
+                      </div>
+                      {/* Line items */}
+                      <div style={{ padding:"4px 0" }}>
+                        {(order.lines || []).map((line, idx) => {
+                          const e = getLineEdit(order.id, idx, line);
+                          const last = lastOrderedPrice(line.id, order.date);
+                          const changed = last != null && Math.abs((parseFloat(e.price)||0) - last) > 0.001;
+                          const notDelivered = e.status !== "delivered";
+                          return (
+                            <div key={idx} style={{ padding:"10px 16px", borderBottom: idx < order.lines.length-1 ? "1px solid #0f1a2e" : "none", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", opacity: notDelivered ? 0.55 : 1 }}>
+                              <div style={{ flex:"1 1 140px", minWidth:0 }}>
+                                <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{line.name}</div>
+                                <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{line.qty} {line.order_unit}{line.qty!==1?"s":""}</div>
+                              </div>
+                              {/* Last price */}
+                              <div style={{ textAlign:"right", minWidth:60 }}>
+                                <div style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace" }}>LAST</div>
+                                <div style={{ color:"#64748b", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{last != null ? `$${last.toFixed(2)}` : "—"}</div>
+                              </div>
+                              {/* Current price (editable) */}
+                              <div style={{ minWidth:80 }}>
+                                <div style={{ color: changed ? "#fbbf24" : "#475569", fontSize:9, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{changed ? "CHANGED" : "PRICE"}</div>
+                                <div style={{ display:"flex", alignItems:"center", gap:2 }}>
+                                  <span style={{ color:"#64748b", fontSize:13 }}>$</span>
+                                  <input type="number" inputMode="decimal" value={e.price} disabled={notDelivered}
+                                    onFocus={ev => ev.target.select()}
+                                    onChange={ev => setLineEdit(order.id, idx, { price: ev.target.value, status: e.status, id: line.id })}
+                                    style={{ width:62, background:"#080c14", border:`1px solid ${changed ? "#d97706" : "#1e2d45"}`, borderRadius:6, padding:"6px 8px", color: changed ? "#fbbf24" : "#f1f5f9", fontSize:14, outline:"none", fontFamily:"'DM Mono',monospace", textAlign:"right" }} />
+                                </div>
+                              </div>
+                              {/* Delivery status */}
+                              <select value={e.status} onChange={ev => setLineEdit(order.id, idx, { status: ev.target.value, price: e.price, id: line.id })}
+                                style={{ background:"#080c14", border:`1px solid ${notDelivered ? "#7f1d1d" : "#1e2d45"}`, borderRadius:6, padding:"6px 8px", color: notDelivered ? "#fca5a5" : "#94a3b8", fontSize:11, outline:"none", cursor:"pointer" }}>
+                                {statusOpts.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                              </select>
+                              {/* Line total */}
+                              <div style={{ minWidth:64, textAlign:"right" }}>
+                                <div style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace" }}>TOTAL</div>
+                                <div style={{ color: notDelivered ? "#475569" : "#34d399", fontSize:14, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{notDelivered ? "—" : `$${((parseFloat(e.price)||0)*(line.qty||0)).toFixed(2)}`}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {/* Confirm */}
+                      <div style={{ padding:"12px 16px", borderTop:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
+                        <span style={{ color:"#64748b", fontSize:12 }}>Order total <strong style={{ color:"#34d399", fontFamily:"'DM Mono',monospace" }}>${reviewTotal(order).toFixed(2)}</strong></span>
+                        <button onClick={() => confirmReview(order)}
+                          style={{ background:"#34d399", border:"none", borderRadius:8, padding:"9px 20px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                          Confirm prices
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* ── FLAGGED INCREASES ── */}
