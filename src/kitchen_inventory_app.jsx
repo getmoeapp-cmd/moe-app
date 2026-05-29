@@ -4847,33 +4847,18 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
             </div>
           )}
 
-          {/* Orders — review pending, view/edit confirmed */}
-          {allOrders.length > 0 && (
+          {/* Submitted orders awaiting price review */}
+          {pendingOrders.length > 0 && (
             <div style={{ marginBottom:24 }}>
-              {pendingOrders.length > 0 && (
-                <>
-                  <div style={{ color:"#fbbf24", fontSize:13, fontWeight:700, marginBottom:4, display:"flex", alignItems:"center", gap:6 }}>
-                    <Icon name="doc" size={15} color="#fbbf24" /> Price check ({pendingOrders.length})
-                  </div>
-                  <p style={{ color:"#64748b", fontSize:12, margin:"0 0 12px", lineHeight:1.5 }}>
-                    Last price is carried over — only edit what changed. Mark anything that didn't arrive.{foodCost ? " Confirm to add it to your weekly spend." : " Confirm to lock in the prices."}
-                  </p>
-                </>
-              )}
+              <div style={{ color:"#fbbf24", fontSize:13, fontWeight:700, marginBottom:4, display:"flex", alignItems:"center", gap:6 }}>
+                <Icon name="doc" size={15} color="#fbbf24" /> Price check ({pendingOrders.length})
+              </div>
+              <p style={{ color:"#64748b", fontSize:12, margin:"0 0 12px", lineHeight:1.5 }}>
+                Last price is carried over — only edit what changed. Mark anything that didn't arrive.{foodCost ? " Confirm to add it to your weekly spend." : " Confirm to lock in the prices."}
+              </p>
               <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
                 {pendingOrders.map(order => renderOrderCard(order, true))}
               </div>
-
-              {reviewedOrders.length > 0 && (
-                <>
-                  <div style={{ color:"#64748b", fontSize:13, fontWeight:700, margin:"22px 0 12px", display:"flex", alignItems:"center", gap:6 }}>
-                    <Icon name="check" size={15} color="#34d399" /> Confirmed orders
-                  </div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                    {reviewedOrders.map(order => openOrders[order.id] ? renderOrderCard(order, true) : renderConfirmedRow(order))}
-                  </div>
-                </>
-              )}
             </div>
           )}
         </>
@@ -4912,12 +4897,14 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
       )}
 
       {/* ── DASHBOARD ── */}
-      {mode === "dashboard" && allOrders.length === 0 && (
+      {mode === "dashboard" && pendingOrders.length === 0 && (
         <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:36, textAlign:"center" }}>
-          <Icon name="orders" size={34} color="#38bdf8" style={{ marginBottom:12 }} />
-          <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No orders yet</div>
+          <Icon name="check" size={34} color="#34d399" style={{ marginBottom:12 }} />
+          <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>{allOrders.length > 0 ? "All caught up" : "No orders yet"}</div>
           <div style={{ color:"#475569", fontSize:13, marginTop:6, lineHeight:1.6, maxWidth:380, margin:"6px auto 0" }}>
-            Submit an order and it shows up here grouped by vendor — like that vendor's receipt. You'll set each item's price once, then just confirm or tweak what changed each week.
+            {allOrders.length > 0
+              ? "Every submitted order has been priced. New orders will show up here for a quick price check."
+              : "Submit an order and it shows up here grouped by vendor — like that vendor's receipt. Set each item's price once, then just confirm or tweak what changed each week."}
           </div>
         </div>
       )}
