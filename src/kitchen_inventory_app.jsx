@@ -4596,6 +4596,34 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
   }
   const spendWeeks = Object.keys(weeklySpend).sort().reverse();
 
+  // ── Order lookup: by week or custom date range ──────────────────────────
+  const [lookupMode, setLookupMode] = useState("none"); // "none" | "week" | "range"
+  const [lookupWeek, setLookupWeek] = useState("");
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
+
+  // Build week options from all orders (for the week dropdown)
+  const orderWeeks = [...new Set(allOrders.map(o => `${o.year}-WK${String(o.weekNumber).padStart(2,"0")}`))].sort().reverse();
+
+  const lookupResults = (() => {
+    if (lookupMode === "week" && lookupWeek) {
+      return allOrders.filter(o => `${o.year}-WK${String(o.weekNumber).padStart(2,"0")}` === lookupWeek);
+    }
+    if (lookupMode === "range" && rangeStart && rangeEnd) {
+      const s = new Date(rangeStart); s.setHours(0,0,0,0);
+      const e = new Date(rangeEnd); e.setHours(23,59,59,999);
+      return allOrders.filter(o => { const d = new Date(o.date); return d >= s && d <= e; });
+    }
+    return null;
+  })();
+  const lookupTotal = lookupResults ? lookupResults.reduce((sum, o) => sum + (o.total || 0), 0) : 0;
+  const lookupVendor = (() => {
+    if (!lookupResults) return {};
+    const v = {};
+    lookupResults.forEach(o => { v[o.vendor] = (v[o.vendor] || 0) + (o.total || 0); });
+    return v;
+  })();
+
   // Local editable review state: { [orderId]: { [lineIdx]: { price, status } } }
   const [reviewEdits, setReviewEdits] = useState({});
   const getLineEdit = (orderId, idx, line) => {
@@ -4847,8 +4875,87 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
             </div>
           )}
 
+          {/* ── LOOK UP A WEEK OR DATE RANGE ── */}
+          {allOrders.length > 0 && (
+            <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"14px 16px", marginBottom:20 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom: lookupMode !== "none" ? 12 : 0, flexWrap:"wrap" }}>
+                <Icon name="history" size={15} color="#60a5fa" />
+                <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>Look up orders</span>
+                <div style={{ display:"flex", gap:6, marginLeft:"auto", flexWrap:"wrap" }}>
+                  {[{k:"none",l:"Off"},{k:"week",l:"By week"},{k:"range",l:"Date range"}].map(o => (
+                    <button key={o.k} onClick={() => setLookupMode(o.k)}
+                      style={{ background: lookupMode===o.k ? "#1e3a5f" : "transparent", border:`1px solid ${lookupMode===o.k ? "#38bdf8" : "#1e2d45"}`, borderRadius:7, padding:"5px 12px", color: lookupMode===o.k ? "#38bdf8" : "#64748b", fontSize:12, fontWeight:lookupMode===o.k?600:400, cursor:"pointer" }}>
+                      {o.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {lookupMode === "week" && (
+                <select value={lookupWeek} onChange={e => setLookupWeek(e.target.value)}
+                  style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none", cursor:"pointer" }}>
+                  <option value="">Select a week…</option>
+                  {orderWeeks.map(wk => {
+                    const wn = wk.split("-WK")[1]; const yr = wk.split("-WK")[0];
+                    const mon = getWeekMonday(parseInt(wn), parseInt(yr)).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+                    return <option key={wk} value={wk}>WK{wn} · Mon {mon}, {yr}</option>;
+                  })}
+                </select>
+              )}
+
+              {lookupMode === "range" && (
+                <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
+                  <div style={{ flex:"1 1 140px" }}>
+                    <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:4, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>From</label>
+                    <input type="date" value={rangeStart} onChange={e => setRangeStart(e.target.value)}
+                      style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+                  </div>
+                  <div style={{ flex:"1 1 140px" }}>
+                    <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:4, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>To</label>
+                    <input type="date" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)}
+                      style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Lookup results */}
+          {lookupResults && (
+            <div style={{ marginBottom:24 }}>
+              {lookupResults.length === 0 ? (
+                <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:24, textAlign:"center", color:"#64748b", fontSize:14 }}>
+                  No orders found for this {lookupMode === "week" ? "week" : "date range"}.
+                </div>
+              ) : (
+                <>
+                  {/* Period summary */}
+                  <div style={{ background:"rgba(96,165,250,0.06)", border:"1px solid rgba(96,165,250,0.25)", borderRadius:12, padding:"14px 16px", marginBottom:12 }}>
+                    <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+                      <div>
+                        <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{lookupResults.length} order{lookupResults.length!==1?"s":""} found</div>
+                        {foodCost && <div style={{ color:"#60a5fa", fontSize:26, fontWeight:700, fontFamily:"'DM Mono',monospace", marginTop:2 }}>${lookupTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>}
+                      </div>
+                      {foodCost && Object.keys(lookupVendor).length > 0 && (
+                        <div style={{ textAlign:"right" }}>
+                          {Object.entries(lookupVendor).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([v,amt]) => (
+                            <div key={v} style={{ color:"#94a3b8", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{v} <span style={{ color:"#e2e8f0", fontWeight:600 }}>${amt.toFixed(0)}</span></div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* Order rows */}
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {lookupResults.map(order => order.costed && !openOrders[order.id] ? renderConfirmedRow(order) : renderOrderCard(order, true))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Submitted orders awaiting price review */}
-          {pendingOrders.length > 0 && (
+          {lookupMode === "none" && pendingOrders.length > 0 && (
             <div style={{ marginBottom:24 }}>
               <div style={{ color:"#fbbf24", fontSize:13, fontWeight:700, marginBottom:4, display:"flex", alignItems:"center", gap:6 }}>
                 <Icon name="doc" size={15} color="#fbbf24" /> Price check ({pendingOrders.length})
@@ -4897,7 +5004,7 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
       )}
 
       {/* ── DASHBOARD ── */}
-      {mode === "dashboard" && pendingOrders.length === 0 && (
+      {mode === "dashboard" && lookupMode === "none" && pendingOrders.length === 0 && (
         <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:36, textAlign:"center" }}>
           <Icon name="check" size={34} color="#34d399" style={{ marginBottom:12 }} />
           <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>{allOrders.length > 0 ? "All caught up" : "No orders yet"}</div>
