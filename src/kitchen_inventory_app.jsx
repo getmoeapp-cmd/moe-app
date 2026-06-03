@@ -700,6 +700,24 @@ function MoeApp() {
     showFlash(`✓ Backfilled ${vendorName} order for WK${wkNum}`);
   };
 
+  // ── Check in a delivery: record what actually arrived (does NOT touch stock) ──
+  // lineStatuses = { [lineId]: { status, receivedQty } }  status: delivered|short|out_of_stock|damaged
+  const checkInDelivery = (orderId, lineStatuses) => {
+    const newHistory = (history || []).map(o => {
+      if (o.id !== orderId) return o;
+      const newLines = (o.lines || []).map(line => {
+        const s = lineStatuses[line.id] || { status: "delivered" };
+        return { ...line, delivered: s.status === "delivered" ? "delivered" : s.status, receivedQty: s.status === "short" ? (s.receivedQty ?? line.qty) : (s.status === "delivered" ? line.qty : 0) };
+      });
+      return { ...o, received: true, receivedAt: new Date().toISOString(), lines: newLines };
+    });
+    setHistory(newHistory);
+    save("history", newHistory);
+    const order = newHistory.find(o => o.id === orderId);
+    const shortfalls = (order?.lines || []).filter(l => l.delivered && l.delivered !== "delivered").length;
+    showFlash(shortfalls > 0 ? `✓ Delivery checked in — ${shortfalls} item${shortfalls!==1?"s":""} flagged` : `✓ Delivery checked in — all received`);
+  };
+
   // ── Save vendors ─────────────────────────────────────────────────────────
   const saveVendors = (newVendors) => { setVendors(newVendors); save("vendors", newVendors); showFlash(); };
 
@@ -733,6 +751,9 @@ function MoeApp() {
 
   // ── Login ────────────────────────────────────────────────────────────────
   if (!user) return <LoginScreen onLogin={u => { setUser(u); setGroup(u.group || "demo"); setLoginError(""); }} error={loginError} setError={setLoginError} />;
+
+  // ── Sales reps get the rep dashboard, not the app ──────────────────────
+  if (user.role === "rep") return <RepDashboard repCode={user.repCode} repName={user.name} onLogout={() => { setUser(null); setGroup(null); }} />;
 
   // ── Subscription gate (skip for demo accounts) ─────────────────────────
   const isDemo = DEMO_GROUPS.includes(group);
@@ -953,7 +974,7 @@ function MoeApp() {
       <main key={view} className="moe-fade" style={{ maxWidth:1200, margin:"0 auto", padding:"16px", boxSizing:"border-box", width:"100%" }}>
         {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
         {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
-        {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} submitOrderForWeek={submitOrderForWeek} history={history} user={user} />}
+        {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} submitOrderForWeek={submitOrderForWeek} checkInDelivery={checkInDelivery} history={history} user={user} />}
         {view === "history" && canAccess("history") && <HistoryView history={history} user={user} />}
         {view === "insights" && canAccess("insights") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} stockSnapshots={stockSnapshots} history={history} />}
         {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} foodCost={foodCost} history={history} saveHistory={saveHistory} saveInventory={(inv) => { setInventory(inv); save("inventory", inv); }} />}
@@ -1054,7 +1075,7 @@ function LoginScreen({ onLogin, error, setError }) {
   const [reg, setReg] = useState({
     ownerFirst: "", ownerLast: "", ownerEmail: "", ownerPhone: "",
     password: "", confirmPassword: "",
-    bizName: "", bizType: "restaurant", bizPhone: "", bizAddress: "", bizCity: "", bizState: "", bizZip: "",
+    bizName: "", bizType: "restaurant", bizPhone: "", bizAddress: "", bizCity: "", bizState: "", bizZip: "", repCode: "",
   });
   const [regStep, setRegStep] = useState(1); // 1 = owner info, 2 = business info
   const [regError, setRegError] = useState("");
@@ -1099,9 +1120,19 @@ function LoginScreen({ onLogin, error, setError }) {
         city: reg.bizCity.trim(), state: reg.bizState.trim(), zip: reg.bizZip.trim(),
       },
       createdAt: new Date().toISOString(),
+      repCode: (reg.repCode || "").trim().toUpperCase(),
     };
     existing[account.email] = account;
     await sbSet("__moe_accounts__", "accounts", existing);
+
+    // If tagged to a rep, add this account to the rep's account list
+    if (account.repCode) {
+      const repAccts = await sbGet("__moe_reps__", `accounts_${account.repCode}`) || [];
+      if (!repAccts.find(a => a.email === account.email)) {
+        repAccts.push({ email: account.email, group: groupId, business: account.business.name, createdAt: account.createdAt });
+        await sbSet("__moe_reps__", `accounts_${account.repCode}`, repAccts);
+      }
+    }
 
     // Log them in
     onLogin({ name: `${account.ownerFirst} ${account.ownerLast}`, role: "owner", group: groupId, email: account.email, business: account.business });
@@ -1137,6 +1168,15 @@ function LoginScreen({ onLogin, error, setError }) {
           return;
         }
       }
+    }
+
+    // Check sales rep accounts
+    const reps = await sbGet("__moe_reps__", "reps") || {};
+    const rep = reps[emailLower];
+    if (rep && rep.password === pass) {
+      rememberEmail();
+      onLogin({ name: rep.name, role: "rep", repCode: rep.code, email: emailLower, group: null });
+      return;
     }
 
     setError("Invalid email or password.");
@@ -1305,6 +1345,11 @@ function LoginScreen({ onLogin, error, setError }) {
                     <input value={reg.bizZip} onChange={e => updateReg("bizZip", e.target.value)} placeholder="11201" style={inp} />
                   </div>
                 </div>
+                <div style={{ marginBottom:16 }}>
+                  <label style={lbl}>Sales rep code <span style={{ color:"#475569", fontWeight:400 }}>(optional)</span></label>
+                  <input value={reg.repCode} onChange={e => updateReg("repCode", e.target.value.toUpperCase())} placeholder="e.g. JOE" style={{ ...inp, textTransform:"uppercase" }} />
+                  <div style={{ color:"#475569", fontSize:11, marginTop:4 }}>If your food rep referred you, enter their code so they can support your account.</div>
+                </div>
                 {regError && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:16 }}>{regError}</div>}
                 <div style={{ display:"flex", gap:10 }}>
                   <button onClick={() => setRegStep(1)}
@@ -1420,7 +1465,7 @@ function InventoryView({ inventory, stock, updateStock, vendors }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ORDERS VIEW — Shows vendors ordering today, submit per vendor
 // ═══════════════════════════════════════════════════════════════════════════════
-function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, submitOrderForWeek, history, user }) {
+function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, submitOrderForWeek, checkInDelivery, history, user }) {
   const [selectedDay, setSelectedDay] = useState(getToday());
   const dayVendors = vendors.filter(v => v.orderDays && v.orderDays.includes(selectedDay));
   const allItems = flatItems(inventory);
@@ -1446,8 +1491,53 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
     }
   });
 
-  // Quick order state
-  const [showQuick, setShowQuick] = useState(false);
+  // ── Delivery check-in ───────────────────────────────────────────────────
+  const [checkInOrder, setCheckInOrder] = useState(null); // order being checked in
+  const [checkInState, setCheckInState] = useState({}); // { [lineId]: { status, receivedQty } }
+  const [dismissedShortfall, setDismissedShortfall] = useState({});
+
+  // Orders submitted but not yet checked in (awaiting delivery), newest first
+  const awaitingDelivery = (history || [])
+    .filter(o => !o.received && o.type !== "quick" && (o.lines || []).length > 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  // Shortfalls: items from checked-in orders that didn't fully arrive (recent, not dismissed)
+  const shortfalls = [];
+  (history || []).filter(o => o.received).forEach(o => {
+    (o.lines || []).forEach(line => {
+      if (line.delivered && line.delivered !== "delivered" && !dismissedShortfall[`${o.id}_${line.id}`]) {
+        shortfalls.push({ key: `${o.id}_${line.id}`, orderId: o.id, vendor: o.vendor, name: line.name, status: line.delivered, qty: line.qty, order_unit: line.order_unit, id: line.id, date: o.date });
+      }
+    });
+  });
+
+  // Low & not on any open (awaiting-delivery) order — catches "never made it onto the list"
+  const onOpenOrder = new Set();
+  awaitingDelivery.forEach(o => (o.lines || []).forEach(l => onOpenOrder.add(l.id)));
+  const lowNotOrdered = allItems.filter(item => {
+    const s = stock[item.id] ?? 0;
+    const reorder = item.reorder ?? 0;
+    return reorder > 0 && s <= reorder && !onOpenOrder.has(item.id);
+  });
+
+  const statusLabel = { short:"Short", out_of_stock:"Out of stock", damaged:"Damaged", not_ordered:"Not on order" };
+
+  const openCheckIn = (order) => {
+    const init = {};
+    (order.lines || []).forEach(l => { init[l.id] = { status: "delivered", receivedQty: l.qty }; });
+    setCheckInState(init);
+    setCheckInOrder(order);
+  };
+  const submitCheckIn = () => {
+    checkInDelivery(checkInOrder.id, checkInState);
+    setCheckInOrder(null); setCheckInState({});
+  };
+  const addToNextOrder = (item) => {
+    const invItem = allItems.find(i => i.id === item.id);
+    logQuickOrder([{ id: item.id, name: item.name, qty: item.qty || 1, order_unit: item.order_unit, vendor: invItem?.vendor || "", section: invItem?.section || "" }], "Reorder — didn't arrive", `Shortfall from ${item.vendor || "order"}`);
+    setDismissedShortfall(prev => ({ ...prev, [item.key]: true }));
+  };
+
   const [quickSearch, setQuickSearch] = useState("");
   const [quickItems, setQuickItems] = useState([]); // [{ id, name, qty, order_unit, vendor, section }]
   const [quickSource, setQuickSource] = useState("");
@@ -1541,6 +1631,151 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
                   </button>
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── DELIVERY CHECK-IN MODAL ── */}
+      {checkInOrder && (
+        <div onClick={() => setCheckInOrder(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:1000, display:"flex", alignItems:"flex-end", justifyContent:"center", padding:0 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:"16px 16px 0 0", width:"100%", maxWidth:600, maxHeight:"88vh", overflowY:"auto" }}>
+            <div style={{ position:"sticky", top:0, background:"#0f1a2e", padding:"16px 18px", borderBottom:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div>
+                <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:700, display:"flex", alignItems:"center", gap:8 }}><Icon name="orders" size={17} color="#38bdf8" />Check in {checkInOrder.vendor}</div>
+                <div style={{ color:"#64748b", fontSize:12, marginTop:2 }}>Tap anything that didn't fully arrive. Everything defaults to delivered.</div>
+              </div>
+              <button onClick={() => setCheckInOrder(null)} style={{ background:"none", border:"none", color:"#64748b", fontSize:22, cursor:"pointer", lineHeight:1 }}>×</button>
+            </div>
+            <div style={{ padding:"8px 0" }}>
+              {(checkInOrder.lines || []).map((line, idx) => {
+                const st = checkInState[line.id] || { status:"delivered", receivedQty: line.qty };
+                const opts = [
+                  { v:"delivered", l:"Came in", c:"#34d399" },
+                  { v:"short", l:"Short", c:"#fbbf24" },
+                  { v:"out_of_stock", l:"Out", c:"#fca5a5" },
+                  { v:"damaged", l:"Damaged", c:"#fca5a5" },
+                ];
+                return (
+                  <div key={line.id} style={{ padding:"12px 18px", borderBottom: idx < checkInOrder.lines.length-1 ? "1px solid #0f1a2e" : "none" }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:8 }}>
+                      <span style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{line.name}</span>
+                      <span style={{ color:"#475569", fontSize:12, fontFamily:"'DM Mono',monospace" }}>ordered {line.qty} {line.order_unit}{line.qty!==1?"s":""}</span>
+                    </div>
+                    <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                      {opts.map(o => {
+                        const active = st.status === o.v;
+                        return (
+                          <button key={o.v} onClick={() => setCheckInState(prev => ({ ...prev, [line.id]: { ...prev[line.id], status: o.v, receivedQty: o.v === "short" ? Math.max(0, line.qty-1) : (o.v === "delivered" ? line.qty : 0) } }))}
+                            style={{ background: active ? o.c : "transparent", border:`1px solid ${active ? o.c : "#1e2d45"}`, borderRadius:7, padding:"6px 12px", color: active ? "#060a12" : "#94a3b8", fontSize:12, fontWeight: active?700:400, cursor:"pointer" }}>
+                            {o.l}
+                          </button>
+                        );
+                      })}
+                      {st.status === "short" && (
+                        <div style={{ display:"flex", alignItems:"center", gap:4, marginLeft:4 }}>
+                          <span style={{ color:"#64748b", fontSize:11 }}>got</span>
+                          <input type="number" min="0" max={line.qty} value={st.receivedQty} onFocus={e=>e.target.select()}
+                            onChange={e => setCheckInState(prev => ({ ...prev, [line.id]: { ...prev[line.id], status:"short", receivedQty: parseInt(e.target.value)||0 } }))}
+                            style={{ width:46, background:"#080c14", border:"1px solid #d97706", borderRadius:6, padding:"5px 6px", color:"#fbbf24", fontSize:13, outline:"none", textAlign:"center", fontFamily:"'DM Mono',monospace" }} />
+                          <span style={{ color:"#64748b", fontSize:11 }}>of {line.qty}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ position:"sticky", bottom:0, background:"#0c1220", padding:"14px 18px", borderTop:"1px solid #1e2d45" }}>
+              <button onClick={submitCheckIn}
+                style={{ width:"100%", background:"#38bdf8", border:"none", borderRadius:10, padding:"13px", color:"#060a12", fontSize:15, fontWeight:700, cursor:"pointer" }}>
+                Confirm delivery
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SHORTFALL ALERT: ordered but didn't arrive ── */}
+      {shortfalls.length > 0 && (
+        <div style={{ background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.4)", borderRadius:12, padding:"14px 16px", marginBottom:16 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+            <Icon name="alert" size={16} color="#fca5a5" />
+            <span style={{ color:"#fca5a5", fontSize:14, fontWeight:700 }}>Ordered but didn't arrive ({shortfalls.length})</span>
+          </div>
+          <p style={{ color:"#94a3b8", fontSize:12.5, margin:"0 0 12px", lineHeight:1.5 }}>
+            These were on an order but came up short or out of stock. Add them to your next order so you don't run out.
+          </p>
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {shortfalls.map(s => (
+              <div key={s.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, background:"#0c1220", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 14px", flexWrap:"wrap" }}>
+                <div>
+                  <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{s.name}</span>
+                  <span style={{ background:"rgba(248,113,113,0.15)", border:"1px solid rgba(248,113,113,0.3)", borderRadius:4, padding:"1px 6px", color:"#fca5a5", fontSize:9, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>{statusLabel[s.status] || s.status}</span>
+                  <span style={{ color:"#64748b", fontSize:11, marginLeft:8 }}>{s.vendor}</span>
+                </div>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button onClick={() => addToNextOrder(s)}
+                    style={{ background:"#38bdf8", border:"none", borderRadius:7, padding:"7px 12px", color:"#060a12", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                    Add to next order
+                  </button>
+                  <button onClick={() => setDismissedShortfall(prev => ({ ...prev, [s.key]: true }))}
+                    style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:7, padding:"7px 10px", color:"#94a3b8", fontSize:12, cursor:"pointer" }}>
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── AWAITING DELIVERY: orders to check in ── */}
+      {awaitingDelivery.length > 0 && (
+        <div style={{ background:"rgba(56,189,248,0.06)", border:"1px solid rgba(56,189,248,0.3)", borderRadius:12, padding:"14px 16px", marginBottom:16 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+            <Icon name="orders" size={16} color="#38bdf8" />
+            <span style={{ color:"#38bdf8", fontSize:14, fontWeight:700 }}>Waiting on delivery ({awaitingDelivery.length})</span>
+          </div>
+          <p style={{ color:"#94a3b8", fontSize:12.5, margin:"0 0 12px", lineHeight:1.5 }}>
+            When a delivery shows up, check it in so you catch anything that didn't come — before you run out.
+          </p>
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {awaitingDelivery.map(o => {
+              const mon = getWeekMonday(o.weekNumber, o.year).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+              return (
+                <div key={o.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, background:"#0c1220", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 14px", flexWrap:"wrap" }}>
+                  <div>
+                    <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{o.vendor}</span>
+                    <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginLeft:8 }}>WK{o.weekNumber} · Mon {mon} · {o.totalItems} item{o.totalItems!==1?"s":""}</span>
+                  </div>
+                  <button onClick={() => openCheckIn(o)}
+                    style={{ background:"#38bdf8", border:"none", borderRadius:7, padding:"7px 14px", color:"#060a12", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                    Check in delivery
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── LOW & NOT ON ANY ORDER ── */}
+      {lowNotOrdered.length > 0 && (
+        <div style={{ background:"rgba(251,191,36,0.06)", border:"1px solid rgba(251,191,36,0.35)", borderRadius:12, padding:"14px 16px", marginBottom:16 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+            <Icon name="alert" size={16} color="#fbbf24" />
+            <span style={{ color:"#fbbf24", fontSize:14, fontWeight:700 }}>Low &amp; not ordered yet ({lowNotOrdered.length})</span>
+          </div>
+          <p style={{ color:"#94a3b8", fontSize:12.5, margin:"0 0 10px", lineHeight:1.5 }}>
+            At or below reorder point and not on any open order — easy to forget on the list.
+          </p>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {lowNotOrdered.map(item => (
+              <button key={item.id} onClick={() => addToNextOrder({ id:item.id, name:item.name, qty: Math.max(1, calcOrderQty(item, stock[item.id] ?? 0)), order_unit:item.order_unit, key:`low_${item.id}` })}
+                style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:8, padding:"7px 12px", color:"#e2e8f0", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+                {item.name} <span style={{ color:"#fbbf24", fontFamily:"'DM Mono',monospace" }}>{stock[item.id] ?? 0} left</span> <Icon name="plus" size={12} color="#38bdf8" />
+              </button>
             ))}
           </div>
         </div>
@@ -3604,6 +3839,7 @@ function LandingPage() {
     .lp .mock-row .vl.red { color: var(--rose); }
     .lp .mock-row .vl.grn { color: var(--green); }
     .lp .mock-row .vl.blu { color: var(--accent); }
+    .lp .mock-row .vl.amb { color: var(--amber); }
     .lp .mock-hdr { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--t3); margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
     @media (max-width: 768px) {
       .lp .desk-nav { display: none !important; }
@@ -3682,8 +3918,8 @@ function LandingPage() {
           <h1 style={{ fontSize: "clamp(2.5rem,6vw,4rem)", fontWeight: 700, lineHeight: 1.08, letterSpacing: "-0.035em", marginBottom: 24 }}>
             Stop losing money<br/>on <span style={{ background: "linear-gradient(135deg,var(--accent),#a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>inventory</span>
           </h1>
-          <p style={{ fontSize: "1.2rem", color: "var(--t2)", maxWidth: 540, margin: "0 auto 40px", lineHeight: 1.7 }}>
-            MOE helps small businesses track stock, cut waste, and reorder smarter — so you can save $500+ every week without the spreadsheet headaches.
+          <p style={{ fontSize: "1.2rem", color: "var(--t2)", maxWidth: 560, margin: "0 auto 40px", lineHeight: 1.7 }}>
+            MOE counts your stock, builds your orders, catches what didn't get delivered, and flags price hikes — so you stop losing $500+ a week to over-ordering, waste, and emergency runs.
           </p>
           <div className="hero-acts" style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }}>
             <button className="btn-p" onClick={() => window.__moeNavigate("/quiz")}>Start Free 14-Day Trial {arrowSvg}</button>
@@ -3693,7 +3929,7 @@ function LandingPage() {
             {checkSvg} No credit card required · Setup in under 5 minutes
           </p>
           <div className="save-bar" style={{ marginTop: 60, display: "flex", justifyContent: "center", gap: 48, flexWrap: "wrap" }}>
-            {[["$500+","Saved per Week","var(--green)"],["80%","Less Waste","var(--amber)"],["3 min","To Place Orders","var(--accent)"]].map(([num,lbl,col]) => (
+            {[["$500+","Saved per Week","var(--green)"],["80%","Less Waste","var(--amber)"],["Seconds","To Place an Order","var(--accent)"]].map(([num,lbl,col]) => (
               <div key={lbl} style={{ textAlign: "center" }}>
                 <div className="snum" style={{ fontFamily: "var(--fm)", fontSize: "2.2rem", fontWeight: 700, color: col, letterSpacing: "-0.03em" }}>{num}</div>
                 <div style={{ fontSize: "0.8rem", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 4 }}>{lbl}</div>
@@ -3757,12 +3993,16 @@ function LandingPage() {
           </div>
 
           {[
-            { tag: "Inventory", tagCls: "rgba(56,189,248,0.12)", tagCol: "var(--accent)", title: "Know exactly what you have — and what you need", desc: "Track every item in real-time. Set par levels, see what's running low, and generate orders in one click.", bullets: ["Real-time stock tracking","Smart par level suggestions","One-click order generation"],
-              mock: [["Mozzarella (5lb)","12 units","blu"],["Flour (50lb bag)","8 units","grn"],["Olive Oil (gal)","2 units ⚠","red"],["Pepperoni (10lb)","6 units","grn"]], mockTitle: "Live Inventory" },
+            { tag: "Inventory", tagCls: "rgba(56,189,248,0.12)", tagCol: "var(--accent)", title: "Know exactly what you have — and what to order", desc: "Do a quick count and MOE builds the order for you based on what you actually use. No more guessing, no more spreadsheets.", bullets: ["Fast stock counts by section","Usage-based par suggestions","Orders build themselves"],
+              mock: [["Mozzarella (5lb)","12 units","blu"],["Flour (50lb bag)","8 units","grn"],["Olive Oil (gal)","2 units ⚠","red"],["Pepperoni (10lb)","6 units","grn"]], mockTitle: "Your Stock Count" },
+            { tag: "Delivery Check-In", tagCls: "rgba(56,189,248,0.12)", tagCol: "var(--accent)", title: "Never get blindsided by a missing item again", desc: "When a delivery arrives, check it in seconds. MOE flags anything short, out of stock, or left off the truck — so you find out today, not when you've run out mid-rush.", bullets: ["Catch shortfalls the day they happen","One-tap add back to your next order","Flags items you forgot to order at all"],
+              mock: [["Penne (case)","Out of stock ⚠","red"],["Mozzarella (5lb)","Came in ✓","grn"],["Tomatoes (case)","Short 2 of 5 ⚠","red"],["Flour (50lb)","Came in ✓","grn"]], mockTitle: "Delivery Check-In" },
+            { tag: "Usage Insights", tagCls: "rgba(167,139,250,0.12)", tagCol: "#a78bfa", title: "See what you actually use every week", desc: "MOE measures real usage from your stock counts — so if you carry 20 but only use 13, it tells you to trim to 16 and stop tying up cash in your walk-in.", bullets: ["Tracks true weekly usage","Flags over-ordering & dead stock","Set the right par in one tap"],
+              mock: [["Flour","13 used / 20 stocked","amb"],["→ Recommended par","16 units","grn"],["Mozzarella","9 used / 14 stocked","amb"],["→ You're over by","5 cases","red"]], mockTitle: "Usage Insights" },
             { tag: "Waste Log", tagCls: "rgba(251,113,133,0.12)", tagCol: "var(--rose)", title: "See where your money goes to die", desc: "Log every item that hits the trash with reason codes and cost estimates. Spot the patterns, fix the leaks.", bullets: ["Reason-coded waste tracking","Automatic cost estimation","Weekly trend analysis"],
               mock: [["Total waste cost","-$127.40","red"],["vs. last week","↓ 34%","grn"],["Expired produce","$68.20","red"],["Over-prepped","$41.00","red"]], mockTitle: "This Week's Waste" },
-            { tag: "Price Tracker", tagCls: "rgba(251,191,36,0.12)", tagCol: "var(--amber)", title: "Catch price hikes before they eat your margin", desc: "Upload invoices or CSVs and MOE flags any price that jumped week-over-week.", bullets: ["Invoice photo & CSV upload","Week-over-week price flagging","Supplier comparison tools"],
-              mock: [["Chicken breast (/lb)","$3.89 → $4.42 ↑14%","red"],["Heavy cream (qt)","$4.10 → $4.55 ↑11%","red"],["Romaine lettuce","$2.20 → $2.15 ↓2%","grn"],["Tomatoes (case)","$24.00 — stable","grn"]], mockTitle: "Price Alerts" },
+            { tag: "Price Tracker", tagCls: "rgba(251,191,36,0.12)", tagCol: "var(--amber)", title: "Catch price hikes before they eat your margin", desc: "Set a price once and MOE carries it across every order. After each order, do a 30-second price check — confirm what's the same, edit only what changed, and get a weekly food spend total.", bullets: ["Set it once, it carries over","Flags week-over-week increases","Weekly food spend, automatically"],
+              mock: [["Chicken breast (/lb)","$3.89 → $4.42 ↑14%","red"],["Heavy cream (qt)","$4.10 → $4.55 ↑11%","red"],["Romaine lettuce","$2.20 → $2.15 ↓2%","grn"],["This week's spend","$3,840","blu"]], mockTitle: "Price Alerts" },
             { tag: "AI Import", tagCls: "rgba(52,211,153,0.12)", tagCol: "var(--green)", title: "Build your inventory in minutes, not hours", desc: "Just snap a photo of your invoice and MOE's AI builds your full item list.", bullets: ["AI-generated item lists","Pre-set categories & units","Edit anything after import"],
               mock: [["✓ Dough & Flour (6 items)","Added","blu"],["✓ Cheese & Dairy (8 items)","Added","blu"],["✓ Meats & Proteins (10 items)","Added","blu"],["✓ Produce & Vegetables (12 items)","Added","blu"]], mockTitle: "AI Import" },
           ].map((feat, idx) => (
@@ -5604,11 +5844,184 @@ function SavingsQuiz() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// REP DASHBOARD — Sales rep sees their accounts: who ordered, who didn't, view orders
+// ═══════════════════════════════════════════════════════════════════════════════
+function RepDashboard({ repCode, repName, onLogout }) {
+  const [accounts, setAccounts] = useState(null);
+  const [ordersByGroup, setOrdersByGroup] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [openAcct, setOpenAcct] = useState(null);
+  const [viewOrder, setViewOrder] = useState(null);
+
+  const weekNum = getWeekNumber();
+  const curYear = new Date().getFullYear();
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      await loadSupabase();
+      const list = await sbGet("__moe_reps__", `accounts_${repCode}`) || [];
+      // Pull each account's order history
+      const orders = {};
+      await Promise.all(list.map(async (a) => {
+        const hist = await sbGet(a.group, "history");
+        orders[a.group] = Array.isArray(hist) ? hist : [];
+      }));
+      setAccounts(list);
+      setOrdersByGroup(orders);
+      setLoading(false);
+    };
+    fetchAll();
+  }, [repCode]);
+
+  const inp = { width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 12px", color:"#f1f5f9", fontSize:15, outline:"none", boxSizing:"border-box" };
+
+  if (loading) return (
+    <div style={{ minHeight:"100vh", background:"#080c14", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <div style={{ color:"#475569", fontSize:14, fontFamily:"'DM Mono',monospace" }}>Loading your accounts…</div>
+    </div>
+  );
+
+  // Did this account order in the current week?
+  const orderedThisWeek = (group) => (ordersByGroup[group] || []).some(o => o.weekNumber === weekNum && o.year === curYear);
+  const lastOrder = (group) => {
+    const os = (ordersByGroup[group] || []).slice().sort((a,b) => new Date(b.date) - new Date(a.date));
+    return os[0] || null;
+  };
+
+  const ordered = (accounts || []).filter(a => orderedThisWeek(a.group));
+  const notOrdered = (accounts || []).filter(a => !orderedThisWeek(a.group));
+
+  return (
+    <div style={{ minHeight:"100vh", background:"radial-gradient(1200px 600px at 50% -10%, #0d1626 0%, #080c14 55%)", fontFamily:"'DM Sans',sans-serif" }}>
+      <MoeIcons />
+      <div style={{ maxWidth:760, margin:"0 auto", padding:"20px 16px" }}>
+        {/* Header */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24, flexWrap:"wrap", gap:10 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <MoeLogo size="sm" />
+            <div>
+              <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:700 }}>Rep Dashboard</div>
+              <div style={{ color:"#64748b", fontSize:12 }}>{repName ? `${repName} · ` : ""}Code {repCode} · {fmtWeekLabel(weekNum)}</div>
+            </div>
+          </div>
+          <button onClick={onLogout} style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 14px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>Sign out</button>
+        </div>
+
+        {/* Stats */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:24 }}>
+          <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"14px 16px" }}>
+            <div style={{ color:"#f1f5f9", fontSize:26, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{accounts.length}</div>
+            <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Your accounts</div>
+          </div>
+          <div style={{ background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.3)", borderRadius:12, padding:"14px 16px" }}>
+            <div style={{ color:"#34d399", fontSize:26, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{ordered.length}</div>
+            <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Ordered this week</div>
+          </div>
+          <div style={{ background:"rgba(251,191,36,0.08)", border:"1px solid rgba(251,191,36,0.3)", borderRadius:12, padding:"14px 16px" }}>
+            <div style={{ color:"#fbbf24", fontSize:26, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{notOrdered.length}</div>
+            <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Haven't ordered</div>
+          </div>
+        </div>
+
+        {accounts.length === 0 ? (
+          <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:36, textAlign:"center" }}>
+            <Icon name="orders" size={32} color="#38bdf8" style={{ marginBottom:10 }} />
+            <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No accounts yet</div>
+            <div style={{ color:"#475569", fontSize:13, marginTop:6, lineHeight:1.6, maxWidth:420, margin:"6px auto 0" }}>
+              When a restaurant signs up with your rep code <strong style={{ color:"#38bdf8" }}>{repCode}</strong>, they'll show up here. Share your code so their account links to you.
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Haven't ordered — most actionable, show first */}
+            {notOrdered.length > 0 && (
+              <div style={{ marginBottom:24 }}>
+                <div style={{ color:"#fbbf24", fontSize:13, fontWeight:700, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
+                  <Icon name="alert" size={15} color="#fbbf24" /> Haven't ordered this week — follow up
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {notOrdered.map(a => {
+                    const last = lastOrder(a.group);
+                    return (
+                      <div key={a.group} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:10, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+                        <div>
+                          <div style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{a.business}</div>
+                          <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>
+                            {last ? `Last order: ${fmtDate(last.date)}` : "No orders yet"}
+                          </div>
+                        </div>
+                        <span style={{ background:"rgba(251,191,36,0.12)", border:"1px solid rgba(251,191,36,0.3)", borderRadius:6, padding:"3px 10px", color:"#fbbf24", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>NO ORDER</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Ordered this week */}
+            {ordered.length > 0 && (
+              <div>
+                <div style={{ color:"#34d399", fontSize:13, fontWeight:700, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
+                  <Icon name="check" size={15} color="#34d399" /> Ordered this week
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {ordered.map(a => {
+                    const weekOrders = (ordersByGroup[a.group] || []).filter(o => o.weekNumber === weekNum && o.year === curYear).sort((x,y) => new Date(y.date) - new Date(x.date));
+                    const isOpen = openAcct === a.group;
+                    return (
+                      <div key={a.group} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:10, overflow:"hidden" }}>
+                        <button onClick={() => setOpenAcct(isOpen ? null : a.group)}
+                          style={{ width:"100%", background:"none", border:"none", padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, cursor:"pointer", textAlign:"left", flexWrap:"wrap" }}>
+                          <div>
+                            <div style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{a.business}</div>
+                            <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{weekOrders.length} order{weekOrders.length!==1?"s":""} this week · tap to view</div>
+                          </div>
+                          <span style={{ background:"rgba(52,211,153,0.12)", border:"1px solid rgba(52,211,153,0.3)", borderRadius:6, padding:"3px 10px", color:"#34d399", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>ORDERED</span>
+                        </button>
+                        {isOpen && (
+                          <div style={{ padding:"0 16px 14px", background:"#080c14" }}>
+                            {weekOrders.map(o => (
+                              <div key={o.id} style={{ borderTop:"1px solid #1e2d45", paddingTop:10, marginTop:10 }}>
+                                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginBottom:6 }}>
+                                  <span style={{ color:"#94a3b8", fontSize:12, fontWeight:600 }}>{o.vendor}{o.type === "quick" ? " (quick)" : ""}</span>
+                                  <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{fmtDate(o.date)} · {o.totalItems} items</span>
+                                </div>
+                                <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                                  <tbody>
+                                    {(o.lines || []).map((l, li) => (
+                                      <tr key={li}>
+                                        <td style={{ padding:"3px 0", color:"#e2e8f0", fontSize:12 }}>{l.name}</td>
+                                        <td style={{ padding:"3px 0", textAlign:"right", color:"#38bdf8", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{l.qty} {l.order_unit}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ADMIN VIEW — See all signups and accounts
 // ═══════════════════════════════════════════════════════════════════════════════
 function AdminView() {
   const [accounts, setAccounts] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [reps, setReps] = useState({});
+  const [newRep, setNewRep] = useState({ name:"", email:"", password:"", code:"" });
+  const [repMsg, setRepMsg] = useState("");
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -5616,6 +6029,8 @@ function AdminView() {
       try {
         const data = await sbGet("__moe_accounts__", "accounts");
         setAccounts(data || {});
+        const r = await sbGet("__moe_reps__", "reps");
+        setReps(r || {});
       } catch (err) {
         console.error("Failed to load accounts:", err);
         setAccounts({});
@@ -5624,6 +6039,18 @@ function AdminView() {
     };
     fetchAccounts();
   }, []);
+
+  const addRep = async () => {
+    const name = newRep.name.trim(), email = newRep.email.toLowerCase().trim(), code = newRep.code.trim().toUpperCase(), password = newRep.password;
+    if (!name || !email || !code || !password) { setRepMsg("All fields required."); return; }
+    const r = await sbGet("__moe_reps__", "reps") || {};
+    if (r[email]) { setRepMsg("A rep with this email already exists."); return; }
+    r[email] = { name, email, code, password, createdAt: new Date().toISOString() };
+    await sbSet("__moe_reps__", "reps", r);
+    setReps(r);
+    setNewRep({ name:"", email:"", password:"", code:"" });
+    setRepMsg(`✓ Rep added. They log in at the normal sign-in with code ${code}.`);
+  };
 
   if (loading) return (
     <div style={{ textAlign: "center", padding: 40 }}>
@@ -5659,6 +6086,36 @@ function AdminView() {
         </div>
       </div>
 
+      {/* Sales Reps */}
+      <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px", marginBottom:20 }}>
+        <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:700, marginBottom:4 }}>Sales reps</div>
+        <div style={{ color:"#64748b", fontSize:12, marginBottom:14 }}>Create a rep login. Accounts that sign up with the rep's code show on their dashboard.</div>
+        {Object.values(reps).length > 0 && (
+          <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:14 }}>
+            {Object.values(reps).map(r => {
+              const tagged = Object.values(accounts || {}).filter(a => (a.repCode || "") === r.code).length;
+              return (
+                <div key={r.email} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", flexWrap:"wrap" }}>
+                  <div>
+                    <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{r.name}</span>
+                    <span style={{ background:"rgba(56,189,248,0.12)", border:"1px solid rgba(56,189,248,0.3)", borderRadius:4, padding:"1px 6px", color:"#38bdf8", fontSize:10, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>{r.code}</span>
+                  </div>
+                  <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{r.email} · {tagged} account{tagged!==1?"s":""}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:8, marginBottom:10 }}>
+          <input value={newRep.name} onChange={e => setNewRep({...newRep, name:e.target.value})} placeholder="Rep name" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
+          <input value={newRep.email} onChange={e => setNewRep({...newRep, email:e.target.value})} placeholder="Email" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
+          <input value={newRep.code} onChange={e => setNewRep({...newRep, code:e.target.value.toUpperCase()})} placeholder="Code (e.g. JOE)" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none", textTransform:"uppercase" }} />
+          <input value={newRep.password} onChange={e => setNewRep({...newRep, password:e.target.value})} placeholder="Password" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
+        </div>
+        {repMsg && <div style={{ color: repMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:12, marginBottom:10 }}>{repMsg}</div>}
+        <button onClick={addRep} style={{ background:"#38bdf8", border:"none", borderRadius:8, padding:"9px 18px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>Add rep</button>
+      </div>
+
       {/* Accounts list */}
       {sorted.length === 0 ? (
         <div style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 12, padding: 32, textAlign: "center" }}>
@@ -5691,6 +6148,7 @@ function AdminView() {
                   {acct.business?.phone && <span style={{ color: "#475569", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>☎ {acct.business.phone}</span>}
                   {acct.business?.city && <span style={{ color: "#475569", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>📍 {acct.business.city}, {acct.business.state}</span>}
                   {created && <span style={{ color: "#475569", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>🗓 {created.toLocaleDateString()}{daysAgo !== null ? ` (${daysAgo === 0 ? "today" : daysAgo === 1 ? "yesterday" : daysAgo + "d ago"})` : ""}</span>}
+                  {acct.repCode && <span style={{ color: "#38bdf8", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>🤝 Rep {acct.repCode}</span>}
                 </div>
               </div>
             );
