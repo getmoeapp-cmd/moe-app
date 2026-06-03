@@ -399,6 +399,8 @@ function MoeApp() {
   }); // { [itemId]: [{ price, date, weekKey, vendor, source }] } // [{ id, itemId, itemName, qty, unit, reason, loggedBy, date, weekKey }]
   const [autoSubmit, setAutoSubmit]     = useState(true); // auto-submit missed orders when a new week starts
   const [foodCost, setFoodCost]         = useState(false); // optional food-cost add-on (off by default)
+  const [repBroadcasts, setRepBroadcasts] = useState([]); // messages from the account's sales rep
+  const [dismissedBroadcasts, setDismissedBroadcasts] = useState(() => { try { return JSON.parse(localStorage.getItem("moe_dismissed_bc") || "[]"); } catch { return []; } });
 
   const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
 
@@ -452,6 +454,18 @@ function MoeApp() {
       setAutoSubmit(autoSub !== false);
       setFoodCost(fc === true);
       setDataLoaded(true);
+
+      // ── Load sales-rep broadcast messages for this account ──────────────
+      if (user?.email && !DEMO_GROUPS.includes(group)) {
+        try {
+          const accts = await sbGet("__moe_accounts__", "accounts") || {};
+          const myCode = accts[user.email.toLowerCase()]?.repCode;
+          if (myCode) {
+            const bc = await sbGet("__moe_reps__", `broadcast_${myCode}`) || [];
+            if (Array.isArray(bc)) setRepBroadcasts(bc);
+          }
+        } catch {}
+      }
 
       // ── Auto-submit missed orders from completed weeks ──────────────────
       if (autoSub !== false) {
@@ -970,6 +984,33 @@ function MoeApp() {
           <button onClick={() => setView("subscription")} style={{ background:"#d97706", border:"none", borderRadius:5, padding:"2px 10px", color:"#fff", fontSize:10, fontWeight:600, cursor:"pointer" }}>Upgrade</button>
         </div>
       )}
+
+      {/* Sales-rep broadcast banner (across whole app, dismissible) */}
+      {(() => {
+        const active = repBroadcasts.filter(b => !dismissedBroadcasts.includes(b.id));
+        if (active.length === 0) return null;
+        const b = active[0]; // show most recent undismissed
+        const dismiss = () => {
+          const next = [...dismissedBroadcasts, b.id];
+          setDismissedBroadcasts(next);
+          try { localStorage.setItem("moe_dismissed_bc", JSON.stringify(next)); } catch {}
+        };
+        return (
+          <div style={{ maxWidth:1200, margin:"12px auto 0", padding:"0 16px", boxSizing:"border-box", width:"100%" }}>
+            <div style={{ background:"rgba(56,189,248,0.08)", border:"1px solid rgba(56,189,248,0.4)", borderRadius:12, padding:"14px 16px", display:"flex", alignItems:"flex-start", gap:12 }}>
+              <div style={{ flexShrink:0, marginTop:1 }}><Icon name="alert" size={18} color="#38bdf8" /></div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                  <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:700 }}>{b.title}</span>
+                  {b.company && <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>from {b.company}</span>}
+                </div>
+                <p style={{ color:"#cbd5e1", fontSize:13, margin:"4px 0 0", lineHeight:1.5 }}>{b.body}</p>
+              </div>
+              <button onClick={dismiss} style={{ flexShrink:0, background:"transparent", border:"none", color:"#64748b", fontSize:20, cursor:"pointer", lineHeight:1, padding:"0 2px" }}>×</button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Main content */}
       <main key={view} className="moe-fade" style={{ maxWidth:1200, margin:"0 auto", padding:"16px", boxSizing:"border-box", width:"100%" }}>
@@ -5927,6 +5968,11 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
   const [viewOrder, setViewOrder] = useState(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteMsg, setInviteMsg] = useState("");
+  const [repView, setRepView] = useState("accounts"); // accounts | invite
+  const [acctSearch, setAcctSearch] = useState("");
+  const [acctFilter, setAcctFilter] = useState("all"); // all | ordered | not
+  const [repSidebarOpen, setRepSidebarOpen] = useState(false);
+  const [announcements, setAnnouncements] = useState([]);
 
   const sendInvite = async () => {
     const email = inviteEmail.toLowerCase().trim();
@@ -5938,6 +5984,31 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
     all[email] = list;
     await sbSet("__moe_invites__", "invites", all);
     setInviteEmail(""); setInviteMsg(`✓ Invite sent to ${email}. They'll see it in their Vendors section after signing up.`);
+  };
+
+  // Broadcast a message to all of this rep's accounts (shows as a banner in their app)
+  const [bcTitle, setBcTitle] = useState("");
+  const [bcBody, setBcBody] = useState("");
+  const [bcMsg, setBcMsg] = useState("");
+  const sendBroadcast = async () => {
+    if (!bcTitle.trim() || !bcBody.trim()) { setBcMsg("Add a title and message."); return; }
+    if (repCode === "DEMO") {
+      const entry = { id:`bc_${Date.now()}`, title:bcTitle.trim(), body:bcBody.trim(), date:new Date().toISOString() };
+      setAnnouncements(prev => [entry, ...prev]);
+      setBcTitle(""); setBcBody(""); setBcMsg(`✓ Sent to all ${(accounts||[]).length} accounts (demo).`);
+      return;
+    }
+    const cur = await sbGet("__moe_reps__", `broadcast_${repCode}`) || [];
+    const entry = { id:`bc_${Date.now()}`, title:bcTitle.trim(), body:bcBody.trim(), company:repCompany, repName, date:new Date().toISOString() };
+    const updated = [entry, ...(Array.isArray(cur) ? cur : [])];
+    await sbSet("__moe_reps__", `broadcast_${repCode}`, updated);
+    setAnnouncements(updated);
+    setBcTitle(""); setBcBody(""); setBcMsg(`✓ Sent to all ${(accounts||[]).length} of your accounts. They'll see a banner in their app.`);
+  };
+  const deleteBroadcast = async (id) => {
+    const updated = announcements.filter(a => a.id !== id);
+    setAnnouncements(updated);
+    if (repCode !== "DEMO") await sbSet("__moe_reps__", `broadcast_${repCode}`, updated);
   };
 
   const weekNum = getWeekNumber();
@@ -5977,6 +6048,10 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
         };
         setAccounts(sampleAccts);
         setOrdersByGroup(sampleOrders);
+        setAnnouncements([
+          { id:"a1", title:"Holiday delivery — running one day behind", body:"Heads up: because of the holiday, all deliveries this week are pushed back one day. Place your orders early so you don't run short.", date:new Date(Date.now()-1*864e5).toISOString() },
+          { id:"a2", title:"New: San Marzano DOP now available", body:"Just got authentic San Marzano DOP tomatoes in. Let me know if you want to add them to your next order.", date:new Date(Date.now()-6*864e5).toISOString() },
+        ]);
         setLoading(false);
         return;
       }
@@ -5990,6 +6065,8 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
       }));
       setAccounts(list);
       setOrdersByGroup(orders);
+      const ann = await sbGet("__moe_reps__", `broadcast_${repCode}`) || [];
+      setAnnouncements(Array.isArray(ann) ? ann : []);
       setLoading(false);
     };
     fetchAll();
@@ -6013,141 +6090,279 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
   const ordered = (accounts || []).filter(a => orderedThisWeek(a.group));
   const notOrdered = (accounts || []).filter(a => !orderedThisWeek(a.group));
 
-  return (
-    <div style={{ minHeight:"100vh", background:"radial-gradient(1200px 600px at 50% -10%, #0d1626 0%, #080c14 55%)", fontFamily:"'DM Sans',sans-serif" }}>
-      <MoeIcons />
-      <div style={{ maxWidth:760, margin:"0 auto", padding:"20px 16px" }}>
-        {/* Header */}
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24, flexWrap:"wrap", gap:10 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-            <MoeLogo size="sm" />
-            <div>
-              <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:700 }}>{repCompany || "Rep"} Dashboard</div>
-              <div style={{ color:"#64748b", fontSize:12 }}>{repName ? `${repName} · ` : ""}{fmtWeekLabel(weekNum)}</div>
-            </div>
-          </div>
-          <button onClick={onLogout} style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 14px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>Sign out</button>
+  // Filtered + searched account list
+  const filteredAccounts = (accounts || [])
+    .filter(a => {
+      if (acctFilter === "ordered") return orderedThisWeek(a.group);
+      if (acctFilter === "not") return !orderedThisWeek(a.group);
+      return true;
+    })
+    .filter(a => !acctSearch || (a.business || "").toLowerCase().includes(acctSearch.toLowerCase()))
+    .sort((a, b) => {
+      // not-ordered first (action items), then by name
+      const ao = orderedThisWeek(a.group) ? 1 : 0, bo = orderedThisWeek(b.group) ? 1 : 0;
+      if (ao !== bo) return ao - bo;
+      return (a.business || "").localeCompare(b.business || "");
+    });
+
+  const navItems = [
+    { key: "accounts", label: "Accounts", icon: "orders", badge: notOrdered.length },
+    { key: "invite", label: "Invite Account", icon: "plus" },
+    { key: "announcements", label: "Announcements", icon: "alert", badge: announcements.length, badgeCyan: true },
+  ];
+
+  const Sidebar = () => (
+    <>
+      <div style={{ padding:"20px 16px", borderBottom:"1px solid #1e2d45" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <MoeLogo size="sm" />
         </div>
-
-        {/* Stats */}
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:24 }}>
-          <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"14px 16px" }}>
-            <div style={{ color:"#f1f5f9", fontSize:26, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{accounts.length}</div>
-            <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Your accounts</div>
-          </div>
-          <div style={{ background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.3)", borderRadius:12, padding:"14px 16px" }}>
-            <div style={{ color:"#34d399", fontSize:26, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{ordered.length}</div>
-            <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Ordered {repCompany ? "from you" : ""} this week</div>
-          </div>
-          <div style={{ background:"rgba(251,191,36,0.08)", border:"1px solid rgba(251,191,36,0.3)", borderRadius:12, padding:"14px 16px" }}>
-            <div style={{ color:"#fbbf24", fontSize:26, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{notOrdered.length}</div>
-            <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Haven't ordered</div>
-          </div>
+        <div style={{ marginTop:14 }}>
+          <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:700 }}>{repCompany || "Rep"}</div>
+          <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{repName} · Rep portal</div>
         </div>
-
-        {/* Invite a business */}
-        <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px", marginBottom:24 }}>
-          <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:700, marginBottom:4 }}>Invite a business</div>
-          <div style={{ color:"#64748b", fontSize:12, marginBottom:12, lineHeight:1.5 }}>
-            Enter the restaurant's email. After they sign up for MOE, they'll see a {repCompany || "vendor"} invite in their Vendors section — one tap to confirm and they're linked to you.
-          </div>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="business@email.com" type="email"
-              style={{ flex:"1 1 200px", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 12px", color:"#f1f5f9", fontSize:15, outline:"none" }} />
-            <button onClick={sendInvite}
-              style={{ background:"#38bdf8", border:"none", borderRadius:8, padding:"10px 20px", color:"#060a12", fontSize:14, fontWeight:700, cursor:"pointer" }}>
-              Send invite
-            </button>
-          </div>
-          {inviteMsg && <div style={{ color: inviteMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:12, marginTop:10 }}>{inviteMsg}</div>}
-        </div>
-
-        {accounts.length === 0 ? (
-          <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:36, textAlign:"center" }}>
-            <Icon name="orders" size={32} color="#38bdf8" style={{ marginBottom:10 }} />
-            <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No accounts yet</div>
-            <div style={{ color:"#475569", fontSize:13, marginTop:6, lineHeight:1.6, maxWidth:420, margin:"6px auto 0" }}>
-              When a restaurant signs up with your rep code <strong style={{ color:"#38bdf8" }}>{repCode}</strong>, they'll show up here. Share your code so their account links to you.
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Haven't ordered — most actionable, show first */}
-            {notOrdered.length > 0 && (
-              <div style={{ marginBottom:24 }}>
-                <div style={{ color:"#fbbf24", fontSize:13, fontWeight:700, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
-                  <Icon name="alert" size={15} color="#fbbf24" /> Haven't ordered this week — follow up
-                </div>
-                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                  {notOrdered.map(a => {
-                    const last = lastOrder(a.group);
-                    return (
-                      <div key={a.group} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:10, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
-                        <div>
-                          <div style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{a.business}</div>
-                          <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>
-                            {last ? `Last order: ${fmtDate(last.date)}` : "No orders yet"}
-                          </div>
-                        </div>
-                        <span style={{ background:"rgba(251,191,36,0.12)", border:"1px solid rgba(251,191,36,0.3)", borderRadius:6, padding:"3px 10px", color:"#fbbf24", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>NO ORDER</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Ordered this week */}
-            {ordered.length > 0 && (
-              <div>
-                <div style={{ color:"#34d399", fontSize:13, fontWeight:700, marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
-                  <Icon name="check" size={15} color="#34d399" /> Ordered this week
-                </div>
-                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                  {ordered.map(a => {
-                    const weekOrders = myOrders(a.group).filter(o => o.weekNumber === weekNum && o.year === curYear).sort((x,y) => new Date(y.date) - new Date(x.date));
-                    const isOpen = openAcct === a.group;
-                    return (
-                      <div key={a.group} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:10, overflow:"hidden" }}>
-                        <button onClick={() => setOpenAcct(isOpen ? null : a.group)}
-                          style={{ width:"100%", background:"none", border:"none", padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, cursor:"pointer", textAlign:"left", flexWrap:"wrap" }}>
-                          <div>
-                            <div style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{a.business}</div>
-                            <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{weekOrders.length} order{weekOrders.length!==1?"s":""} this week · tap to view</div>
-                          </div>
-                          <span style={{ background:"rgba(52,211,153,0.12)", border:"1px solid rgba(52,211,153,0.3)", borderRadius:6, padding:"3px 10px", color:"#34d399", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>ORDERED</span>
-                        </button>
-                        {isOpen && (
-                          <div style={{ padding:"0 16px 14px", background:"#080c14" }}>
-                            {weekOrders.map(o => (
-                              <div key={o.id} style={{ borderTop:"1px solid #1e2d45", paddingTop:10, marginTop:10 }}>
-                                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginBottom:6 }}>
-                                  <span style={{ color:"#94a3b8", fontSize:12, fontWeight:600 }}>{o.vendor}{o.type === "quick" ? " (quick)" : ""}</span>
-                                  <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{fmtDate(o.date)} · {o.totalItems} items</span>
-                                </div>
-                                <table style={{ width:"100%", borderCollapse:"collapse" }}>
-                                  <tbody>
-                                    {(o.lines || []).map((l, li) => (
-                                      <tr key={li}>
-                                        <td style={{ padding:"3px 0", color:"#e2e8f0", fontSize:12 }}>{l.name}</td>
-                                        <td style={{ padding:"3px 0", textAlign:"right", color:"#38bdf8", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{l.qty} {l.order_unit}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </>
-        )}
       </div>
+      <div style={{ padding:"12px 10px", flex:1 }}>
+        {navItems.map(item => {
+          const active = repView === item.key;
+          return (
+            <button key={item.key} className="moe-nav" onClick={() => { setRepView(item.key); setRepSidebarOpen(false); }}
+              style={{ width:"100%", display:"flex", alignItems:"center", gap:11, background:active?"#0f1a2e":"transparent", border:"none", borderRadius:10, padding:"11px 13px", cursor:"pointer", marginBottom:4, borderLeft:active?"3px solid #38bdf8":"3px solid transparent" }}>
+              <Icon name={item.icon} size={18} color={active?"#38bdf8":"#64748b"} />
+              <span style={{ flex:1, textAlign:"left", color:active?"#f1f5f9":"#94a3b8", fontSize:14, fontWeight:active?600:400 }}>{item.label}</span>
+              {item.badge > 0 && <span style={{ background:item.badgeCyan?"rgba(56,189,248,0.15)":"rgba(251,191,36,0.15)", color:item.badgeCyan?"#38bdf8":"#fbbf24", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ padding:"12px 14px", borderTop:"1px solid #1e2d45" }}>
+        <button onClick={onLogout} style={{ width:"100%", background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"9px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>Sign out</button>
+      </div>
+    </>
+  );
+
+  return (
+    <div style={{ minHeight:"100vh", background:"radial-gradient(1200px 600px at 50% -10%, #0d1626 0%, #080c14 55%)", fontFamily:"'DM Sans',sans-serif", display:"flex" }}>
+      <MoeIcons />
+
+      {/* Desktop sidebar */}
+      <aside className="rep-sidebar-desktop" style={{ width:240, flexShrink:0, background:"#0a0f1a", borderRight:"1px solid #1e2d45", minHeight:"100vh", display:"flex", flexDirection:"column", position:"sticky", top:0, height:"100vh" }}>
+        <Sidebar />
+      </aside>
+
+      {/* Mobile drawer */}
+      {repSidebarOpen && (
+        <div onClick={() => setRepSidebarOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:900 }}>
+          <aside onClick={e => e.stopPropagation()} style={{ width:240, background:"#0a0f1a", borderRight:"1px solid #1e2d45", height:"100vh", display:"flex", flexDirection:"column" }}>
+            <Sidebar />
+          </aside>
+        </div>
+      )}
+
+      <style>{`
+        .rep-sidebar-desktop { display: flex; }
+        .rep-mobile-bar { display: none; }
+        @media (max-width: 768px) {
+          .rep-sidebar-desktop { display: none; }
+          .rep-mobile-bar { display: flex !important; }
+        }
+      `}</style>
+
+      {/* Main */}
+      <main className="moe-fade" key={repView} style={{ flex:1, minWidth:0, padding:"0 0 40px" }}>
+        {/* Mobile top bar */}
+        <div className="rep-mobile-bar" style={{ display:"none", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", borderBottom:"1px solid #1e2d45", position:"sticky", top:0, background:"#080c14", zIndex:10 }}>
+          <button onClick={() => setRepSidebarOpen(true)} style={{ background:"none", border:"none", color:"#f1f5f9", fontSize:22, cursor:"pointer", lineHeight:1 }}>☰</button>
+          <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{repView === "accounts" ? "Accounts" : "Invite Account"}</span>
+          <MoeLogo size="sm" />
+        </div>
+
+        <div style={{ maxWidth:900, margin:"0 auto", padding:"24px 20px" }}>
+          {/* ── ACCOUNTS VIEW ── */}
+          {repView === "accounts" && (
+            <>
+              <div style={{ marginBottom:20 }}>
+                <h2 style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, margin:0 }}>Accounts</h2>
+                <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>{fmtWeekLabel(weekNum)} · who's ordered from {repCompany} this week</p>
+              </div>
+
+              {/* Stats */}
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:24 }}>
+                <div className="moe-lift" style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, padding:"16px 18px" }}>
+                  <div style={{ color:"#f1f5f9", fontSize:28, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{accounts.length}</div>
+                  <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Total accounts</div>
+                </div>
+                <div className="moe-lift" style={{ background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.3)", borderRadius:14, padding:"16px 18px" }}>
+                  <div style={{ color:"#34d399", fontSize:28, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{ordered.length}</div>
+                  <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Ordered this week</div>
+                </div>
+                <div className="moe-lift" style={{ background:"rgba(251,191,36,0.08)", border:"1px solid rgba(251,191,36,0.3)", borderRadius:14, padding:"16px 18px" }}>
+                  <div style={{ color:"#fbbf24", fontSize:28, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{notOrdered.length}</div>
+                  <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Need follow-up</div>
+                </div>
+              </div>
+
+              {accounts.length === 0 ? (
+                <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:40, textAlign:"center" }}>
+                  <Icon name="orders" size={32} color="#38bdf8" style={{ marginBottom:10 }} />
+                  <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No accounts yet</div>
+                  <div style={{ color:"#475569", fontSize:13, marginTop:6, lineHeight:1.6, maxWidth:420, margin:"6px auto 0" }}>
+                    Invite a business from the <strong style={{ color:"#38bdf8" }}>Invite Account</strong> tab. Once they confirm, they'll show up here.
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Search + filter */}
+                  <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+                    <input value={acctSearch} onChange={e => setAcctSearch(e.target.value)} placeholder="Search accounts…"
+                      style={{ flex:"1 1 200px", background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:9, padding:"9px 14px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
+                    <div style={{ display:"flex", gap:4, background:"#0c1220", border:"1px solid #1e2d45", borderRadius:9, padding:3 }}>
+                      {[{k:"all",l:"All"},{k:"not",l:"Need follow-up"},{k:"ordered",l:"Ordered"}].map(f => (
+                        <button key={f.k} onClick={() => setAcctFilter(f.k)}
+                          style={{ background: acctFilter===f.k ? "#1e3a5f" : "transparent", border:"none", borderRadius:7, padding:"6px 12px", color: acctFilter===f.k ? "#38bdf8" : "#64748b", fontSize:12, fontWeight: acctFilter===f.k?600:400, cursor:"pointer" }}>
+                          {f.l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Account list */}
+                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                    {filteredAccounts.map(a => {
+                      const did = orderedThisWeek(a.group);
+                      const last = lastOrder(a.group);
+                      const weekOrders = myOrders(a.group).filter(o => o.weekNumber === weekNum && o.year === curYear).sort((x,y) => new Date(y.date) - new Date(x.date));
+                      const isOpen = openAcct === a.group;
+                      return (
+                        <div key={a.group} className="moe-lift" style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden" }}>
+                          <button onClick={() => did && setOpenAcct(isOpen ? null : a.group)}
+                            style={{ width:"100%", background:"none", border:"none", padding:"14px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, cursor: did ? "pointer" : "default", textAlign:"left", flexWrap:"wrap" }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:12, minWidth:0 }}>
+                              <div style={{ width:38, height:38, borderRadius:9, background: did ? "rgba(52,211,153,0.12)" : "rgba(251,191,36,0.12)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                                <Icon name={did ? "check" : "alert"} size={18} color={did ? "#34d399" : "#fbbf24"} />
+                              </div>
+                              <div style={{ minWidth:0 }}>
+                                <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.business}</div>
+                                <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>
+                                  {did ? `${weekOrders.length} order${weekOrders.length!==1?"s":""} this week · tap to view` : (last ? `Last order: ${fmtDate(last.date)}` : "No orders yet")}
+                                </div>
+                              </div>
+                            </div>
+                            <span style={{ background: did ? "rgba(52,211,153,0.12)" : "rgba(251,191,36,0.12)", border:`1px solid ${did ? "rgba(52,211,153,0.3)" : "rgba(251,191,36,0.3)"}`, borderRadius:6, padding:"3px 10px", color: did ? "#34d399" : "#fbbf24", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{did ? "ORDERED" : "NO ORDER"}</span>
+                          </button>
+                          {isOpen && did && (
+                            <div style={{ padding:"0 16px 14px", background:"#080c14" }}>
+                              {weekOrders.map(o => (
+                                <div key={o.id} style={{ borderTop:"1px solid #1e2d45", paddingTop:10, marginTop:10 }}>
+                                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginBottom:6 }}>
+                                    <span style={{ color:"#94a3b8", fontSize:12, fontWeight:600 }}>{o.vendor}{o.type === "quick" ? " (quick)" : ""}</span>
+                                    <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{fmtDate(o.date)} · {o.totalItems} items</span>
+                                  </div>
+                                  <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                                    <tbody>
+                                      {(o.lines || []).map((l, li) => (
+                                        <tr key={li}>
+                                          <td style={{ padding:"3px 0", color:"#e2e8f0", fontSize:12 }}>{l.name}</td>
+                                          <td style={{ padding:"3px 0", textAlign:"right", color:"#38bdf8", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{l.qty} {l.order_unit}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {filteredAccounts.length === 0 && (
+                      <div style={{ color:"#64748b", fontSize:13, textAlign:"center", padding:24 }}>No accounts match.</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {/* ── INVITE ACCOUNT VIEW ── */}
+          {repView === "invite" && (
+            <>
+              <div style={{ marginBottom:20 }}>
+                <h2 style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, margin:0 }}>Invite Account</h2>
+                <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Send a business an invite to connect with {repCompany}</p>
+              </div>
+              <div style={{ maxWidth:520, background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, padding:"22px 22px" }}>
+                <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:600, marginBottom:8 }}>Restaurant email</label>
+                <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="business@email.com" type="email"
+                  style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"11px 14px", color:"#f1f5f9", fontSize:15, outline:"none", boxSizing:"border-box", marginBottom:14 }} />
+                <button onClick={sendInvite}
+                  style={{ width:"100%", background:"#38bdf8", border:"none", borderRadius:9, padding:"12px", color:"#060a12", fontSize:15, fontWeight:700, cursor:"pointer" }}>
+                  Send invite
+                </button>
+                {inviteMsg && <div style={{ color: inviteMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:13, marginTop:14, lineHeight:1.5 }}>{inviteMsg}</div>}
+                <div style={{ marginTop:18, paddingTop:18, borderTop:"1px solid #1e2d45" }}>
+                  <div style={{ color:"#64748b", fontSize:12, fontWeight:600, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>How it works</div>
+                  {["Enter the restaurant's email and send the invite",`After they sign up for MOE, they'll see a ${repCompany} invite in their Vendors section`,"They tap Confirm — and they show up here in your Accounts"].map((s, i) => (
+                    <div key={i} style={{ display:"flex", gap:10, marginBottom:10 }}>
+                      <span style={{ flexShrink:0, width:20, height:20, borderRadius:"50%", background:"#1e3a5f", color:"#38bdf8", fontSize:11, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Mono',monospace" }}>{i+1}</span>
+                      <span style={{ color:"#94a3b8", fontSize:13, lineHeight:1.5 }}>{s}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── ANNOUNCEMENTS (broadcast to accounts) ── */}
+          {repView === "announcements" && (
+            <>
+              <div style={{ marginBottom:20 }}>
+                <h2 style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, margin:0 }}>Announcements</h2>
+                <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Send a message to all {(accounts||[]).length} of your accounts — it shows as a banner in their app</p>
+              </div>
+
+              {/* Compose */}
+              <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, padding:"20px", marginBottom:24, maxWidth:620 }}>
+                <input value={bcTitle} onChange={e => setBcTitle(e.target.value)} placeholder="Title — e.g. Holiday delivery one day behind"
+                  style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"11px 14px", color:"#f1f5f9", fontSize:15, outline:"none", boxSizing:"border-box", marginBottom:10 }} />
+                <textarea value={bcBody} onChange={e => setBcBody(e.target.value)} rows={3} placeholder="Message — e.g. Because of the holiday, deliveries are pushed back a day this week. Order early so you don't run short."
+                  style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"11px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box", resize:"vertical", fontFamily:"inherit", marginBottom:14, lineHeight:1.5 }} />
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+                  <span style={{ color:"#64748b", fontSize:12 }}>Goes to all {(accounts||[]).length} accounts you handle</span>
+                  <button onClick={sendBroadcast}
+                    style={{ background:"#38bdf8", border:"none", borderRadius:9, padding:"11px 22px", color:"#060a12", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+                    Send to my accounts
+                  </button>
+                </div>
+                {bcMsg && <div style={{ color: bcMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:13, marginTop:12 }}>{bcMsg}</div>}
+              </div>
+
+              {/* Sent messages */}
+              <div style={{ color:"#64748b", fontSize:13, fontWeight:700, marginBottom:10 }}>Sent messages</div>
+              {announcements.length === 0 ? (
+                <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, padding:32, textAlign:"center", color:"#64748b", fontSize:13 }}>
+                  No messages sent yet. Your first broadcast will show here.
+                </div>
+              ) : (
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  {announcements.slice().sort((a,b) => new Date(b.date)-new Date(a.date)).map(an => (
+                    <div key={an.id} className="moe-lift" style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px" }}>
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:6, flexWrap:"wrap" }}>
+                        <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{an.title}</span>
+                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                          <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{fmtDate(an.date)}</span>
+                          <button onClick={() => deleteBroadcast(an.id)} style={{ background:"transparent", border:"none", color:"#fca5a5", fontSize:12, cursor:"pointer" }}>Delete</button>
+                        </div>
+                      </div>
+                      <p style={{ color:"#94a3b8", fontSize:13.5, margin:0, lineHeight:1.6 }}>{an.body}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </main>
     </div>
   );
 }
@@ -6161,6 +6376,9 @@ function AdminView() {
   const [reps, setReps] = useState({});
   const [newRep, setNewRep] = useState({ name:"", email:"", password:"", code:"", company:"" });
   const [repMsg, setRepMsg] = useState("");
+  const [anns, setAnns] = useState([]);
+  const [newAnn, setNewAnn] = useState({ title:"", body:"", pinned:false });
+  const [annMsg, setAnnMsg] = useState("");
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -6170,6 +6388,8 @@ function AdminView() {
         setAccounts(data || {});
         const r = await sbGet("__moe_reps__", "reps");
         setReps(r || {});
+        const a = await sbGet("__moe_announcements__", "list");
+        setAnns(Array.isArray(a) ? a : []);
       } catch (err) {
         console.error("Failed to load accounts:", err);
         setAccounts({});
@@ -6189,6 +6409,24 @@ function AdminView() {
     setReps(r);
     setNewRep({ name:"", email:"", password:"", code:"", company:"" });
     setRepMsg(`✓ Rep added. They log in with their email/password and see only ${company} orders.`);
+  };
+
+  const postAnn = async () => {
+    if (!newAnn.title.trim() || !newAnn.body.trim()) { setAnnMsg("Title and message required."); return; }
+    const a = await sbGet("__moe_announcements__", "list") || [];
+    const entry = { id:`ann_${Date.now()}`, title:newAnn.title.trim(), body:newAnn.body.trim(), pinned:newAnn.pinned, date:new Date().toISOString() };
+    const updated = [entry, ...(Array.isArray(a) ? a : [])];
+    await sbSet("__moe_announcements__", "list", updated);
+    setAnns(updated);
+    setNewAnn({ title:"", body:"", pinned:false });
+    setAnnMsg("✓ Posted. All reps will see it on their Announcements tab.");
+  };
+
+  const deleteAnn = async (id) => {
+    const a = await sbGet("__moe_announcements__", "list") || [];
+    const updated = (Array.isArray(a) ? a : []).filter(x => x.id !== id);
+    await sbSet("__moe_announcements__", "list", updated);
+    setAnns(updated);
   };
 
   if (loading) return (
@@ -6255,6 +6493,37 @@ function AdminView() {
         </div>
         {repMsg && <div style={{ color: repMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:12, marginBottom:10 }}>{repMsg}</div>}
         <button onClick={addRep} style={{ background:"#38bdf8", border:"none", borderRadius:8, padding:"9px 18px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>Add rep</button>
+      </div>
+
+      {/* Announcements */}
+      <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px", marginBottom:20 }}>
+        <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:700, marginBottom:4 }}>Announcements</div>
+        <div style={{ color:"#64748b", fontSize:12, marginBottom:14 }}>Post updates that show on every rep's Announcements tab.</div>
+        <input value={newAnn.title} onChange={e => setNewAnn({...newAnn, title:e.target.value})} placeholder="Title (e.g. New product in stock)"
+          style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box", marginBottom:8 }} />
+        <textarea value={newAnn.body} onChange={e => setNewAnn({...newAnn, body:e.target.value})} placeholder="Message…" rows={3}
+          style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box", resize:"vertical", fontFamily:"inherit", marginBottom:10 }} />
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+          <label style={{ display:"flex", alignItems:"center", gap:8, color:"#94a3b8", fontSize:13, cursor:"pointer" }}>
+            <input type="checkbox" checked={newAnn.pinned} onChange={e => setNewAnn({...newAnn, pinned:e.target.checked})} style={{ width:16, height:16, accentColor:"#38bdf8" }} />
+            Pin to top
+          </label>
+          <button onClick={postAnn} style={{ background:"#38bdf8", border:"none", borderRadius:8, padding:"9px 18px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>Post announcement</button>
+        </div>
+        {annMsg && <div style={{ color: annMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:12, marginTop:10 }}>{annMsg}</div>}
+        {anns.length > 0 && (
+          <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:14 }}>
+            {anns.map(an => (
+              <div key={an.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px" }}>
+                <div style={{ minWidth:0 }}>
+                  <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{an.pinned ? "📌 " : ""}{an.title}</span>
+                  <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginLeft:8 }}>{fmtDate(an.date)}</span>
+                </div>
+                <button onClick={() => deleteAnn(an.id)} style={{ background:"transparent", border:"none", color:"#fca5a5", fontSize:12, cursor:"pointer" }}>Delete</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Accounts list */}
