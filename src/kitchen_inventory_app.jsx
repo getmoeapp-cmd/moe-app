@@ -207,6 +207,7 @@ const DEFAULT_INVENTORY = [
 const USERS = {
   "owner@kitchen.com":    { password: "owner123",    role: "owner",    name: "Owner",    group: "demo" },
   "employee@kitchen.com": { password: "employee123", role: "employee", name: "Employee", group: "demo" },
+  "rep@anacapri.com":     { password: "rep123",       role: "rep",      name: "Joe Marino", repCode: "DEMO", repCompany: "Anacapri" },
 };
 
 // ─── DEFAULT VENDORS (Tommy's starter) ───────────────────────────────────────
@@ -753,7 +754,7 @@ function MoeApp() {
   if (!user) return <LoginScreen onLogin={u => { setUser(u); setGroup(u.group || "demo"); setLoginError(""); }} error={loginError} setError={setLoginError} />;
 
   // ── Sales reps get the rep dashboard, not the app ──────────────────────
-  if (user.role === "rep") return <RepDashboard repCode={user.repCode} repName={user.name} onLogout={() => { setUser(null); setGroup(null); }} />;
+  if (user.role === "rep") return <RepDashboard repCode={user.repCode} repName={user.name} repCompany={user.repCompany} onLogout={() => { setUser(null); setGroup(null); }} />;
 
   // ── Subscription gate (skip for demo accounts) ─────────────────────────
   const isDemo = DEMO_GROUPS.includes(group);
@@ -980,7 +981,7 @@ function MoeApp() {
         {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} foodCost={foodCost} history={history} saveHistory={saveHistory} saveInventory={(inv) => { setInventory(inv); save("inventory", inv); }} />}
         {view === "import" && canAccess("import") && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && canAccess("backend") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
-        {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} allFeatures={ALL_FEATURES} autoSubmit={autoSubmit} setAutoSubmit={(v) => { setAutoSubmit(v); save("autoSubmit", v); }} foodCost={foodCost} setFoodCost={(v) => { setFoodCost(v); save("foodCost", v); }} />}
+        {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} user={user} allFeatures={ALL_FEATURES} autoSubmit={autoSubmit} setAutoSubmit={(v) => { setAutoSubmit(v); save("autoSubmit", v); }} foodCost={foodCost} setFoodCost={(v) => { setFoodCost(v); save("foodCost", v); }} />}
         {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
         {view === "admin" && user.role === "owner" && <AdminView />}
       </main>
@@ -1126,11 +1127,18 @@ function LoginScreen({ onLogin, error, setError }) {
     await sbSet("__moe_accounts__", "accounts", existing);
 
     // If tagged to a rep, add this account to the rep's account list
+    // and auto-seed the rep's company as a vendor so it's already in the dropdown.
     if (account.repCode) {
       const repAccts = await sbGet("__moe_reps__", `accounts_${account.repCode}`) || [];
       if (!repAccts.find(a => a.email === account.email)) {
         repAccts.push({ email: account.email, group: groupId, business: account.business.name, createdAt: account.createdAt });
         await sbSet("__moe_reps__", `accounts_${account.repCode}`, repAccts);
+      }
+      // Look up the rep's company and pre-create it as a vendor for this account
+      const reps = await sbGet("__moe_reps__", "reps") || {};
+      const repRecord = Object.values(reps).find(r => r.code === account.repCode);
+      if (repRecord && repRecord.company) {
+        await sbSet(groupId, "vendors", [{ id: Date.now(), name: repRecord.company, orderDays: [] }]);
       }
     }
 
@@ -1175,7 +1183,7 @@ function LoginScreen({ onLogin, error, setError }) {
     const rep = reps[emailLower];
     if (rep && rep.password === pass) {
       rememberEmail();
-      onLogin({ name: rep.name, role: "rep", repCode: rep.code, email: emailLower, group: null });
+      onLogin({ name: rep.name, role: "rep", repCode: rep.code, repCompany: rep.company || "", email: emailLower, group: null });
       return;
     }
 
@@ -2180,7 +2188,47 @@ function HistoryView({ history, user }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SETTINGS VIEW — Manage vendors & their order days (owner only)
 // ═══════════════════════════════════════════════════════════════════════════════
-function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, currentPlan, isTrialing, permissions, savePermissions, userRole, allFeatures, autoSubmit, setAutoSubmit, foodCost, setFoodCost }) {
+function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, currentPlan, isTrialing, permissions, savePermissions, userRole, user, allFeatures, autoSubmit, setAutoSubmit, foodCost, setFoodCost }) {
+  // ── Pending vendor invites from sales reps ──────────────────────────────
+  const [invites, setInvites] = useState([]);
+  useEffect(() => {
+    const loadInvites = async () => {
+      if (!user?.email) return;
+      const all = await sbGet("__moe_invites__", "invites") || {};
+      setInvites(all[user.email.toLowerCase()] || []);
+    };
+    loadInvites();
+  }, [user?.email]);
+
+  const confirmInvite = async (invite) => {
+    // 1. Add the rep's company as a vendor (if not already there)
+    const exists = (vendors || []).some(v => (v.name || "").toLowerCase() === invite.company.toLowerCase());
+    if (!exists) saveVendors([...(vendors || []), { id: Date.now(), name: invite.company, orderDays: [] }]);
+    // 2. Tag the account with the rep code + add it to the rep's account list
+    const accounts = await sbGet("__moe_accounts__", "accounts") || {};
+    if (accounts[user.email.toLowerCase()]) {
+      accounts[user.email.toLowerCase()].repCode = invite.repCode;
+      await sbSet("__moe_accounts__", "accounts", accounts);
+    }
+    const repAccts = await sbGet("__moe_reps__", `accounts_${invite.repCode}`) || [];
+    if (!repAccts.find(a => a.email === user.email.toLowerCase())) {
+      repAccts.push({ email: user.email.toLowerCase(), group: user.group, business: user.business?.name || "", createdAt: new Date().toISOString() });
+      await sbSet("__moe_reps__", `accounts_${invite.repCode}`, repAccts);
+    }
+    // 3. Remove the invite
+    const all = await sbGet("__moe_invites__", "invites") || {};
+    all[user.email.toLowerCase()] = (all[user.email.toLowerCase()] || []).filter(i => i.repCode !== invite.repCode);
+    await sbSet("__moe_invites__", "invites", all);
+    setInvites(prev => prev.filter(i => i.repCode !== invite.repCode));
+  };
+
+  const declineInvite = async (invite) => {
+    const all = await sbGet("__moe_invites__", "invites") || {};
+    all[user.email.toLowerCase()] = (all[user.email.toLowerCase()] || []).filter(i => i.repCode !== invite.repCode);
+    await sbSet("__moe_invites__", "invites", all);
+    setInvites(prev => prev.filter(i => i.repCode !== invite.repCode));
+  };
+
   const [activeTab, setActiveTab] = useState("vendors");
   const [localVendors, setLocalVendors] = useState(vendors);
   const [dirty, setDirty] = useState(false);
@@ -2272,6 +2320,31 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
       {/* ── VENDORS TAB ── */}
       {activeTab === "vendors" && (
         <>
+          {/* Pending vendor invites from sales reps */}
+          {invites.length > 0 && invites.map(invite => (
+            <div key={invite.repCode} style={{ background:"rgba(56,189,248,0.08)", border:"1px solid rgba(56,189,248,0.4)", borderRadius:12, padding:"16px 18px", marginBottom:16 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                <Icon name="orders" size={16} color="#38bdf8" />
+                <span style={{ color:"#38bdf8", fontSize:14, fontWeight:700 }}>Vendor invite</span>
+              </div>
+              <p style={{ color:"#e2e8f0", fontSize:13.5, margin:"0 0 4px", lineHeight:1.5 }}>
+                <strong>{invite.company}</strong>{invite.repName ? ` (${invite.repName})` : ""} wants to connect as your vendor.
+              </p>
+              <p style={{ color:"#64748b", fontSize:12, margin:"0 0 14px", lineHeight:1.5 }}>
+                Confirm to add {invite.company} to your vendor list. Your rep will be able to see what you order from them — and nothing else.
+              </p>
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={() => confirmInvite(invite)}
+                  style={{ background:"#38bdf8", border:"none", borderRadius:8, padding:"9px 18px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                  Confirm {invite.company}
+                </button>
+                <button onClick={() => declineInvite(invite)}
+                  style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 14px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>
+                  Decline
+                </button>
+              </div>
+            </div>
+          ))}
           {/* Auto-submit toggle */}
           {setAutoSubmit && (
             <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px", marginBottom:16 }}>
@@ -5846,18 +5919,67 @@ function SavingsQuiz() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // REP DASHBOARD — Sales rep sees their accounts: who ordered, who didn't, view orders
 // ═══════════════════════════════════════════════════════════════════════════════
-function RepDashboard({ repCode, repName, onLogout }) {
+function RepDashboard({ repCode, repName, repCompany, onLogout }) {
   const [accounts, setAccounts] = useState(null);
   const [ordersByGroup, setOrdersByGroup] = useState({});
   const [loading, setLoading] = useState(true);
   const [openAcct, setOpenAcct] = useState(null);
   const [viewOrder, setViewOrder] = useState(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteMsg, setInviteMsg] = useState("");
+
+  const sendInvite = async () => {
+    const email = inviteEmail.toLowerCase().trim();
+    if (!email || !email.includes("@")) { setInviteMsg("Enter a valid business email."); return; }
+    const all = await sbGet("__moe_invites__", "invites") || {};
+    const list = all[email] || [];
+    if (list.find(i => i.repCode === repCode)) { setInviteMsg("You already invited this business."); return; }
+    list.push({ repCode, company: repCompany, repName, createdAt: new Date().toISOString() });
+    all[email] = list;
+    await sbSet("__moe_invites__", "invites", all);
+    setInviteEmail(""); setInviteMsg(`✓ Invite sent to ${email}. They'll see it in their Vendors section after signing up.`);
+  };
 
   const weekNum = getWeekNumber();
   const curYear = new Date().getFullYear();
 
+  // Match an order's vendor to the rep's company (forgiving: normalized contains-match)
+  const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const companyKey = norm(repCompany);
+  const isMyVendor = (vendor) => {
+    if (!companyKey) return true; // no company set → show all (legacy fallback)
+    const v = norm(vendor);
+    return v === companyKey || v.includes(companyKey) || companyKey.includes(v);
+  };
+  // Only the orders that belong to this rep's company
+  const myOrders = (group) => (ordersByGroup[group] || []).filter(o => isMyVendor(o.vendor));
+
   useEffect(() => {
     const fetchAll = async () => {
+      // Demo rep — show sample data so the dashboard isn't empty
+      if (repCode === "DEMO") {
+        const today = new Date();
+        const thisWeek = getWeekNumber(); const yr = today.getFullYear();
+        const d = (daysAgo) => { const x = new Date(); x.setDate(x.getDate() - daysAgo); return x.toISOString(); };
+        const sampleAccts = [
+          { email:"tonys@demo.com", group:"demo_tonys", business:"Tony's Pizzeria" },
+          { email:"villa@demo.com", group:"demo_villa", business:"Villa Roma Restaurant" },
+          { email:"slice@demo.com", group:"demo_slice", business:"Joe's Slice Shop" },
+          { email:"napoli@demo.com", group:"demo_napoli", business:"Napoli Brick Oven" },
+          { email:"corner@demo.com", group:"demo_corner", business:"Corner Italian Kitchen" },
+        ];
+        const sampleOrders = {
+          demo_tonys: [{ id:"d1", vendor:"Anacapri", weekNumber:thisWeek, year:yr, day:"Wednesday", date:d(1), totalItems:4, lines:[{name:"Mozzarella (5lb)",qty:6,order_unit:"case"},{name:"Pizza Flour (50lb)",qty:8,order_unit:"bag"},{name:"Crushed Tomatoes (#10)",qty:4,order_unit:"case"},{name:"Pepperoni (10lb)",qty:2,order_unit:"case"}] }],
+          demo_villa: [{ id:"d2", vendor:"Anacapri", weekNumber:thisWeek, year:yr, day:"Tuesday", date:d(2), totalItems:3, lines:[{name:"Penne (case)",qty:3,order_unit:"case"},{name:"Olive Oil (gal)",qty:4,order_unit:"jug"},{name:"Parmesan (wheel)",qty:1,order_unit:"each"}] }],
+          demo_slice: [{ id:"d3", vendor:"Anacapri", weekNumber:thisWeek, year:yr, day:"Monday", date:d(3), totalItems:2, lines:[{name:"Mozzarella (5lb)",qty:10,order_unit:"case"},{name:"Pizza Boxes (18in)",qty:5,order_unit:"bundle"}] }],
+          demo_napoli: [{ id:"d4", vendor:"Anacapri", weekNumber:thisWeek-1, year:yr, day:"Wednesday", date:d(9), totalItems:3, lines:[{name:"00 Flour (55lb)",qty:6,order_unit:"bag"},{name:"San Marzano (#10)",qty:5,order_unit:"case"},{name:"Fresh Mozzarella (3lb)",qty:4,order_unit:"case"}] }],
+          demo_corner: [],
+        };
+        setAccounts(sampleAccts);
+        setOrdersByGroup(sampleOrders);
+        setLoading(false);
+        return;
+      }
       await loadSupabase();
       const list = await sbGet("__moe_reps__", `accounts_${repCode}`) || [];
       // Pull each account's order history
@@ -5881,10 +6003,10 @@ function RepDashboard({ repCode, repName, onLogout }) {
     </div>
   );
 
-  // Did this account order in the current week?
-  const orderedThisWeek = (group) => (ordersByGroup[group] || []).some(o => o.weekNumber === weekNum && o.year === curYear);
+  // Did this account order from MY company in the current week?
+  const orderedThisWeek = (group) => myOrders(group).some(o => o.weekNumber === weekNum && o.year === curYear);
   const lastOrder = (group) => {
-    const os = (ordersByGroup[group] || []).slice().sort((a,b) => new Date(b.date) - new Date(a.date));
+    const os = myOrders(group).slice().sort((a,b) => new Date(b.date) - new Date(a.date));
     return os[0] || null;
   };
 
@@ -5900,8 +6022,8 @@ function RepDashboard({ repCode, repName, onLogout }) {
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
             <MoeLogo size="sm" />
             <div>
-              <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:700 }}>Rep Dashboard</div>
-              <div style={{ color:"#64748b", fontSize:12 }}>{repName ? `${repName} · ` : ""}Code {repCode} · {fmtWeekLabel(weekNum)}</div>
+              <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:700 }}>{repCompany || "Rep"} Dashboard</div>
+              <div style={{ color:"#64748b", fontSize:12 }}>{repName ? `${repName} · ` : ""}{fmtWeekLabel(weekNum)}</div>
             </div>
           </div>
           <button onClick={onLogout} style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 14px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>Sign out</button>
@@ -5915,12 +6037,29 @@ function RepDashboard({ repCode, repName, onLogout }) {
           </div>
           <div style={{ background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.3)", borderRadius:12, padding:"14px 16px" }}>
             <div style={{ color:"#34d399", fontSize:26, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{ordered.length}</div>
-            <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Ordered this week</div>
+            <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Ordered {repCompany ? "from you" : ""} this week</div>
           </div>
           <div style={{ background:"rgba(251,191,36,0.08)", border:"1px solid rgba(251,191,36,0.3)", borderRadius:12, padding:"14px 16px" }}>
             <div style={{ color:"#fbbf24", fontSize:26, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{notOrdered.length}</div>
             <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Haven't ordered</div>
           </div>
+        </div>
+
+        {/* Invite a business */}
+        <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px", marginBottom:24 }}>
+          <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:700, marginBottom:4 }}>Invite a business</div>
+          <div style={{ color:"#64748b", fontSize:12, marginBottom:12, lineHeight:1.5 }}>
+            Enter the restaurant's email. After they sign up for MOE, they'll see a {repCompany || "vendor"} invite in their Vendors section — one tap to confirm and they're linked to you.
+          </div>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="business@email.com" type="email"
+              style={{ flex:"1 1 200px", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 12px", color:"#f1f5f9", fontSize:15, outline:"none" }} />
+            <button onClick={sendInvite}
+              style={{ background:"#38bdf8", border:"none", borderRadius:8, padding:"10px 20px", color:"#060a12", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+              Send invite
+            </button>
+          </div>
+          {inviteMsg && <div style={{ color: inviteMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:12, marginTop:10 }}>{inviteMsg}</div>}
         </div>
 
         {accounts.length === 0 ? (
@@ -5966,7 +6105,7 @@ function RepDashboard({ repCode, repName, onLogout }) {
                 </div>
                 <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                   {ordered.map(a => {
-                    const weekOrders = (ordersByGroup[a.group] || []).filter(o => o.weekNumber === weekNum && o.year === curYear).sort((x,y) => new Date(y.date) - new Date(x.date));
+                    const weekOrders = myOrders(a.group).filter(o => o.weekNumber === weekNum && o.year === curYear).sort((x,y) => new Date(y.date) - new Date(x.date));
                     const isOpen = openAcct === a.group;
                     return (
                       <div key={a.group} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:10, overflow:"hidden" }}>
@@ -6020,7 +6159,7 @@ function AdminView() {
   const [accounts, setAccounts] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reps, setReps] = useState({});
-  const [newRep, setNewRep] = useState({ name:"", email:"", password:"", code:"" });
+  const [newRep, setNewRep] = useState({ name:"", email:"", password:"", code:"", company:"" });
   const [repMsg, setRepMsg] = useState("");
 
   useEffect(() => {
@@ -6041,15 +6180,15 @@ function AdminView() {
   }, []);
 
   const addRep = async () => {
-    const name = newRep.name.trim(), email = newRep.email.toLowerCase().trim(), code = newRep.code.trim().toUpperCase(), password = newRep.password;
-    if (!name || !email || !code || !password) { setRepMsg("All fields required."); return; }
+    const name = newRep.name.trim(), email = newRep.email.toLowerCase().trim(), code = newRep.code.trim().toUpperCase(), password = newRep.password, company = newRep.company.trim();
+    if (!name || !email || !code || !password || !company) { setRepMsg("All fields required."); return; }
     const r = await sbGet("__moe_reps__", "reps") || {};
     if (r[email]) { setRepMsg("A rep with this email already exists."); return; }
-    r[email] = { name, email, code, password, createdAt: new Date().toISOString() };
+    r[email] = { name, email, code, password, company, createdAt: new Date().toISOString() };
     await sbSet("__moe_reps__", "reps", r);
     setReps(r);
-    setNewRep({ name:"", email:"", password:"", code:"" });
-    setRepMsg(`✓ Rep added. They log in at the normal sign-in with code ${code}.`);
+    setNewRep({ name:"", email:"", password:"", code:"", company:"" });
+    setRepMsg(`✓ Rep added. They log in with their email/password and see only ${company} orders.`);
   };
 
   if (loading) return (
@@ -6098,6 +6237,7 @@ function AdminView() {
                 <div key={r.email} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", flexWrap:"wrap" }}>
                   <div>
                     <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{r.name}</span>
+                    {r.company && <span style={{ color:"#94a3b8", fontSize:12, marginLeft:8 }}>· {r.company}</span>}
                     <span style={{ background:"rgba(56,189,248,0.12)", border:"1px solid rgba(56,189,248,0.3)", borderRadius:4, padding:"1px 6px", color:"#38bdf8", fontSize:10, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>{r.code}</span>
                   </div>
                   <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{r.email} · {tagged} account{tagged!==1?"s":""}</span>
@@ -6108,6 +6248,7 @@ function AdminView() {
         )}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:8, marginBottom:10 }}>
           <input value={newRep.name} onChange={e => setNewRep({...newRep, name:e.target.value})} placeholder="Rep name" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
+          <input value={newRep.company} onChange={e => setNewRep({...newRep, company:e.target.value})} placeholder="Company (e.g. Anacapri)" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
           <input value={newRep.email} onChange={e => setNewRep({...newRep, email:e.target.value})} placeholder="Email" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
           <input value={newRep.code} onChange={e => setNewRep({...newRep, code:e.target.value.toUpperCase()})} placeholder="Code (e.g. JOE)" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none", textTransform:"uppercase" }} />
           <input value={newRep.password} onChange={e => setNewRep({...newRep, password:e.target.value})} placeholder="Password" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
