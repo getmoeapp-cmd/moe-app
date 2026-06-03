@@ -207,7 +207,7 @@ const DEFAULT_INVENTORY = [
 const USERS = {
   "owner@kitchen.com":    { password: "owner123",    role: "owner",    name: "Owner",    group: "demo" },
   "employee@kitchen.com": { password: "employee123", role: "employee", name: "Employee", group: "demo" },
-  "rep@anacapri.com":     { password: "rep123",       role: "rep",      name: "Joe Marino", repCode: "DEMO", repCompany: "Anacapri" },
+  "rep@anacapri.com":     { password: "rep123",       role: "rep",      name: "Enzo Marino", repCode: "DEMO", repCompany: "Anacapri" },
 };
 
 // ─── DEFAULT VENDORS (Tommy's starter) ───────────────────────────────────────
