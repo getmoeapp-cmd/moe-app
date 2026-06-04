@@ -987,7 +987,7 @@ function MoeApp() {
 
       {/* Sales-rep broadcast banner (across whole app, dismissible) */}
       {(() => {
-        const active = repBroadcasts.filter(b => !dismissedBroadcasts.includes(b.id));
+        const active = repBroadcasts.filter(b => !dismissedBroadcasts.includes(b.id) && (!b.targets || b.targets.includes(group)));
         if (active.length === 0) return null;
         const b = active[0]; // show most recent undismissed
         const dismiss = () => {
@@ -5986,24 +5986,41 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
     setInviteEmail(""); setInviteMsg(`✓ Invite sent to ${email}. They'll see it in their Vendors section after signing up.`);
   };
 
-  // Broadcast a message to all of this rep's accounts (shows as a banner in their app)
+  // Broadcast a message to accounts (shows as a banner in their app)
   const [bcTitle, setBcTitle] = useState("");
   const [bcBody, setBcBody] = useState("");
   const [bcMsg, setBcMsg] = useState("");
+  const [bcAudience, setBcAudience] = useState("all"); // all | unpaid | no_order
+  const [unpaidList, setUnpaidList] = useState([]); // group ids the rep marked unpaid
+
+  const toggleUnpaid = async (group) => {
+    const next = unpaidList.includes(group) ? unpaidList.filter(g => g !== group) : [...unpaidList, group];
+    setUnpaidList(next);
+    if (repCode !== "DEMO") await sbSet("__moe_reps__", `unpaid_${repCode}`, next);
+  };
+
+  const audienceTargets = (aud) => {
+    const all = accounts || [];
+    if (aud === "unpaid") return all.filter(a => unpaidList.includes(a.group));
+    if (aud === "no_order") return all.filter(a => !orderedThisWeek(a.group));
+    return all;
+  };
+
   const sendBroadcast = async () => {
     if (!bcTitle.trim() || !bcBody.trim()) { setBcMsg("Add a title and message."); return; }
+    const targets = audienceTargets(bcAudience);
+    if (targets.length === 0) { setBcMsg("No accounts match that audience."); return; }
+    const entry = { id:`bc_${Date.now()}`, title:bcTitle.trim(), body:bcBody.trim(), company:repCompany, repName, date:new Date().toISOString(), audience:bcAudience, targets: targets.map(t => t.group) };
     if (repCode === "DEMO") {
-      const entry = { id:`bc_${Date.now()}`, title:bcTitle.trim(), body:bcBody.trim(), date:new Date().toISOString() };
       setAnnouncements(prev => [entry, ...prev]);
-      setBcTitle(""); setBcBody(""); setBcMsg(`✓ Sent to all ${(accounts||[]).length} accounts (demo).`);
+      setBcTitle(""); setBcBody(""); setBcMsg(`✓ Sent to ${targets.length} account${targets.length!==1?"s":""} (demo).`);
       return;
     }
     const cur = await sbGet("__moe_reps__", `broadcast_${repCode}`) || [];
-    const entry = { id:`bc_${Date.now()}`, title:bcTitle.trim(), body:bcBody.trim(), company:repCompany, repName, date:new Date().toISOString() };
     const updated = [entry, ...(Array.isArray(cur) ? cur : [])];
     await sbSet("__moe_reps__", `broadcast_${repCode}`, updated);
     setAnnouncements(updated);
-    setBcTitle(""); setBcBody(""); setBcMsg(`✓ Sent to all ${(accounts||[]).length} of your accounts. They'll see a banner in their app.`);
+    setBcTitle(""); setBcBody(""); setBcMsg(`✓ Sent to ${targets.length} account${targets.length!==1?"s":""}.`);
   };
   const deleteBroadcast = async (id) => {
     const updated = announcements.filter(a => a.id !== id);
@@ -6048,6 +6065,7 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
         };
         setAccounts(sampleAccts);
         setOrdersByGroup(sampleOrders);
+        setUnpaidList(["demo_napoli", "demo_slice"]);
         setAnnouncements([
           { id:"a1", title:"Holiday delivery — running one day behind", body:"Heads up: because of the holiday, all deliveries this week are pushed back one day. Place your orders early so you don't run short.", date:new Date(Date.now()-1*864e5).toISOString() },
           { id:"a2", title:"New: San Marzano DOP now available", body:"Just got authentic San Marzano DOP tomatoes in. Let me know if you want to add them to your next order.", date:new Date(Date.now()-6*864e5).toISOString() },
@@ -6067,6 +6085,8 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
       setOrdersByGroup(orders);
       const ann = await sbGet("__moe_reps__", `broadcast_${repCode}`) || [];
       setAnnouncements(Array.isArray(ann) ? ann : []);
+      const up = await sbGet("__moe_reps__", `unpaid_${repCode}`) || [];
+      setUnpaidList(Array.isArray(up) ? up : []);
       setLoading(false);
     };
     fetchAll();
@@ -6248,7 +6268,13 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
                                 </div>
                               </div>
                             </div>
-                            <span style={{ background: did ? "rgba(52,211,153,0.12)" : "rgba(251,191,36,0.12)", border:`1px solid ${did ? "rgba(52,211,153,0.3)" : "rgba(251,191,36,0.3)"}`, borderRadius:6, padding:"3px 10px", color: did ? "#34d399" : "#fbbf24", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{did ? "ORDERED" : "NO ORDER"}</span>
+                            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                              <span onClick={(e) => { e.stopPropagation(); toggleUnpaid(a.group); }} title={unpaidList.includes(a.group) ? "Marked unpaid — tap to clear" : "Mark unpaid"}
+                                style={{ background: unpaidList.includes(a.group) ? "rgba(248,113,113,0.12)" : "transparent", border:`1px solid ${unpaidList.includes(a.group) ? "rgba(248,113,113,0.35)" : "#1e2d45"}`, borderRadius:6, padding:"3px 9px", color: unpaidList.includes(a.group) ? "#fca5a5" : "#475569", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", cursor:"pointer" }}>
+                                $ {unpaidList.includes(a.group) ? "UNPAID" : ""}
+                              </span>
+                              <span style={{ background: did ? "rgba(52,211,153,0.12)" : "rgba(251,191,36,0.12)", border:`1px solid ${did ? "rgba(52,211,153,0.3)" : "rgba(251,191,36,0.3)"}`, borderRadius:6, padding:"3px 10px", color: did ? "#34d399" : "#fbbf24", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{did ? "ORDERED" : "NO ORDER"}</span>
+                            </div>
                           </button>
                           {isOpen && did && (
                             <div style={{ padding:"0 16px 14px", background:"#080c14" }}>
@@ -6318,7 +6344,7 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
             <>
               <div style={{ marginBottom:20 }}>
                 <h2 style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, margin:0 }}>Announcements</h2>
-                <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Message all {(accounts||[]).length} of your accounts</p>
+                <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Message your accounts</p>
               </div>
 
               {/* Compose */}
@@ -6327,10 +6353,16 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
                   style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"11px 14px", color:"#f1f5f9", fontSize:15, outline:"none", boxSizing:"border-box", marginBottom:10 }} />
                 <textarea value={bcBody} onChange={e => setBcBody(e.target.value)} rows={3} placeholder="Message to your accounts…"
                   style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"11px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box", resize:"vertical", fontFamily:"inherit", marginBottom:14, lineHeight:1.5 }} />
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:10, flexWrap:"wrap" }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+                  <select value={bcAudience} onChange={e => setBcAudience(e.target.value)}
+                    style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"10px 12px", color:"#f1f5f9", fontSize:13, outline:"none", cursor:"pointer" }}>
+                    <option value="all">All accounts ({(accounts||[]).length})</option>
+                    <option value="unpaid">Unpaid accounts ({audienceTargets("unpaid").length})</option>
+                    <option value="no_order">Order not received ({audienceTargets("no_order").length})</option>
+                  </select>
                   <button onClick={sendBroadcast}
                     style={{ background:"#38bdf8", border:"none", borderRadius:9, padding:"11px 22px", color:"#060a12", fontSize:14, fontWeight:700, cursor:"pointer" }}>
-                    Send to my accounts
+                    Send
                   </button>
                 </div>
                 {bcMsg && <div style={{ color: bcMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:13, marginTop:12 }}>{bcMsg}</div>}
@@ -6347,9 +6379,16 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
                   {announcements.slice().sort((a,b) => new Date(b.date)-new Date(a.date)).map(an => (
                     <div key={an.id} className="moe-lift" style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px" }}>
                       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:6, flexWrap:"wrap" }}>
-                        <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{an.title}</span>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
+                          <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{an.title}</span>
+                          {an.audience && an.audience !== "all" && (
+                            <span style={{ background: an.audience === "unpaid" ? "rgba(248,113,113,0.12)" : "rgba(251,191,36,0.12)", border:`1px solid ${an.audience === "unpaid" ? "rgba(248,113,113,0.3)" : "rgba(251,191,36,0.3)"}`, borderRadius:4, padding:"1px 7px", color: an.audience === "unpaid" ? "#fca5a5" : "#fbbf24", fontSize:9, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>
+                              {an.audience === "unpaid" ? "UNPAID" : "NO ORDER"}
+                            </span>
+                          )}
+                        </div>
                         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                          <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{fmtDate(an.date)}</span>
+                          <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{an.targets ? `${an.targets.length} acct${an.targets.length!==1?"s":""} · ` : ""}{fmtDate(an.date)}</span>
                           <button onClick={() => deleteBroadcast(an.id)} style={{ background:"transparent", border:"none", color:"#fca5a5", fontSize:12, cursor:"pointer" }}>Delete</button>
                         </div>
                       </div>
