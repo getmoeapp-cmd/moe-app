@@ -6318,17 +6318,16 @@ function RepDashboard({ repCode, repName, repCompany, onLogout }) {
             <>
               <div style={{ marginBottom:20 }}>
                 <h2 style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, margin:0 }}>Announcements</h2>
-                <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Send a message to all {(accounts||[]).length} of your accounts — it shows as a banner in their app</p>
+                <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Message all {(accounts||[]).length} of your accounts</p>
               </div>
 
               {/* Compose */}
               <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, padding:"20px", marginBottom:24, maxWidth:620 }}>
-                <input value={bcTitle} onChange={e => setBcTitle(e.target.value)} placeholder="Title — e.g. Holiday delivery one day behind"
+                <input value={bcTitle} onChange={e => setBcTitle(e.target.value)} placeholder="Title"
                   style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"11px 14px", color:"#f1f5f9", fontSize:15, outline:"none", boxSizing:"border-box", marginBottom:10 }} />
-                <textarea value={bcBody} onChange={e => setBcBody(e.target.value)} rows={3} placeholder="Message — e.g. Because of the holiday, deliveries are pushed back a day this week. Order early so you don't run short."
+                <textarea value={bcBody} onChange={e => setBcBody(e.target.value)} rows={3} placeholder="Message to your accounts…"
                   style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"11px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box", resize:"vertical", fontFamily:"inherit", marginBottom:14, lineHeight:1.5 }} />
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
-                  <span style={{ color:"#64748b", fontSize:12 }}>Goes to all {(accounts||[]).length} accounts you handle</span>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:10, flexWrap:"wrap" }}>
                   <button onClick={sendBroadcast}
                     style={{ background:"#38bdf8", border:"none", borderRadius:9, padding:"11px 22px", color:"#060a12", fontSize:14, fontWeight:700, cursor:"pointer" }}>
                     Send to my accounts
