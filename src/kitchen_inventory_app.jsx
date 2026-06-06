@@ -1547,7 +1547,8 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
 
   // Orders submitted but not yet checked in (awaiting delivery), newest first
   const awaitingDelivery = (history || [])
-    .filter(o => !o.received && o.type !== "quick" && (o.lines || []).length > 0)
+    .filter(o => !o.received && o.type !== "quick" && (o.lines || []).length > 0
+      && (new Date() - new Date(o.date)) < 14 * 86400000) // only recent orders — don't flag ancient history
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
   // Shortfalls: items from checked-in orders that didn't fully arrive (recent, not dismissed)
@@ -1588,6 +1589,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
   };
 
   const [quickSearch, setQuickSearch] = useState("");
+  const [showQuick, setShowQuick] = useState(false);
   const [quickItems, setQuickItems] = useState([]); // [{ id, name, qty, order_unit, vendor, section }]
   const [quickSource, setQuickSource] = useState("");
   const [quickNote, setQuickNote] = useState("");
