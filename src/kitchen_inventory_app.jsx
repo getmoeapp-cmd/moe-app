@@ -248,16 +248,15 @@ const getWeekNumber = (d = new Date()) => { const date = new Date(Date.UTC(d.get
 const getToday = () => new Date().getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
 const fmtDate = (d) => new Date(d).toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" });
 
-// Get Monday's date for a given week number and year
+// Get Monday's date for a given ISO week number and year
+// ISO 8601: week 1 is the week containing Jan 4 — anchor there so this
+// always agrees with getWeekNumber (which is ISO-based).
 const getWeekMonday = (weekNum, year = new Date().getFullYear()) => {
-  const jan1 = new Date(year, 0, 1);
-  const jan1Day = jan1.getDay() || 7; // Mon=1..Sun=7
-  const daysToFirstMonday = jan1Day <= 1 ? (1 - jan1Day) : (8 - jan1Day);
-  const firstMonday = new Date(year, 0, 1 + daysToFirstMonday);
-  const monday = new Date(firstMonday);
+  const jan4 = new Date(year, 0, 4);
+  const jan4Day = jan4.getDay() || 7; // Mon=1..Sun=7
+  const week1Monday = new Date(year, 0, 4 - (jan4Day - 1));
+  const monday = new Date(week1Monday);
   monday.setDate(monday.getDate() + (weekNum - 1) * 7);
-  // Adjust if week 1 starts before Jan 1
-  if (weekNum === 1 && jan1Day > 4) monday.setDate(monday.getDate() - 7);
   return monday;
 };
 
@@ -6608,3 +6607,4 @@ function AdminView() {
     </div>
   );
 }
+  
