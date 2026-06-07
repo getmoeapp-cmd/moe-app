@@ -3013,12 +3013,17 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
   // Pad on the left so we always render 4 columns
   const colWeeks = [...Array(4 - recentWeeks.length).fill(null), ...recentWeeks];
 
-  const weekLabel = (wk) => wk ? `W${wk.split("-WK")[1] || ""}` : "—";
+  const weekLabel = (wk, idx) => wk ? `W${wk.split("-WK")[1] || ""}` : `Wk ${idx + 1}`;
 
   // Build per-item rows — EVERY item, even with no data
+  // All numbers display in ORDER UNITS (cases / each / etc) — the unit you actually order in.
+  // Snapshots are stored in individual units, so we divide by upu to convert.
   const itemRows = allItems.map(item => {
     const id = item.id;
-    // Per-week usage lookup
+    const upu = item.upu || 1;
+    const orderUnit = (item.order_unit || "unit").toLowerCase();
+    const isCase = upu > 1;
+    // Per-week usage in INDIVIDUALS first, then convert
     const usageByWeek = {};
     for (let i = 0; i < snapWeeks.length - 1; i++) {
       const wkA = snapWeeks[i], wkB = snapWeeks[i + 1];
@@ -3026,21 +3031,24 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
       const endCount = stockSnapshots[wkB]?.[id];
       if (startCount === undefined || endCount === undefined) continue;
       const received = receivedUnits(id, wkA);
-      const usage = startCount + received - endCount;
-      if (usage >= 0) usageByWeek[wkB] = usage;
+      const usageIndividuals = startCount + received - endCount;
+      if (usageIndividuals >= 0) {
+        // Convert to order units, round to 1 decimal
+        usageByWeek[wkB] = Math.round((usageIndividuals / upu) * 10) / 10;
+      }
     }
-    // Values for the 4 visible columns
     const cells = colWeeks.map(wk => (wk && usageByWeek[wk] !== undefined) ? usageByWeek[wk] : null);
     const values = cells.filter(v => v !== null);
     const weeks = values.length;
     const avg = weeks > 0 ? Math.round((values.reduce((a, b) => a + b, 0) / weeks) * 10) / 10 : null;
     const peak = weeks > 0 ? Math.max(...values) : null;
-    // Recommendation kicks in once 2+ weeks of usage exists
+    // Recommended par in order units (cases) — peak + 20% buffer, rounded up to whole cases
     const recommendedPar = weeks >= 2 ? Math.ceil(peak * 1.2) : null;
     const overStock = recommendedPar !== null ? (item.max_stock || 0) - recommendedPar : null;
     return {
       id, name: item.name, section: item.section || "Other",
       max_stock: item.max_stock || 0,
+      orderUnit, upu, isCase,
       cells, weeks, avg, peak, recommendedPar, overStock,
     };
   });
@@ -3097,10 +3105,10 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
         {/* Column headers */}
         <div className="ins-r" style={{ padding:"9px 14px", background:"#0a0f1a", borderBottom:"1px solid #1e2d45" }}>
           <span style={{ ...hdr, textAlign:"left" }}>Item</span>
-          <span className="ins-w1" style={hdr}>{weekLabel(colWeeks[0])}</span>
-          <span className="ins-w2" style={hdr}>{weekLabel(colWeeks[1])}</span>
-          <span style={hdr}>{weekLabel(colWeeks[2])}</span>
-          <span style={hdr}>{weekLabel(colWeeks[3])}</span>
+          <span className="ins-w1" style={hdr}>{weekLabel(colWeeks[0], 0)}</span>
+          <span className="ins-w2" style={hdr}>{weekLabel(colWeeks[1], 1)}</span>
+          <span style={hdr}>{weekLabel(colWeeks[2], 2)}</span>
+          <span style={hdr}>{weekLabel(colWeeks[3], 3)}</span>
           <span style={{ ...hdr, color:"#94a3b8" }}>Avg</span>
           <span style={hdr}>Par</span>
           <span style={hdr}>Should be</span>
@@ -3126,6 +3134,9 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
                   style={{ padding:"9px 14px", background: canCut ? "rgba(251,191,36,0.05)" : isShort ? "rgba(56,189,248,0.04)" : even ? "transparent" : "rgba(255,255,255,0.015)", borderBottom:"1px solid #0f1520" }}>
                   <div style={{ minWidth:0 }}>
                     <div style={{ color: hasData ? "#e2e8f0" : "#475569", fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.name}</div>
+                    <div style={{ color:"#3b4a63", fontSize:10, marginTop:1, fontFamily:"'DM Mono',monospace" }}>
+                      {s.isCase ? `case of ${s.upu}` : s.orderUnit}
+                    </div>
                   </div>
                   <span className="ins-w1" style={s.cells[0] !== null ? cellStyle : emptyCell}>{s.cells[0] ?? "—"}</span>
                   <span className="ins-w2" style={s.cells[1] !== null ? cellStyle : emptyCell}>{s.cells[1] ?? "—"}</span>
@@ -3167,7 +3178,7 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
 
       {/* Legend */}
       <div style={{ color:"#475569", fontSize:11, marginTop:12, lineHeight:1.6 }}>
-        Each <strong style={{ color:"#64748b" }}>W##</strong> column = that week's usage. <strong style={{ color:"#94a3b8" }}>Avg</strong> updates as more weeks come in (2-wk → 3-wk → 4-wk rolling). <strong style={{ color:"#fbbf24" }}>Should be</strong> shows the recommended par — tap the number to apply.
+        All numbers shown in <strong style={{ color:"#64748b" }}>order units</strong> (cases or each — see label under item name). <strong style={{ color:"#94a3b8" }}>Avg</strong> builds up over time (2-wk → 3-wk → 4-wk rolling). <strong style={{ color:"#fbbf24" }}>Should be</strong> = peak + 20% buffer, rounded up to whole cases. Tap the number to apply.
       </div>
     </div>
   );
