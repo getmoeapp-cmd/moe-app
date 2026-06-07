@@ -3115,67 +3115,64 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
         </div>
       )}
 
-      {/* USAGE CARDS */}
+      {/* USAGE TABLE */}
       {activeSuggestions.length > 0 && (
-        <div style={{ marginBottom:28, display:"flex", flexDirection:"column", gap:12 }}>
-          {activeSuggestions.map(s => {
+        <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, overflow:"hidden", marginBottom:28 }}>
+          <style>{`
+            .ins-grid { display:grid; grid-template-columns: minmax(150px,1fr) 70px 60px 70px 90px; gap:8px; align-items:center; }
+            @media (max-width: 600px) {
+              .ins-grid { grid-template-columns: minmax(110px,1fr) 60px 64px 78px; }
+              .ins-peak { display:none !important; }
+            }
+          `}</style>
+          {/* Column headers */}
+          <div className="ins-grid" style={{ padding:"10px 16px", background:"#0a0f1a", borderBottom:"1px solid #1e2d45" }}>
+            <span style={{ color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.6px", fontFamily:"'DM Mono',monospace" }}>Item</span>
+            <span style={{ color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.6px", fontFamily:"'DM Mono',monospace", textAlign:"right" }}>Used/wk</span>
+            <span className="ins-peak" style={{ color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.6px", fontFamily:"'DM Mono',monospace", textAlign:"right" }}>Peak</span>
+            <span style={{ color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.6px", fontFamily:"'DM Mono',monospace", textAlign:"right" }}>You stock</span>
+            <span style={{ color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.6px", fontFamily:"'DM Mono',monospace", textAlign:"right" }}>Suggested</span>
+          </div>
+
+          {activeSuggestions.map((s, idx) => {
             const isOpen = expanded[s.id];
             const canCut = s.overStock >= 1;
             const isShort = s.max_stock > 0 && s.recommendedPar > s.max_stock;
+            const last = idx === activeSuggestions.length - 1;
             return (
-              <div key={s.id} className="moe-lift" style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, overflow:"hidden" }}>
-                <div style={{ padding:"16px 18px" }}>
-                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
-                    <div style={{ flex:1, minWidth:160 }}>
-                      <div style={{ color:"#f1f5f9", fontSize:15, fontWeight:600 }}>{s.name}</div>
-                      <div style={{ color:"#64748b", fontSize:12, marginTop:3 }}>{s.vendor} · counted in {unitLabel(s)}s</div>
+              <div key={s.id} style={{ borderBottom: last && !isOpen ? "none" : "1px solid #131c2e" }}>
+                {/* Row */}
+                <div className="ins-grid" onClick={() => setExpanded(prev => ({ ...prev, [s.id]: !prev[s.id] }))}
+                  style={{ padding:"13px 16px", cursor:"pointer", background: isOpen ? "#0f1626" : "transparent" }}>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      <span style={{ color:"#475569", fontSize:10, marginRight:7, display:"inline-block", transform: isOpen ? "rotate(90deg)" : "none", transition:"transform 0.15s" }}>▶</span>
+                      {s.name}
                     </div>
-                    {/* Usage numbers */}
-                    <div style={{ display:"flex", alignItems:"center", gap:18 }}>
-                      <div style={{ textAlign:"center" }}>
-                        <div style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.avg}</div>
-                        <div style={{ color:"#64748b", fontSize:10, marginTop:1 }}>used/wk</div>
-                      </div>
-                      <div style={{ textAlign:"center" }}>
-                        <div style={{ color:"#38bdf8", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.peak}</div>
-                        <div style={{ color:"#64748b", fontSize:10, marginTop:1 }}>peak/wk</div>
-                      </div>
-                      {s.max_stock > 0 && (
-                        <div style={{ textAlign:"center" }}>
-                          <div style={{ color:"#94a3b8", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.max_stock}</div>
-                          <div style={{ color:"#64748b", fontSize:10, marginTop:1 }}>you stock</div>
-                        </div>
-                      )}
-                    </div>
+                    <div style={{ color:"#475569", fontSize:11, marginTop:2, paddingLeft:17 }}>{s.vendor}</div>
                   </div>
-
-                  {/* Recommendation line */}
-                  <div style={{ marginTop:12, padding:"10px 12px", background:"#080c14", borderRadius:8, color:"#94a3b8", fontSize:12.5, lineHeight:1.6 }}>
-                    {canCut ? (
-                      <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong> {unitLabel(s)}{s.avg !== 1 ? "s" : ""}/week (peak {s.peak}), but you carry <strong style={{ color:"#e2e8f0" }}>{s.max_stock}</strong>. You could drop your par to <strong style={{ color:"#34d399" }}>{s.recommendedPar}</strong> and stop over-ordering <strong style={{ color:"#34d399" }}>{s.overStock}</strong> {unitLabel(s)}{s.overStock !== 1 ? "s" : ""} a week.</>
-                    ) : isShort ? (
-                      <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong>/week (peak {s.peak}), but only carry <strong style={{ color:"#e2e8f0" }}>{s.max_stock}</strong>. Consider raising your par to <strong style={{ color:"#fbbf24" }}>{s.recommendedPar}</strong> so you don't run short on busy weeks.</>
-                    ) : (
-                      <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong> {unitLabel(s)}{s.avg !== 1 ? "s" : ""}/week (peak {s.peak}). Your par of {s.max_stock} is right on target.</>
-                    )}
-                  </div>
-
-                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:12, gap:8 }}>
-                    <button onClick={() => setExpanded(prev => ({ ...prev, [s.id]: !prev[s.id] }))}
-                      style={{ background:"none", border:"none", color:"#60a5fa", fontSize:12, cursor:"pointer", padding:0, fontWeight:500 }}>
-                      {isOpen ? "Hide weekly usage" : "Show weekly usage"}
-                    </button>
-                    {(canCut || isShort) && applyParSuggestion && (
-                      <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
-                        style={{ background: canCut ? "#34d399" : "#38bdf8", border:"none", borderRadius:8, padding:"8px 16px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                        Set par to {s.recommendedPar}
-                      </button>
-                    )}
-                  </div>
+                  <span style={{ color:"#e2e8f0", fontSize:15, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.avg}</span>
+                  <span className="ins-peak" style={{ color:"#64748b", fontSize:14, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.peak}</span>
+                  <span style={{ color:"#94a3b8", fontSize:14, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.max_stock || "—"}</span>
+                  <span style={{ textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:700,
+                    color: canCut ? "#34d399" : isShort ? "#fbbf24" : "#475569" }}>
+                    {canCut ? `▾ ${s.recommendedPar}` : isShort ? `▴ ${s.recommendedPar}` : "✓"}
+                  </span>
                 </div>
 
+                {/* Expanded detail */}
                 {isOpen && (
-                  <div style={{ padding:"16px 18px", background:"#080c14", borderTop:"1px solid #1e2d45" }}>
+                  <div style={{ padding:"16px 18px 18px", background:"#080c14", borderTop:"1px solid #131c2e" }}>
+                    <div style={{ color:"#94a3b8", fontSize:12.5, lineHeight:1.6, marginBottom:14 }}>
+                      {canCut ? (
+                        <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong> {unitLabel(s)}{s.avg !== 1 ? "s" : ""}/week (peak {s.peak}), but carry <strong style={{ color:"#e2e8f0" }}>{s.max_stock}</strong>. Dropping your par to <strong style={{ color:"#34d399" }}>{s.recommendedPar}</strong> stops over-ordering <strong style={{ color:"#34d399" }}>{s.overStock}</strong> {unitLabel(s)}{s.overStock !== 1 ? "s" : ""} a week.</>
+                      ) : isShort ? (
+                        <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong>/week (peak {s.peak}), but only carry <strong style={{ color:"#e2e8f0" }}>{s.max_stock}</strong>. Raising your par to <strong style={{ color:"#fbbf24" }}>{s.recommendedPar}</strong> covers busy weeks.</>
+                      ) : (
+                        <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong> {unitLabel(s)}{s.avg !== 1 ? "s" : ""}/week (peak {s.peak}). Your par of {s.max_stock} is right on target.</>
+                      )}
+                    </div>
+
                     <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:12 }}>{unitLabel(s)}s used per week</div>
                     <div style={{ display:"flex", gap:6, alignItems:"end", height:90 }}>
                       {s.weeklyUsage.map((u, i) => {
@@ -3192,14 +3189,15 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
                         );
                       })}
                     </div>
-                    <div style={{ display:"flex", gap:20, marginTop:14, paddingTop:12, borderTop:"1px solid #1e2d45", flexWrap:"wrap" }}>
-                      <div><span style={{ color:"#475569", fontSize:11 }}>Avg used </span><span style={{ color:"#e2e8f0", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.avg}</span></div>
-                      <div><span style={{ color:"#475569", fontSize:11 }}>Peak </span><span style={{ color:"#38bdf8", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.peak}</span></div>
-                      <div><span style={{ color:"#475569", fontSize:11 }}>Low </span><span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{s.min}</span></div>
-                      <div><span style={{ color:"#475569", fontSize:11 }}>Weeks </span><span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace" }}>{s.weeklyUsage.length}</span></div>
-                    </div>
-                    <div style={{ marginTop:10, color:"#475569", fontSize:11, lineHeight:1.5 }}>
-                      Usage = last week's count + what you received − this week's count.
+
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginTop:16, flexWrap:"wrap" }}>
+                      <span style={{ color:"#475569", fontSize:11 }}>Usage = last count + received − this count · {s.weeklyUsage.length} weeks measured</span>
+                      {(canCut || isShort) && applyParSuggestion && (
+                        <button onClick={(e) => { e.stopPropagation(); applyParSuggestion(s.id, s.recommendedPar); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
+                          style={{ background: canCut ? "#34d399" : "#38bdf8", border:"none", borderRadius:8, padding:"8px 16px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                          Set par to {s.recommendedPar}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -3211,15 +3209,10 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
 
       {/* Building data */}
       {buildingData.length > 0 && (
-        <div>
-          <h3 style={{ color:"#64748b", fontSize:13, fontWeight:600, margin:"0 0 10px" }}>Still measuring ({buildingData.length})</h3>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-            {buildingData.map(item => (
-              <span key={item.id} style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:8, padding:"6px 12px", color:"#94a3b8", fontSize:12 }}>
-                {item.name} <span style={{ color:"#475569", fontFamily:"'DM Mono',monospace" }}>need 2+ counts</span>
-              </span>
-            ))}
-          </div>
+        <div style={{ color:"#475569", fontSize:12.5, lineHeight:1.8 }}>
+          <span style={{ color:"#64748b", fontWeight:600 }}>Still measuring: </span>
+          {buildingData.map(i => i.name).join(" · ")}
+          <span style={{ color:"#3b4a63" }}> — these show up after 2 weekly counts.</span>
         </div>
       )}
     </div>
@@ -6607,4 +6600,3 @@ function AdminView() {
     </div>
   );
 }
-  
