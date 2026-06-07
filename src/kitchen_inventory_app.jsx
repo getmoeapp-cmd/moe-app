@@ -390,6 +390,7 @@ function MoeApp() {
   const [team, setTeam]                 = useState([]); // [{ id, email, name, role, addedAt }]
   const [wasteLog, setWasteLog]         = useState([]);
   const [priceHistory, setPriceHistory] = useState({});
+  const [recipes, setRecipes]           = useState([]); // [{ id, name, yield, ingredients:[{itemId, qty, unit}], notes }]
   const [dataLoaded, setDataLoaded]     = useState(false);
   const [onboarding, setOnboarding]     = useState(null); // null = not started, 1-4 = step, "done" = completed
   const [permissions, setPermissions]   = useState({
@@ -440,6 +441,7 @@ function MoeApp() {
       const tm = await load("team", []);
       const wl = await load("wasteLog", []);
       const ph = await load("priceHistory", {});
+      const rc = await load("recipes", []);
       const perms = await load("permissions", null);
       const ob = await load("onboarding", null);
       const autoSub = await load("autoSubmit", true);
@@ -447,6 +449,7 @@ function MoeApp() {
       const lastAutoWeek = await load("lastAutoWeek", null);
       setStock(st); setVendors(vd); setHistory(hi); setInventory(inv);
       setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl); setPriceHistory(ph);
+      setRecipes(Array.isArray(rc) ? rc : []);
       setStockSnapshots(snaps || {});
       if (perms) setPermissions(perms);
       setOnboarding(ob);
@@ -493,6 +496,7 @@ function MoeApp() {
         if (data_key === "team")         setTeam(value);
         if (data_key === "wasteLog")    setWasteLog(value);
         if (data_key === "priceHistory") setPriceHistory(value);
+        if (data_key === "recipes")     setRecipes(Array.isArray(value) ? value : []);
         if (data_key === "permissions") setPermissions(value);
       } catch {}
     }).subscribe();
@@ -749,6 +753,7 @@ function MoeApp() {
 
   // ── Save price history ────────────────────────────────────────────────
   const savePriceHistory = useCallback((newPH) => { setPriceHistory(newPH); save("priceHistory", newPH); }, [save]);
+  const saveRecipes = useCallback((newRecipes) => { setRecipes(newRecipes); save("recipes", newRecipes); showFlash("✓ Recipe saved"); }, [save]);
 
   // ── Save permissions ──────────────────────────────────────────────────
   const savePermissions = useCallback((newPerms) => { setPermissions(newPerms); save("permissions", newPerms); showFlash("✓ Permissions updated"); }, [save]);
@@ -764,7 +769,7 @@ function MoeApp() {
   };
 
   // ── Login ────────────────────────────────────────────────────────────────
-  if (!user) return <LoginScreen onLogin={u => { setUser(u); setGroup(u.group || "demo"); setLoginError(""); }} error={loginError} setError={setLoginError} />;
+  if (!user) return <LoginScreen onLogin={u => { setUser(u); setGroup(u.group || "demo"); setView(u.role === "owner" ? "dashboard" : "inventory"); setLoginError(""); }} error={loginError} setError={setLoginError} />;
 
   // ── Sales reps get the rep dashboard, not the app ──────────────────────
   if (user.role === "rep") return <RepDashboard repCode={user.repCode} repName={user.name} repCompany={user.repCompany} onLogout={() => { setUser(null); setGroup(null); }} />;
@@ -844,6 +849,7 @@ function MoeApp() {
     { key: "orders", label: "Orders", icon: "📦" },
     { key: "history", label: "History", icon: "📚" },
     { key: "insights", label: "Insights", icon: "📊" },
+    { key: "recipes", label: "Recipes & Costs", icon: "📖" },
     { key: "prices", label: "Price Tracker", icon: "💲" },
     { key: "backend", label: "Backend", icon: "🔧" },
     { key: "settings", label: "Settings", icon: "⚙️" },
@@ -909,11 +915,13 @@ function MoeApp() {
         </div>
         <div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
           {[
+            ...(user.role === "owner" ? [{ key:"dashboard", label:"Dashboard", icon:"dashboard", desc:"Overview & quick actions" }] : []),
             ...(canAccess("inventory") ? [{ key:"inventory", label:"Inventory", icon:"inventory", desc:"Count stock by location" }] : []),
             ...(canAccess("waste") ? [{ key:"waste", label:"Waste Log", icon:"waste", desc:"Track what's going in the trash" }] : []),
             ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
             ...(canAccess("history") ? [{ key:"history", label:"History", icon:"history", desc:"Past orders by week" }] : []),
             ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+            ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes & Costs", icon:"recipes", desc:"Build recipes, see dish cost" }] : []),
             ...(canAccess("prices") ? [{ key:"prices", label:"Price Tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
             ...(canAccess("backend") ? [{ key:"backend", label:"Backend", icon:"backend", desc:"Add & edit items" }] : []),
             ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Vendors & team" }] : []),
@@ -1013,11 +1021,25 @@ function MoeApp() {
 
       {/* Main content */}
       <main key={view} className="moe-fade" style={{ maxWidth:1200, margin:"0 auto", padding:"16px", boxSizing:"border-box", width:"100%" }}>
+        {view === "dashboard" && user.role === "owner" && <DashboardView
+          user={user}
+          inventory={inventory}
+          stock={stock}
+          vendors={vendors}
+          history={history}
+          stockSnapshots={stockSnapshots}
+          recipes={recipes}
+          priceHistory={priceHistory}
+          todayVendors={todayVendors}
+          weekNum={weekNum}
+          setView={setView}
+        />}
         {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
         {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
         {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} submitOrderForWeek={submitOrderForWeek} checkInDelivery={checkInDelivery} history={history} user={user} />}
         {view === "history" && canAccess("history") && <HistoryView history={history} user={user} />}
         {view === "insights" && canAccess("insights") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} stockSnapshots={stockSnapshots} history={history} />}
+        {view === "recipes" && canAccess("recipes") && <RecipesView inventory={inventory} priceHistory={priceHistory} recipes={recipes} saveRecipes={saveRecipes} />}
         {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} foodCost={foodCost} history={history} saveHistory={saveHistory} saveInventory={(inv) => { setInventory(inv); save("inventory", inv); }} />}
         {view === "import" && canAccess("import") && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && canAccess("backend") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
@@ -1052,6 +1074,9 @@ function MoeIcons() {
         <symbol id="ic-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M12 5v14M5 12h14"/></symbol>
         <symbol id="ic-camera" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 8h3l2-2h8l2 2h3v12H3zM12 17a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/></symbol>
         <symbol id="ic-doc" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M6 2h8l4 4v16H6zM14 2v4h4M9 13h6M9 17h6"/></symbol>
+        <symbol id="ic-dashboard" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"/></symbol>
+        <symbol id="ic-recipes" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M6 2v20h12V2zM6 7h12M9 11h6M9 15h6M9 19h6"/></symbol>
+        <symbol id="ic-arrow-right" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M13 5l7 7-7 7"/></symbol>
       </defs>
     </svg>
   );
@@ -1424,6 +1449,571 @@ function LoginScreen({ onLogin, error, setError }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD VIEW — Clean overview shown when owner signs in
+// ═══════════════════════════════════════════════════════════════════════════════
+function DashboardView({ user, inventory, stock, vendors, history, stockSnapshots, recipes, priceHistory, todayVendors, weekNum, setView }) {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const businessName = user.business || "your kitchen";
+  const firstName = (user.name || "").split(" ")[0] || "there";
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
+  const allItems = flatItems(inventory);
+  const totalItems = allItems.length;
+
+  // Orders this week
+  const currentYear = new Date().getFullYear();
+  const ordersThisWeek = (history || []).filter(o => o.weekNumber === weekNum && o.year === currentYear);
+  const ordersThisWeekCount = ordersThisWeek.length;
+
+  // Estimated spend this week (best-effort using latest priceHistory)
+  const latestPrice = (itemId) => {
+    const entries = priceHistory?.[itemId];
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    const sorted = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
+    return sorted[0]?.price ?? null;
+  };
+  let weekSpend = 0;
+  let weekSpendComplete = true;
+  ordersThisWeek.forEach(o => {
+    (o.lines || []).forEach(line => {
+      const p = latestPrice(line.id);
+      if (p == null) weekSpendComplete = false;
+      else weekSpend += (Number(line.qty) || 0) * p;
+    });
+  });
+
+  // Last count info
+  const lastCountTs = Object.values(stockSnapshots || {})
+    .map(s => s?._ts ? new Date(s._ts).getTime() : 0)
+    .filter(t => t > 0)
+    .sort((a, b) => b - a)[0];
+  const daysSinceCount = lastCountTs ? Math.floor((Date.now() - lastCountTs) / 86400000) : null;
+
+  // Items low on stock (current stock < par/3, simple heuristic)
+  const lowItems = allItems.filter(i => {
+    const s = stock?.[i.id] ?? 0;
+    const par = Number(i.par || 0);
+    return par > 0 && s < par * 0.34;
+  });
+
+  // Recent orders (last 5 across all weeks)
+  const recentOrders = [...(history || [])]
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 5);
+
+  // ── Styles ────────────────────────────────────────────────────────────────
+  const cardBase = { background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 14, padding: 20 };
+  const statLabel = { color: "#64748b", fontSize: 11, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5 };
+  const statValue = { color: "#f1f5f9", fontSize: 30, fontWeight: 600, fontFamily: "'DM Sans',sans-serif", lineHeight: 1.1, marginTop: 6 };
+  const statSub = { color: "#64748b", fontSize: 12, marginTop: 6 };
+
+  return (
+    <div style={{ padding: "20px 24px 40px", maxWidth: 1200, margin: "0 auto" }}>
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ color: "#64748b", fontSize: 13, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 1 }}>
+          WK {weekNum} · {DAYS[getToday()]}
+        </div>
+        <h1 style={{ color: "#f1f5f9", fontSize: 30, fontWeight: 500, margin: "8px 0 4px", letterSpacing: -0.5 }}>
+          {greeting}, {firstName}
+        </h1>
+        <div style={{ color: "#94a3b8", fontSize: 15 }}>Here's what's happening at {businessName} today.</div>
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 24 }}>
+        <div style={cardBase}>
+          <div style={statLabel}>Orders this week</div>
+          <div style={statValue}>{ordersThisWeekCount}</div>
+          <div style={statSub}>{ordersThisWeekCount === 0 ? "No orders placed yet" : `Across ${new Set(ordersThisWeek.map(o => o.vendor)).size} vendor${new Set(ordersThisWeek.map(o => o.vendor)).size !== 1 ? "s" : ""}`}</div>
+        </div>
+        <div style={cardBase}>
+          <div style={statLabel}>Spend this week</div>
+          <div style={statValue}>
+            {ordersThisWeekCount === 0 || weekSpend === 0 ? "—" : `$${weekSpend.toFixed(0)}`}
+          </div>
+          <div style={statSub}>{weekSpend > 0 ? (weekSpendComplete ? "From this week's orders" : "Estimate (some prices missing)") : "Once you order this week"}</div>
+        </div>
+        <div style={cardBase}>
+          <div style={statLabel}>Items in catalog</div>
+          <div style={statValue}>{totalItems}</div>
+          <div style={statSub}>{(inventory || []).length} section{(inventory || []).length !== 1 ? "s" : ""}</div>
+        </div>
+        <div style={cardBase}>
+          <div style={statLabel}>Recipes saved</div>
+          <div style={statValue}>{recipes?.length || 0}</div>
+          <div style={statSub}>{(recipes?.length || 0) === 0 ? "Build your first recipe →" : "Tap to cost out dishes"}</div>
+        </div>
+      </div>
+
+      {/* Today / Heads up */}
+      {(todayVendors.length > 0 || lowItems.length > 0 || (daysSinceCount !== null && daysSinceCount >= 7)) && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10, fontFamily: "'DM Mono',monospace" }}>Heads up</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
+            {todayVendors.length > 0 && (
+              <button onClick={() => setView("orders")} style={{ ...cardBase, textAlign: "left", cursor: "pointer", borderColor: "#0c4a6e", background: "linear-gradient(135deg, #082f49 0%, #0f1a2e 100%)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 12 }}>
+                  <div>
+                    <div style={{ color: "#38bdf8", fontSize: 12, fontWeight: 600, marginBottom: 6, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>Orders due today</div>
+                    <div style={{ color: "#f1f5f9", fontSize: 17, fontWeight: 500 }}>
+                      {todayVendors.length} vendor{todayVendors.length !== 1 ? "s" : ""} ordering today
+                    </div>
+                    <div style={{ color: "#94a3b8", fontSize: 13, marginTop: 4 }}>{todayVendors.slice(0, 3).map(v => v.name).join(", ")}{todayVendors.length > 3 ? "…" : ""}</div>
+                  </div>
+                  <Icon name="arrow-right" size={18} color="#38bdf8" />
+                </div>
+              </button>
+            )}
+            {lowItems.length > 0 && (
+              <button onClick={() => setView("inventory")} style={{ ...cardBase, textAlign: "left", cursor: "pointer", borderColor: "#78350f", background: "linear-gradient(135deg, #3b1d05 0%, #0f1a2e 100%)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 12 }}>
+                  <div>
+                    <div style={{ color: "#fbbf24", fontSize: 12, fontWeight: 600, marginBottom: 6, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>Low stock</div>
+                    <div style={{ color: "#f1f5f9", fontSize: 17, fontWeight: 500 }}>
+                      {lowItems.length} item{lowItems.length !== 1 ? "s" : ""} running low
+                    </div>
+                    <div style={{ color: "#94a3b8", fontSize: 13, marginTop: 4 }}>{lowItems.slice(0, 3).map(i => i.name).join(", ")}{lowItems.length > 3 ? "…" : ""}</div>
+                  </div>
+                  <Icon name="arrow-right" size={18} color="#fbbf24" />
+                </div>
+              </button>
+            )}
+            {daysSinceCount !== null && daysSinceCount >= 7 && (
+              <button onClick={() => setView("inventory")} style={{ ...cardBase, textAlign: "left", cursor: "pointer", borderColor: "#581c87", background: "linear-gradient(135deg, #2e1065 0%, #0f1a2e 100%)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 12 }}>
+                  <div>
+                    <div style={{ color: "#c084fc", fontSize: 12, fontWeight: 600, marginBottom: 6, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>Count overdue</div>
+                    <div style={{ color: "#f1f5f9", fontSize: 17, fontWeight: 500 }}>Last count was {daysSinceCount} days ago</div>
+                    <div style={{ color: "#94a3b8", fontSize: 13, marginTop: 4 }}>Weekly counts keep your insights accurate</div>
+                  </div>
+                  <Icon name="arrow-right" size={18} color="#c084fc" />
+                </div>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Quick actions */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10, fontFamily: "'DM Mono',monospace" }}>Quick actions</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+          {[
+            { key: "inventory", icon: "inventory", title: "Start Count", sub: "Take inventory now" },
+            { key: "orders", icon: "orders", title: "Place Order", sub: "Order from vendors" },
+            { key: "recipes", icon: "recipes", title: "Add Recipe", sub: "Build a dish recipe" },
+            { key: "insights", icon: "insights", title: "View Insights", sub: "Usage & par suggestions" },
+          ].map(a => (
+            <button key={a.key} onClick={() => setView(a.key)} style={{ ...cardBase, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, padding: "16px 18px" }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(56,189,248,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Icon name={a.icon} size={20} color="#38bdf8" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: "#f1f5f9", fontSize: 14, fontWeight: 600 }}>{a.title}</div>
+                <div style={{ color: "#64748b", fontSize: 12, marginTop: 2 }}>{a.sub}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Recent activity */}
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+          <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, fontFamily: "'DM Mono',monospace" }}>Recent orders</div>
+          {recentOrders.length > 0 && (
+            <button onClick={() => setView("history")} style={{ background: "none", border: "none", color: "#38bdf8", fontSize: 12, cursor: "pointer", padding: 0 }}>View all →</button>
+          )}
+        </div>
+        <div style={cardBase}>
+          {recentOrders.length === 0 ? (
+            <div style={{ color: "#64748b", fontSize: 14, textAlign: "center", padding: "20px 0" }}>
+              No orders yet. Place your first order to see history here.
+            </div>
+          ) : (
+            recentOrders.map((o, idx) => {
+              const dateStr = new Date(o.date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              const orderTotal = (o.lines || []).reduce((sum, line) => {
+                const p = latestPrice(line.id);
+                return p == null ? sum : sum + (Number(line.qty) || 0) * p;
+              }, 0);
+              return (
+                <div key={o.id || idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: idx < recentOrders.length - 1 ? "1px solid #1e2d45" : "none" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: "#f1f5f9", fontSize: 14, fontWeight: 500 }}>{o.vendor}</div>
+                    <div style={{ color: "#64748b", fontSize: 12, marginTop: 2 }}>{dateStr} · WK{o.weekNumber} · {o.totalItems || (o.lines || []).length} item{(o.totalItems || (o.lines || []).length) !== 1 ? "s" : ""}</div>
+                  </div>
+                  <div style={{ color: orderTotal > 0 ? "#f1f5f9" : "#475569", fontSize: 14, fontFamily: "'DM Mono',monospace", fontWeight: 500 }}>
+                    {orderTotal > 0 ? `$${orderTotal.toFixed(0)}` : "—"}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RECIPES VIEW — Build recipes from inventory, see auto-calculated dish costs
+// ═══════════════════════════════════════════════════════════════════════════════
+function RecipesView({ inventory, priceHistory, recipes, saveRecipes }) {
+  const [editingId, setEditingId] = useState(null); // null = list view, "new" = create, "id" = edit
+  const allItems = flatItems(inventory);
+
+  // Latest price per individual unit for an item
+  const latestPricePerUnit = (itemId) => {
+    const entries = priceHistory?.[itemId];
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    const sorted = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const top = sorted[0];
+    if (top?.perUnit != null) return Number(top.perUnit);
+    // Fallback: price ÷ qty (case → per unit) if upu known via item
+    const item = allItems.find(i => i.id === itemId);
+    const upu = Number(item?.units_per_unit || item?.upu || 1) || 1;
+    return top?.price != null ? Number(top.price) / upu : null;
+  };
+
+  // Cost out a recipe's ingredients
+  const costRecipe = (recipe) => {
+    let total = 0;
+    let missing = [];
+    (recipe.ingredients || []).forEach(ing => {
+      const ppu = latestPricePerUnit(ing.itemId);
+      const item = allItems.find(i => i.id === ing.itemId);
+      if (ppu == null) {
+        missing.push(item?.name || `#${ing.itemId}`);
+        return;
+      }
+      total += (Number(ing.qty) || 0) * ppu;
+    });
+    return { total, missing };
+  };
+
+  const onSaveRecipe = (recipe) => {
+    let next;
+    if (recipe.id && recipes.some(r => r.id === recipe.id)) {
+      next = recipes.map(r => r.id === recipe.id ? recipe : r);
+    } else {
+      const newRec = { ...recipe, id: recipe.id || `rec_${Date.now()}`, createdAt: recipe.createdAt || new Date().toISOString() };
+      next = [newRec, ...recipes];
+    }
+    saveRecipes(next);
+    setEditingId(null);
+  };
+
+  const onDeleteRecipe = (id) => {
+    if (!window.confirm("Delete this recipe?")) return;
+    saveRecipes(recipes.filter(r => r.id !== id));
+    setEditingId(null);
+  };
+
+  // ── Editor view ───────────────────────────────────────────────────────────
+  if (editingId) {
+    const existing = editingId === "new" ? null : recipes.find(r => r.id === editingId);
+    return <RecipeEditor
+      initial={existing}
+      allItems={allItems}
+      latestPricePerUnit={latestPricePerUnit}
+      onSave={onSaveRecipe}
+      onCancel={() => setEditingId(null)}
+      onDelete={existing ? () => onDeleteRecipe(existing.id) : null}
+    />;
+  }
+
+  // ── List view ─────────────────────────────────────────────────────────────
+  const cardBase = { background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 14, padding: 18 };
+
+  return (
+    <div style={{ padding: "20px 24px 40px", maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h1 style={{ color: "#f1f5f9", fontSize: 26, fontWeight: 500, margin: 0, letterSpacing: -0.4 }}>Recipes & Costs</h1>
+          <div style={{ color: "#94a3b8", fontSize: 14, marginTop: 4 }}>
+            Build dish recipes from inventory. Costs update automatically from your latest invoice prices.
+          </div>
+        </div>
+        <button onClick={() => setEditingId("new")}
+          style={{ background: "#38bdf8", border: "none", borderRadius: 10, color: "#0a0e1a", padding: "11px 18px", cursor: "pointer", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", gap: 8 }}>
+          <Icon name="plus" size={16} color="#0a0e1a" /> New Recipe
+        </button>
+      </div>
+
+      {recipes.length === 0 ? (
+        <div style={{ ...cardBase, textAlign: "center", padding: "60px 20px" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📖</div>
+          <div style={{ color: "#f1f5f9", fontSize: 18, fontWeight: 500, marginBottom: 6 }}>No recipes yet</div>
+          <div style={{ color: "#94a3b8", fontSize: 14, marginBottom: 20 }}>
+            Build a recipe from items in your inventory. We'll automatically calculate the cost per dish using your latest invoice prices.
+          </div>
+          <button onClick={() => setEditingId("new")}
+            style={{ background: "#38bdf8", border: "none", borderRadius: 10, color: "#0a0e1a", padding: "12px 22px", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>
+            Build your first recipe
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+          {recipes.map(r => {
+            const { total, missing } = costRecipe(r);
+            const portions = Number(r.yield) || 1;
+            const perPortion = total / portions;
+            return (
+              <button key={r.id} onClick={() => setEditingId(r.id)}
+                style={{ ...cardBase, textAlign: "left", cursor: "pointer", display: "flex", flexDirection: "column", gap: 12, minHeight: 140 }}>
+                <div>
+                  <div style={{ color: "#f1f5f9", fontSize: 16, fontWeight: 600 }}>{r.name}</div>
+                  <div style={{ color: "#64748b", fontSize: 12, marginTop: 2 }}>
+                    {(r.ingredients || []).length} ingredient{(r.ingredients || []).length !== 1 ? "s" : ""} · serves {portions}
+                  </div>
+                </div>
+                <div style={{ marginTop: "auto", display: "flex", justifyContent: "space-between", alignItems: "end" }}>
+                  <div>
+                    <div style={{ color: "#64748b", fontSize: 10, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>Cost / portion</div>
+                    <div style={{ color: missing.length ? "#fbbf24" : "#22c55e", fontSize: 22, fontWeight: 600, fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
+                      {missing.length === (r.ingredients || []).length ? "—" : `$${perPortion.toFixed(2)}`}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ color: "#64748b", fontSize: 10, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>Total</div>
+                    <div style={{ color: "#94a3b8", fontSize: 14, fontFamily: "'DM Mono',monospace", marginTop: 2 }}>${total.toFixed(2)}</div>
+                  </div>
+                </div>
+                {missing.length > 0 && (
+                  <div style={{ color: "#fbbf24", fontSize: 11, background: "rgba(217,119,6,0.1)", padding: "6px 8px", borderRadius: 6, border: "1px solid rgba(217,119,6,0.25)" }}>
+                    Missing price for {missing.length} ingredient{missing.length !== 1 ? "s" : ""}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RECIPE EDITOR — Create or edit a single recipe
+// ═══════════════════════════════════════════════════════════════════════════════
+function RecipeEditor({ initial, allItems, latestPricePerUnit, onSave, onCancel, onDelete }) {
+  const [name, setName] = useState(initial?.name || "");
+  const [yieldQty, setYieldQty] = useState(initial?.yield || 1);
+  const [notes, setNotes] = useState(initial?.notes || "");
+  const [ingredients, setIngredients] = useState(initial?.ingredients || []);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
+
+  const addIngredient = (item) => {
+    const upu = Number(item.units_per_unit || item.upu || 1) || 1;
+    const defaultUnit = upu > 1 ? "individual" : (item.order_unit || "each");
+    setIngredients([...ingredients, { itemId: item.id, qty: 1, unit: defaultUnit }]);
+    setPickerOpen(false);
+    setPickerSearch("");
+  };
+
+  const updateIngredient = (idx, patch) => {
+    setIngredients(ingredients.map((ing, i) => i === idx ? { ...ing, ...patch } : ing));
+  };
+
+  const removeIngredient = (idx) => {
+    setIngredients(ingredients.filter((_, i) => i !== idx));
+  };
+
+  // ── Cost calculation ──────────────────────────────────────────────────────
+  let total = 0;
+  let missing = 0;
+  const lines = ingredients.map(ing => {
+    const item = allItems.find(i => i.id === ing.itemId);
+    const ppu = latestPricePerUnit(ing.itemId);
+    const cost = ppu == null ? null : (Number(ing.qty) || 0) * ppu;
+    if (ppu == null) missing++;
+    else total += cost;
+    return { ing, item, ppu, cost };
+  });
+  const perPortion = total / (Number(yieldQty) || 1);
+
+  const filteredItems = allItems.filter(i =>
+    !ingredients.some(ing => ing.itemId === i.id) &&
+    i.name.toLowerCase().includes(pickerSearch.toLowerCase())
+  );
+
+  const canSave = name.trim() && ingredients.length > 0;
+
+  const inputStyle = { background: "#080c14", border: "1px solid #1e2d45", borderRadius: 8, color: "#f1f5f9", padding: "10px 12px", fontSize: 14, outline: "none", width: "100%" };
+
+  return (
+    <div style={{ padding: "20px 24px 40px", maxWidth: 800, margin: "0 auto" }}>
+      <button onClick={onCancel} style={{ background: "none", border: "none", color: "#64748b", fontSize: 13, cursor: "pointer", padding: 0, marginBottom: 16 }}>← Back to recipes</button>
+
+      <h1 style={{ color: "#f1f5f9", fontSize: 24, fontWeight: 500, margin: "0 0 24px", letterSpacing: -0.4 }}>
+        {initial ? "Edit recipe" : "New recipe"}
+      </h1>
+
+      <div style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 14, padding: 22, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14, marginBottom: 14 }}>
+          <div>
+            <div style={{ color: "#64748b", fontSize: 11, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Recipe name</div>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Margherita Pizza, Vodka Sauce, Caesar Salad" style={inputStyle} />
+          </div>
+          <div>
+            <div style={{ color: "#64748b", fontSize: 11, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Yields (portions)</div>
+            <input type="number" min="1" value={yieldQty} onChange={e => setYieldQty(e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+        <div>
+          <div style={{ color: "#64748b", fontSize: 11, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Notes (optional)</div>
+          <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Prep notes, serving suggestions..." style={inputStyle} />
+        </div>
+      </div>
+
+      {/* Ingredients */}
+      <div style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 14, padding: 22, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ color: "#f1f5f9", fontSize: 16, fontWeight: 600 }}>Ingredients</div>
+          <button onClick={() => setPickerOpen(true)}
+            style={{ background: "rgba(56,189,248,0.12)", border: "1px solid rgba(56,189,248,0.3)", borderRadius: 8, color: "#38bdf8", padding: "7px 12px", cursor: "pointer", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
+            <Icon name="plus" size={14} color="#38bdf8" /> Add ingredient
+          </button>
+        </div>
+
+        {ingredients.length === 0 ? (
+          <div style={{ color: "#64748b", fontSize: 14, textAlign: "center", padding: "24px 0" }}>
+            No ingredients yet. Add items from your inventory.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {lines.map(({ ing, item, ppu, cost }, idx) => {
+              if (!item) return null;
+              const upu = Number(item.units_per_unit || item.upu || 1) || 1;
+              const isCase = upu > 1;
+              return (
+                <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 80px 110px 100px 30px", gap: 10, alignItems: "center", background: "#080c14", border: "1px solid #1e2d45", borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: "#f1f5f9", fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
+                    <div style={{ color: "#64748b", fontSize: 11, marginTop: 2 }}>
+                      {ppu != null ? `$${ppu.toFixed(3)}/${isCase ? "unit" : (item.order_unit || "each")}` : "no price"}
+                    </div>
+                  </div>
+                  <input type="number" min="0" step="0.1" value={ing.qty}
+                    onChange={e => updateIngredient(idx, { qty: e.target.value })}
+                    style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }} />
+                  <select value={ing.unit} onChange={e => updateIngredient(idx, { unit: e.target.value })}
+                    style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }}>
+                    {isCase && <option value="individual">{`per ${item.order_unit || "unit"}`}</option>}
+                    <option value="each">each</option>
+                    <option value="oz">oz</option>
+                    <option value="lb">lb</option>
+                    <option value="g">g</option>
+                    <option value="ml">ml</option>
+                    <option value="cup">cup</option>
+                    <option value="tsp">tsp</option>
+                    <option value="tbsp">tbsp</option>
+                  </select>
+                  <div style={{ color: cost == null ? "#fbbf24" : "#22c55e", fontSize: 14, fontFamily: "'DM Mono',monospace", textAlign: "right", fontWeight: 600 }}>
+                    {cost == null ? "—" : `$${cost.toFixed(2)}`}
+                  </div>
+                  <button onClick={() => removeIngredient(idx)}
+                    style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Cost summary */}
+      {ingredients.length > 0 && (
+        <div style={{ background: "linear-gradient(135deg, #082f49 0%, #0f1a2e 100%)", border: "1px solid #0c4a6e", borderRadius: 14, padding: 22, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+            <div>
+              <div style={{ color: "#94a3b8", fontSize: 11, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>Total cost</div>
+              <div style={{ color: "#f1f5f9", fontSize: 26, fontWeight: 600, fontFamily: "'DM Mono',monospace", marginTop: 4 }}>${total.toFixed(2)}</div>
+            </div>
+            <div>
+              <div style={{ color: "#94a3b8", fontSize: 11, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>Per portion</div>
+              <div style={{ color: "#38bdf8", fontSize: 26, fontWeight: 600, fontFamily: "'DM Mono',monospace", marginTop: 4 }}>${perPortion.toFixed(2)}</div>
+            </div>
+            <div>
+              <div style={{ color: "#94a3b8", fontSize: 11, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>Suggested menu price (3× food cost)</div>
+              <div style={{ color: "#22c55e", fontSize: 26, fontWeight: 600, fontFamily: "'DM Mono',monospace", marginTop: 4 }}>${(perPortion * 3).toFixed(2)}</div>
+            </div>
+          </div>
+          {missing > 0 && (
+            <div style={{ color: "#fbbf24", fontSize: 12, marginTop: 14, padding: "8px 10px", background: "rgba(217,119,6,0.12)", borderRadius: 6, border: "1px solid rgba(217,119,6,0.25)" }}>
+              ⚠ {missing} ingredient{missing !== 1 ? "s" : ""} missing a price. Add invoice prices in Price Tracker to complete the cost.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: "flex", gap: 10, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
+        {onDelete ? (
+          <button onClick={onDelete}
+            style={{ background: "transparent", border: "1px solid #7f1d1d", borderRadius: 10, color: "#fca5a5", padding: "11px 18px", cursor: "pointer", fontSize: 14 }}>
+            Delete recipe
+          </button>
+        ) : <div />}
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onCancel}
+            style={{ background: "transparent", border: "1px solid #1e2d45", borderRadius: 10, color: "#94a3b8", padding: "11px 18px", cursor: "pointer", fontSize: 14 }}>
+            Cancel
+          </button>
+          <button onClick={() => canSave && onSave({ id: initial?.id, createdAt: initial?.createdAt, name: name.trim(), yield: Number(yieldQty) || 1, notes: notes.trim(), ingredients, updatedAt: new Date().toISOString() })}
+            disabled={!canSave}
+            style={{ background: canSave ? "#38bdf8" : "#1e2d45", border: "none", borderRadius: 10, color: canSave ? "#0a0e1a" : "#475569", padding: "11px 22px", cursor: canSave ? "pointer" : "not-allowed", fontWeight: 600, fontSize: 14 }}>
+            Save recipe
+          </button>
+        </div>
+      </div>
+
+      {/* Ingredient picker modal */}
+      {pickerOpen && (
+        <div onClick={() => setPickerOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 14, width: "100%", maxWidth: 500, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "18px 20px", borderBottom: "1px solid #1e2d45" }}>
+              <div style={{ color: "#f1f5f9", fontSize: 16, fontWeight: 600, marginBottom: 10 }}>Add ingredient</div>
+              <input value={pickerSearch} onChange={e => setPickerSearch(e.target.value)} placeholder="Search inventory…" autoFocus style={inputStyle} />
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+              {filteredItems.length === 0 ? (
+                <div style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: "20px" }}>No items found.</div>
+              ) : filteredItems.map(item => {
+                const ppu = latestPricePerUnit(item.id);
+                return (
+                  <button key={item.id} onClick={() => addIngredient(item)}
+                    style={{ width: "100%", textAlign: "left", background: "transparent", border: "none", padding: "10px 20px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", color: "#f1f5f9" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#1e2d45"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14 }}>{item.name}</div>
+                      <div style={{ color: "#64748b", fontSize: 11, marginTop: 2 }}>{item.section}</div>
+                    </div>
+                    <div style={{ color: ppu == null ? "#fbbf24" : "#94a3b8", fontSize: 12, fontFamily: "'DM Mono',monospace" }}>
+                      {ppu == null ? "no price" : `$${ppu.toFixed(3)}/unit`}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ padding: "12px 20px", borderTop: "1px solid #1e2d45", textAlign: "right" }}>
+              <button onClick={() => setPickerOpen(false)}
+                style={{ background: "transparent", border: "1px solid #1e2d45", borderRadius: 8, color: "#94a3b8", padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
