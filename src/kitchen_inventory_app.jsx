@@ -1459,7 +1459,7 @@ function LoginScreen({ onLogin, error, setError }) {
 function DashboardView({ user, inventory, stock, vendors, history, stockSnapshots, recipes, priceHistory, todayVendors, weekNum, setView }) {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const businessName = user.business || "your kitchen";
+  const businessName = (typeof user.business === "string" ? user.business : user.business?.name) || "your kitchen";
   const firstName = (user.name || "").split(" ")[0] || "there";
 
   // ── Stats ─────────────────────────────────────────────────────────────────
