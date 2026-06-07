@@ -3006,10 +3006,20 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
     return units;
   };
 
-  // Build usage for EVERY item — even those with 0 data
+  // Globally: the column headers are the last 4 usage weeks across the whole inventory.
+  // Usage is attributed to the END week of a (wkA → wkB) transition, so usage weeks = snapWeeks.slice(1).
+  const allUsageWeeks = snapWeeks.slice(1);
+  const recentWeeks = allUsageWeeks.slice(-4); // up to 4 most recent
+  // Pad on the left so we always render 4 columns
+  const colWeeks = [...Array(4 - recentWeeks.length).fill(null), ...recentWeeks];
+
+  const weekLabel = (wk) => wk ? `W${wk.split("-WK")[1] || ""}` : "—";
+
+  // Build per-item rows — EVERY item, even with no data
   const itemRows = allItems.map(item => {
     const id = item.id;
-    const weeklyUsage = [];
+    // Per-week usage lookup
+    const usageByWeek = {};
     for (let i = 0; i < snapWeeks.length - 1; i++) {
       const wkA = snapWeeks[i], wkB = snapWeeks[i + 1];
       const startCount = stockSnapshots[wkA]?.[id];
@@ -3017,21 +3027,24 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
       if (startCount === undefined || endCount === undefined) continue;
       const received = receivedUnits(id, wkA);
       const usage = startCount + received - endCount;
-      if (usage >= 0) weeklyUsage.push(usage);
+      if (usage >= 0) usageByWeek[wkB] = usage;
     }
-    const weeks = weeklyUsage.length;
-    const avg = weeks > 0 ? Math.round((weeklyUsage.reduce((a, b) => a + b, 0) / weeks) * 10) / 10 : null;
-    const peak = weeks > 0 ? Math.max(...weeklyUsage) : null;
-    const recommendedPar = weeks >= 4 ? Math.ceil(peak * 1.2) : null;
+    // Values for the 4 visible columns
+    const cells = colWeeks.map(wk => (wk && usageByWeek[wk] !== undefined) ? usageByWeek[wk] : null);
+    const values = cells.filter(v => v !== null);
+    const weeks = values.length;
+    const avg = weeks > 0 ? Math.round((values.reduce((a, b) => a + b, 0) / weeks) * 10) / 10 : null;
+    const peak = weeks > 0 ? Math.max(...values) : null;
+    // Recommendation kicks in once 2+ weeks of usage exists
+    const recommendedPar = weeks >= 2 ? Math.ceil(peak * 1.2) : null;
     const overStock = recommendedPar !== null ? (item.max_stock || 0) - recommendedPar : null;
     return {
       id, name: item.name, section: item.section || "Other",
       max_stock: item.max_stock || 0,
-      avg, peak, weeks, recommendedPar, overStock,
+      cells, weeks, avg, peak, recommendedPar, overStock,
     };
   });
 
-  // Filter by search + not dismissed
   const filtered = itemRows
     .filter(r => !dismissed[r.id])
     .filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()));
@@ -3040,8 +3053,6 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
   const sections = {};
   filtered.forEach(r => { if (!sections[r.section]) sections[r.section] = []; sections[r.section].push(r); });
   const sectionNames = Object.keys(sections).sort();
-
-  // Sort within each section: over-ordered first (biggest waste), then by name
   sectionNames.forEach(sec => {
     sections[sec].sort((a, b) => {
       if (a.overStock !== null && b.overStock !== null) return b.overStock - a.overStock;
@@ -3053,13 +3064,16 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
 
   const overCount = filtered.filter(r => r.overStock !== null && r.overStock >= 1).length;
   const totalTracked = filtered.filter(r => r.weeks > 0).length;
-  const hdr = { color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" };
+  const hdr = { color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace", textAlign:"right" };
 
   return (
     <div>
       <style>{`
-        .ins-r { display:grid; grid-template-columns: minmax(120px,1fr) 74px 54px 54px 68px; gap:4px; align-items:center; }
-        @media (max-width: 560px) { .ins-r { grid-template-columns: minmax(100px,1fr) 64px 50px 50px 58px; } }
+        .ins-r { display:grid; grid-template-columns: minmax(110px,1fr) 42px 42px 42px 42px 52px 44px 64px; gap:3px; align-items:center; }
+        @media (max-width: 560px) {
+          .ins-r { grid-template-columns: minmax(95px,1fr) 38px 38px 50px 42px 56px; gap:3px; }
+          .ins-w1, .ins-w2 { display:none !important; }
+        }
       `}</style>
 
       {/* Header + search */}
@@ -3068,31 +3082,32 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
           <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:0 }}>Insights</h2>
           <p style={{ color:"#64748b", fontSize:12, margin:"4px 0 0" }}>
             {snapWeeks.length < 2
-              ? (snapWeeks.length === 0 ? "Count inventory to start tracking usage" : "1 count done — usage starts after count #2")
+              ? (snapWeeks.length === 0 ? "Count inventory to start tracking usage" : "1 count done — usage appears after count #2")
               : overCount > 0
                 ? <><span style={{ color:"#fbbf24" }}>{overCount} over-ordered</span> · {totalTracked} items tracked</>
-                : `${totalTracked} items tracked`
-            }
+                : `${totalTracked} items tracked`}
           </p>
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items…"
           style={{ width:190, background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none" }} />
       </div>
 
-      {/* Spreadsheet — always visible */}
+      {/* Spreadsheet */}
       <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden" }}>
         {/* Column headers */}
         <div className="ins-r" style={{ padding:"9px 14px", background:"#0a0f1a", borderBottom:"1px solid #1e2d45" }}>
-          <span style={hdr}>Item</span>
-          <span style={{ ...hdr, textAlign:"right" }}>Used/wk</span>
-          <span style={{ ...hdr, textAlign:"right" }}>Peak</span>
-          <span style={{ ...hdr, textAlign:"right" }}>Par</span>
-          <span style={{ ...hdr, textAlign:"right" }}>Should be</span>
+          <span style={{ ...hdr, textAlign:"left" }}>Item</span>
+          <span className="ins-w1" style={hdr}>{weekLabel(colWeeks[0])}</span>
+          <span className="ins-w2" style={hdr}>{weekLabel(colWeeks[1])}</span>
+          <span style={hdr}>{weekLabel(colWeeks[2])}</span>
+          <span style={hdr}>{weekLabel(colWeeks[3])}</span>
+          <span style={{ ...hdr, color:"#94a3b8" }}>Avg</span>
+          <span style={hdr}>Par</span>
+          <span style={hdr}>Should be</span>
         </div>
 
         {sectionNames.map(sec => (
           <div key={sec}>
-            {/* Section header */}
             <div style={{ padding:"7px 14px", background:"#0d1424", borderBottom:"1px solid #131c2e", borderTop:"1px solid #131c2e" }}>
               <span style={{ color:"#64748b", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.5px" }}>{sec}</span>
               <span style={{ color:"#3b4a63", fontSize:11, marginLeft:8 }}>{sections[sec].length}</span>
@@ -3100,43 +3115,39 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
 
             {sections[sec].map((s, idx) => {
               const hasData = s.weeks > 0;
-              const mature = s.weeks >= 4; // month of data → flag over-ordering
-              const canCut = mature && s.overStock >= 1;
-              const isShort = mature && s.max_stock > 0 && s.overStock < 0;
+              const ready = s.weeks >= 2; // average + recommendation ready
+              const canCut = ready && s.overStock >= 1;
+              const isShort = ready && s.max_stock > 0 && s.overStock < 0;
               const even = idx % 2 === 0;
+              const cellStyle = { color:"#cbd5e1", fontSize:13, fontFamily:"'DM Mono',monospace", textAlign:"right" };
+              const emptyCell = { color:"#2a3444", fontSize:13, fontFamily:"'DM Mono',monospace", textAlign:"right" };
               return (
                 <div key={s.id} className="ins-r"
-                  style={{ padding:"9px 14px", background: canCut ? "rgba(251,191,36,0.04)" : even ? "transparent" : "rgba(255,255,255,0.015)", borderBottom:"1px solid #0f1520" }}>
+                  style={{ padding:"9px 14px", background: canCut ? "rgba(251,191,36,0.05)" : isShort ? "rgba(56,189,248,0.04)" : even ? "transparent" : "rgba(255,255,255,0.015)", borderBottom:"1px solid #0f1520" }}>
                   <div style={{ minWidth:0 }}>
                     <div style={{ color: hasData ? "#e2e8f0" : "#475569", fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.name}</div>
                   </div>
-                  <div style={{ textAlign:"right" }}>
-                    {hasData ? (
-                      <div>
-                        <span style={{ color:"#e2e8f0", fontSize:14, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{s.avg}</span>
-                        <span style={{ color:"#3b4a63", fontSize:9, fontFamily:"'DM Mono',monospace", marginLeft:3 }}>{s.weeks}wk</span>
-                      </div>
-                    ) : (
-                      <span style={{ color:"#2a3444", fontSize:13, fontFamily:"'DM Mono',monospace" }}>—</span>
-                    )}
-                  </div>
-                  <span style={{ color: hasData ? "#64748b" : "#2a3444", fontSize:13, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{hasData ? s.peak : "—"}</span>
+                  <span className="ins-w1" style={s.cells[0] !== null ? cellStyle : emptyCell}>{s.cells[0] ?? "—"}</span>
+                  <span className="ins-w2" style={s.cells[1] !== null ? cellStyle : emptyCell}>{s.cells[1] ?? "—"}</span>
+                  <span style={s.cells[2] !== null ? cellStyle : emptyCell}>{s.cells[2] ?? "—"}</span>
+                  <span style={s.cells[3] !== null ? cellStyle : emptyCell}>{s.cells[3] ?? "—"}</span>
+                  <span style={{ color: ready ? "#f1f5f9" : "#2a3444", fontSize:14, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>
+                    {ready ? s.avg : "—"}
+                  </span>
                   <span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.max_stock || "—"}</span>
                   <div style={{ textAlign:"right" }}>
                     {canCut && applyParSuggestion ? (
                       <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
                         style={{ background:"none", border:"none", color:"#fbbf24", fontSize:12, fontWeight:700, cursor:"pointer", padding:0, fontFamily:"'DM Mono',monospace" }}>
-                        {s.recommendedPar} FIX
+                        {s.recommendedPar} ▸
                       </button>
                     ) : isShort && applyParSuggestion ? (
                       <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
                         style={{ background:"none", border:"none", color:"#38bdf8", fontSize:12, fontWeight:700, cursor:"pointer", padding:0, fontFamily:"'DM Mono',monospace" }}>
-                        {s.recommendedPar} FIX
+                        {s.recommendedPar} ▸
                       </button>
-                    ) : mature ? (
+                    ) : ready ? (
                       <span style={{ color:"#34d399", fontSize:12, fontFamily:"'DM Mono',monospace" }}>✓</span>
-                    ) : hasData ? (
-                      <span style={{ color:"#2a3444", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{4 - s.weeks}wk</span>
                     ) : (
                       <span style={{ color:"#2a3444", fontSize:13, fontFamily:"'DM Mono',monospace" }}>—</span>
                     )}
@@ -3152,6 +3163,11 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
             {search ? "No items match." : "No items in inventory yet."}
           </div>
         )}
+      </div>
+
+      {/* Legend */}
+      <div style={{ color:"#475569", fontSize:11, marginTop:12, lineHeight:1.6 }}>
+        Each <strong style={{ color:"#64748b" }}>W##</strong> column = that week's usage. <strong style={{ color:"#94a3b8" }}>Avg</strong> updates as more weeks come in (2-wk → 3-wk → 4-wk rolling). <strong style={{ color:"#fbbf24" }}>Should be</strong> shows the recommended par — tap the number to apply.
       </div>
     </div>
   );
