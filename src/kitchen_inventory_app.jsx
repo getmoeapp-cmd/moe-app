@@ -2990,15 +2990,11 @@ function BackendSection({ section, stock, vendors, saveItemField, addItem, remov
 // ═══════════════════════════════════════════════════════════════════════════════
 function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockSnapshots = {}, history = [] }) {
   const [dismissed, setDismissed] = useState({});
-  const [filterVendor, setFilterVendor] = useState("ALL");
-  const [expanded, setExpanded] = useState({});
+  const [search, setSearch] = useState("");
 
   const allItems = flatItems(inventory);
-
-  // All weeks we have a stock snapshot for, sorted chronologically
   const snapWeeks = Object.keys(stockSnapshots).sort();
 
-  // Helper: units received for an item during a given week (from orders placed that week)
   const receivedUnits = (itemId, weekKey) => {
     let units = 0;
     const item = allItems.find(i => i.id === Number(itemId));
@@ -3010,209 +3006,155 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
     return units;
   };
 
-  // Build per-item USAGE stats by comparing consecutive weekly stock snapshots
-  // usage[w] = snapshot[w] + receivedDuring(w → w+1) - snapshot[w+1]
   const itemStats = {};
   allItems.forEach(item => {
     const id = item.id;
     const weeklyUsage = [];
-    const usageWeeks = [];
     for (let i = 0; i < snapWeeks.length - 1; i++) {
       const wkA = snapWeeks[i], wkB = snapWeeks[i + 1];
       const startCount = stockSnapshots[wkA]?.[id];
       const endCount = stockSnapshots[wkB]?.[id];
-      // Need both counts to compute usage
       if (startCount === undefined || endCount === undefined) continue;
       const received = receivedUnits(id, wkA);
       const usage = startCount + received - endCount;
-      // Only count plausible (non-negative) usage
-      if (usage >= 0) { weeklyUsage.push(usage); usageWeeks.push(wkB); }
+      if (usage >= 0) weeklyUsage.push(usage);
     }
-    if (weeklyUsage.length > 0) {
+    if (weeklyUsage.length >= 2) {
+      const total = weeklyUsage.reduce((a, b) => a + b, 0);
+      const avg = Math.round((total / weeklyUsage.length) * 10) / 10;
+      const peak = Math.max(...weeklyUsage);
+      const recommendedPar = Math.ceil(peak * 1.2);
+      const overStock = (item.max_stock || 0) - recommendedPar;
       itemStats[id] = {
-        id, name: item.name, vendor: item.vendor || "—",
-        order_unit: item.order_unit || "unit", upu: item.upu || 1,
-        max_stock: item.max_stock || 0, reorder: item.reorder || 0,
-        weeklyUsage, weeks: usageWeeks,
+        id, name: item.name, section: item.section || "Other",
+        vendor: item.vendor || "—", max_stock: item.max_stock || 0,
+        avg, peak, recommendedPar, overStock, weeks: weeklyUsage.length,
       };
     }
   });
 
-  // Build usage insights for items with 2+ weeks of usage data
-  const suggestions = Object.values(itemStats)
-    .filter(stat => stat.weeklyUsage.length >= 2)
-    .map(stat => {
-      const total = stat.weeklyUsage.reduce((a, b) => a + b, 0);
-      const avg = Math.round((total / stat.weeklyUsage.length) * 10) / 10;
-      const peak = Math.max(...stat.weeklyUsage);
-      const min = Math.min(...stat.weeklyUsage);
-      // Recommended carry = peak usage + ~20% buffer, rounded up
-      const recommendedPar = Math.ceil(peak * 1.2);
-      const overStock = stat.max_stock - recommendedPar; // how many units you could cut
-      return { ...stat, avg, peak, min, total, recommendedPar, overStock };
-    })
-    .sort((a, b) => b.overStock - a.overStock); // biggest savings first
+  const rows = Object.values(itemStats)
+    .filter(s => !dismissed[s.id])
+    .filter(s => !search || s.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => b.overStock - a.overStock);
 
-  const activeSuggestions = suggestions
-    .filter(s => filterVendor === "ALL" || s.vendor === filterVendor)
-    .filter(s => !dismissed[s.id]);
+  // Group by section
+  const sections = {};
+  rows.forEach(r => { if (!sections[r.section]) sections[r.section] = []; sections[r.section].push(r); });
+  const sectionNames = Object.keys(sections).sort();
 
-  // Items being tracked but not enough usage data yet
-  const buildingData = allItems.filter(item => {
-    const st = itemStats[item.id];
-    return !st || st.weeklyUsage.length < 2;
-  }).filter(item => {
-    // only show items that have at least one snapshot (i.e. they've been counted)
-    return snapWeeks.some(wk => stockSnapshots[wk]?.[item.id] !== undefined);
-  });
+  const overCount = rows.filter(r => r.overStock >= 1).length;
+  const shortCount = rows.filter(r => r.max_stock > 0 && r.overStock < 0).length;
 
-  const usedVendors = [...new Set(Object.values(itemStats).map(s => s.vendor))].sort();
-  const unitLabel = (stat) => (stat.order_unit || "unit").toLowerCase().replace(/s$/, "");
-  const overStockItems = activeSuggestions.filter(s => s.overStock >= 1);
+  // Items still being measured
+  const buildingData = allItems.filter(item => !itemStats[item.id] && snapWeeks.some(wk => stockSnapshots[wk]?.[item.id] !== undefined));
+
+  const hdr = { color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" };
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:24, flexWrap:"wrap", gap:12 }}>
+      <style>{`
+        .ins-row { display:grid; grid-template-columns: minmax(130px,1fr) 64px 58px 64px 64px 68px; gap:4px; align-items:center; }
+        @media (max-width: 600px) { .ins-row { grid-template-columns: minmax(100px,1fr) 54px 54px 54px 64px; } .ins-col-peak { display:none !important; } }
+      `}</style>
+
+      {/* Header + search */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
         <div>
           <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:0 }}>Insights</h2>
-          <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>
-            Actual usage per week, measured from your stock counts
-          </p>
+          {snapWeeks.length >= 2 && (
+            <p style={{ color:"#64748b", fontSize:12, margin:"4px 0 0" }}>
+              {overCount > 0 && <span style={{ color:"#fbbf24" }}>{overCount} over-ordered</span>}
+              {overCount > 0 && shortCount > 0 && " · "}
+              {shortCount > 0 && <span style={{ color:"#38bdf8" }}>{shortCount} under-stocked</span>}
+              {overCount === 0 && shortCount === 0 && <span>All items on target</span>}
+            </p>
+          )}
         </div>
-        {usedVendors.length > 1 && (
-          <select value={filterVendor} onChange={e => setFilterVendor(e.target.value)}
-            style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", cursor:"pointer" }}>
-            <option value="ALL">All Vendors</option>
-            {usedVendors.map(v => <option key={v} value={v}>{v}</option>)}
-          </select>
+        {rows.length > 0 && (
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items…"
+            style={{ width:200, background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none" }} />
         )}
       </div>
 
       {/* Not enough data */}
       {snapWeeks.length < 2 && (
-        <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:40, textAlign:"center", marginBottom:20 }}>
-          <Icon name="insights" size={36} color="#38bdf8" style={{ marginBottom:14 }} />
-          <div style={{ color:"#f1f5f9", fontSize:17, fontWeight:600, marginBottom:8 }}>Measuring your usage</div>
-          <div style={{ color:"#64748b", fontSize:14, lineHeight:1.7, maxWidth:420, margin:"0 auto" }}>
-            MOE figures out how much you actually use each week by comparing your stock counts week to week, plus what you received.
-            Count your inventory each week — after 2 counts, you'll see real usage here.
-            {snapWeeks.length === 1 ? " You've done your first count — one more week to go." : ""}
+        <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, padding:36, textAlign:"center" }}>
+          <Icon name="insights" size={32} color="#38bdf8" style={{ marginBottom:10 }} />
+          <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:600, marginBottom:6 }}>Measuring your usage</div>
+          <div style={{ color:"#64748b", fontSize:13, lineHeight:1.6, maxWidth:400, margin:"0 auto" }}>
+            Count your inventory each week. After 2 counts, MOE calculates how much you actually use and flags over-ordering.
+            {snapWeeks.length === 1 ? " One more count to go." : ""}
           </div>
         </div>
       )}
 
-      {/* Savings callout */}
-      {overStockItems.length > 0 && (
-        <div style={{ background:"linear-gradient(135deg, rgba(52,211,153,0.1), rgba(52,211,153,0.03))", border:"1px solid rgba(52,211,153,0.3)", borderRadius:14, padding:"16px 18px", marginBottom:24 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-            <Icon name="check" size={16} color="#34d399" />
-            <span style={{ color:"#34d399", fontSize:14, fontWeight:700 }}>You're carrying more than you use</span>
-          </div>
-          <p style={{ color:"#94a3b8", fontSize:13, margin:0, lineHeight:1.6 }}>
-            {overStockItems.length} item{overStockItems.length !== 1 ? "s are" : " is"} stocked higher than your actual weekly usage. Trimming to what you really use frees up cash and cuts spoilage — details below.
-          </p>
-        </div>
-      )}
-
-      {/* USAGE TABLE */}
-      {activeSuggestions.length > 0 && (
-        <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, overflow:"hidden", marginBottom:28 }}>
-          <style>{`
-            .ins-grid { display:grid; grid-template-columns: minmax(150px,1fr) 70px 60px 70px 90px; gap:8px; align-items:center; }
-            @media (max-width: 600px) {
-              .ins-grid { grid-template-columns: minmax(110px,1fr) 60px 64px 78px; }
-              .ins-peak { display:none !important; }
-            }
-          `}</style>
+      {/* Spreadsheet */}
+      {sectionNames.length > 0 && (
+        <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden" }}>
           {/* Column headers */}
-          <div className="ins-grid" style={{ padding:"10px 16px", background:"#0a0f1a", borderBottom:"1px solid #1e2d45" }}>
-            <span style={{ color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.6px", fontFamily:"'DM Mono',monospace" }}>Item</span>
-            <span style={{ color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.6px", fontFamily:"'DM Mono',monospace", textAlign:"right" }}>Used/wk</span>
-            <span className="ins-peak" style={{ color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.6px", fontFamily:"'DM Mono',monospace", textAlign:"right" }}>Peak</span>
-            <span style={{ color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.6px", fontFamily:"'DM Mono',monospace", textAlign:"right" }}>You stock</span>
-            <span style={{ color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.6px", fontFamily:"'DM Mono',monospace", textAlign:"right" }}>Suggested</span>
+          <div className="ins-row" style={{ padding:"9px 14px", background:"#0a0f1a", borderBottom:"1px solid #1e2d45" }}>
+            <span style={hdr}>Item</span>
+            <span style={{ ...hdr, textAlign:"right" }}>Avg/wk</span>
+            <span className="ins-col-peak" style={{ ...hdr, textAlign:"right" }}>Peak</span>
+            <span style={{ ...hdr, textAlign:"right" }}>Par</span>
+            <span style={{ ...hdr, textAlign:"right" }}>Should be</span>
+            <span style={{ ...hdr, textAlign:"right" }}></span>
           </div>
 
-          {activeSuggestions.map((s, idx) => {
-            const isOpen = expanded[s.id];
-            const canCut = s.overStock >= 1;
-            const isShort = s.max_stock > 0 && s.recommendedPar > s.max_stock;
-            const last = idx === activeSuggestions.length - 1;
-            return (
-              <div key={s.id} style={{ borderBottom: last && !isOpen ? "none" : "1px solid #131c2e" }}>
-                {/* Row */}
-                <div className="ins-grid" onClick={() => setExpanded(prev => ({ ...prev, [s.id]: !prev[s.id] }))}
-                  style={{ padding:"13px 16px", cursor:"pointer", background: isOpen ? "#0f1626" : "transparent" }}>
-                  <div style={{ minWidth:0 }}>
-                    <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                      <span style={{ color:"#475569", fontSize:10, marginRight:7, display:"inline-block", transform: isOpen ? "rotate(90deg)" : "none", transition:"transform 0.15s" }}>▶</span>
-                      {s.name}
-                    </div>
-                    <div style={{ color:"#475569", fontSize:11, marginTop:2, paddingLeft:17 }}>{s.vendor}</div>
-                  </div>
-                  <span style={{ color:"#e2e8f0", fontSize:15, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.avg}</span>
-                  <span className="ins-peak" style={{ color:"#64748b", fontSize:14, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.peak}</span>
-                  <span style={{ color:"#94a3b8", fontSize:14, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.max_stock || "—"}</span>
-                  <span style={{ textAlign:"right", fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:700,
-                    color: canCut ? "#34d399" : isShort ? "#fbbf24" : "#475569" }}>
-                    {canCut ? `▾ ${s.recommendedPar}` : isShort ? `▴ ${s.recommendedPar}` : "✓"}
-                  </span>
-                </div>
-
-                {/* Expanded detail */}
-                {isOpen && (
-                  <div style={{ padding:"16px 18px 18px", background:"#080c14", borderTop:"1px solid #131c2e" }}>
-                    <div style={{ color:"#94a3b8", fontSize:12.5, lineHeight:1.6, marginBottom:14 }}>
-                      {canCut ? (
-                        <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong> {unitLabel(s)}{s.avg !== 1 ? "s" : ""}/week (peak {s.peak}), but carry <strong style={{ color:"#e2e8f0" }}>{s.max_stock}</strong>. Dropping your par to <strong style={{ color:"#34d399" }}>{s.recommendedPar}</strong> stops over-ordering <strong style={{ color:"#34d399" }}>{s.overStock}</strong> {unitLabel(s)}{s.overStock !== 1 ? "s" : ""} a week.</>
-                      ) : isShort ? (
-                        <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong>/week (peak {s.peak}), but only carry <strong style={{ color:"#e2e8f0" }}>{s.max_stock}</strong>. Raising your par to <strong style={{ color:"#fbbf24" }}>{s.recommendedPar}</strong> covers busy weeks.</>
-                      ) : (
-                        <>You use about <strong style={{ color:"#e2e8f0" }}>{s.avg}</strong> {unitLabel(s)}{s.avg !== 1 ? "s" : ""}/week (peak {s.peak}). Your par of {s.max_stock} is right on target.</>
-                      )}
-                    </div>
-
-                    <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", marginBottom:12 }}>{unitLabel(s)}s used per week</div>
-                    <div style={{ display:"flex", gap:6, alignItems:"end", height:90 }}>
-                      {s.weeklyUsage.map((u, i) => {
-                        const maxU = Math.max(...s.weeklyUsage, 1);
-                        const pct = (u / maxU) * 100;
-                        const isPeak = u === s.peak;
-                        const wkLabel = s.weeks[i] ? s.weeks[i].split("-WK")[1] : "";
-                        return (
-                          <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
-                            <span style={{ color: isPeak ? "#38bdf8" : "#94a3b8", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{u}</span>
-                            <div style={{ width:"100%", maxWidth:36, height:`${Math.max(6, pct * 0.5)}px`, background: isPeak ? "#38bdf8" : "#1e40af", borderRadius:"4px 4px 0 0" }} />
-                            <span style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace" }}>W{wkLabel}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginTop:16, flexWrap:"wrap" }}>
-                      <span style={{ color:"#475569", fontSize:11 }}>Usage = last count + received − this count · {s.weeklyUsage.length} weeks measured</span>
-                      {(canCut || isShort) && applyParSuggestion && (
-                        <button onClick={(e) => { e.stopPropagation(); applyParSuggestion(s.id, s.recommendedPar); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
-                          style={{ background: canCut ? "#34d399" : "#38bdf8", border:"none", borderRadius:8, padding:"8px 16px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                          Set par to {s.recommendedPar}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
+          {sectionNames.map(sec => (
+            <div key={sec}>
+              {/* Section header */}
+              <div style={{ padding:"8px 14px", background:"#0d1424", borderBottom:"1px solid #131c2e", borderTop:"1px solid #131c2e" }}>
+                <span style={{ color:"#64748b", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.5px" }}>{sec}</span>
+                <span style={{ color:"#3b4a63", fontSize:11, marginLeft:8 }}>{sections[sec].length}</span>
               </div>
-            );
-          })}
+
+              {sections[sec].map((s, idx) => {
+                const canCut = s.overStock >= 1;
+                const isShort = s.max_stock > 0 && s.recommendedPar > s.max_stock;
+                const even = idx % 2 === 0;
+                return (
+                  <div key={s.id} className="ins-row"
+                    style={{ padding:"10px 14px", background: canCut ? "rgba(251,191,36,0.04)" : even ? "transparent" : "rgba(255,255,255,0.01)", borderBottom:"1px solid #0f1520" }}>
+                    <div style={{ minWidth:0 }}>
+                      <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.name}</div>
+                    </div>
+                    <span style={{ color:"#e2e8f0", fontSize:14, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.avg}</span>
+                    <span className="ins-col-peak" style={{ color:"#64748b", fontSize:13, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.peak}</span>
+                    <span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.max_stock || "—"}</span>
+                    <span style={{ fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:700, textAlign:"right",
+                      color: canCut ? "#fbbf24" : isShort ? "#38bdf8" : "#34d399" }}>
+                      {s.recommendedPar}
+                    </span>
+                    <div style={{ textAlign:"right" }}>
+                      {canCut && applyParSuggestion ? (
+                        <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
+                          style={{ background:"none", border:"none", color:"#fbbf24", fontSize:11, fontWeight:700, cursor:"pointer", padding:0, fontFamily:"'DM Mono',monospace" }}>
+                          FIX ▸
+                        </button>
+                      ) : isShort && applyParSuggestion ? (
+                        <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
+                          style={{ background:"none", border:"none", color:"#38bdf8", fontSize:11, fontWeight:700, cursor:"pointer", padding:0, fontFamily:"'DM Mono',monospace" }}>
+                          FIX ▸
+                        </button>
+                      ) : (
+                        <span style={{ color:"#2a3444", fontSize:11, fontFamily:"'DM Mono',monospace" }}>OK</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       )}
 
       {/* Building data */}
       {buildingData.length > 0 && (
-        <div style={{ color:"#475569", fontSize:12.5, lineHeight:1.8 }}>
+        <div style={{ color:"#475569", fontSize:12, marginTop:16, lineHeight:1.8 }}>
           <span style={{ color:"#64748b", fontWeight:600 }}>Still measuring: </span>
           {buildingData.map(i => i.name).join(" · ")}
-          <span style={{ color:"#3b4a63" }}> — these show up after 2 weekly counts.</span>
         </div>
       )}
     </div>
