@@ -1076,7 +1076,7 @@ function MoeApp() {
           weekNum={weekNum}
           setView={setView}
         />}
-        {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} />}
+        {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} history={history} />}
         {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
         {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} submitOrderForWeek={submitOrderForWeek} checkInDelivery={checkInDelivery} history={history} user={user} />}
         {view === "history" && canAccess("history") && <HistoryView history={history} user={user} />}
@@ -2062,83 +2062,161 @@ function RecipeEditor({ initial, allItems, latestPricePerUnit, onSave, onCancel,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// INVENTORY VIEW — Count stock by store location, vendor tags on each item
+// INVENTORY VIEW (a.k.a. "Place Order") — day-aware count screen
+// Defaults to today. Shows what's being ordered on the selected day, filters
+// inventory to those vendors' items, marks vendors whose order has already
+// been submitted this week.
 // ═══════════════════════════════════════════════════════════════════════════════
-function InventoryView({ inventory, stock, updateStock, vendors }) {
-  const todayVendors = vendorsOrderingToday(vendors);
+function InventoryView({ inventory, stock, updateStock, vendors, history }) {
+  const [selectedDay, setSelectedDay] = useState(getToday());
+  const today = getToday();
+  const weekNum = getWeekNumber();
+  const curYear = new Date().getFullYear();
   const allItems = flatItems(inventory);
   const hasStockData = Object.values(stock).some(v => v > 0);
   const urgentCount = hasStockData ? allItems.filter(i => (stock[i.id] ?? 0) < i.reorder).length : 0;
 
+  // Vendors that order on the selected day
+  const dayVendors = (vendors || []).filter(v => v.orderDays && v.orderDays.includes(selectedDay));
+  const dayVendorNames = new Set(dayVendors.map(v => v.name));
+
+  // This week's submitted orders (non-quick)
+  const thisWeekOrders = (history || []).filter(h => h.weekNumber === weekNum && h.year === curYear && h.type !== "quick");
+
+  // Submission status per vendor for the selected day
+  const submittedByVendor = {};
+  dayVendors.forEach(v => {
+    const found = thisWeekOrders.find(o => o.vendor === v.name && o.day === DAYS[selectedDay]);
+    if (found) submittedByVendor[v.name] = found;
+  });
+  const allSubmitted = dayVendors.length > 0 && dayVendors.every(v => submittedByVendor[v.name]);
+
+  // Filter inventory to ONLY items from vendors ordering on the selected day
+  const filteredSections = inventory
+    .map(s => ({ ...s, items: s.items.filter(i => dayVendorNames.has(i.vendor)) }))
+    .filter(s => s.items.length > 0);
+
+  const isToday = selectedDay === today;
+
   return (
     <div style={{ overflow:"hidden" }}>
-      {/* Order day notification */}
-      {todayVendors.length > 0 && (
-        <div style={{ background:"#422006", border:"1px solid #d97706", borderRadius:12, padding:"12px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:12 }}>
-          <span style={{ fontSize:20 }}>📦</span>
-          <div>
-            <div style={{ color:"#fbbf24", fontWeight:600, fontSize:14 }}>Order day! {todayVendors.map(v => v.name).join(", ")} ordering today</div>
-            <div style={{ color:"#d97706", fontSize:12, marginTop:2 }}>Count stock, then go to Orders to submit</div>
+      {/* Day selector + label */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap", marginBottom:14 }}>
+        <div>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 2px" }}>Place Order</h2>
+          <p style={{ color:"#475569", fontSize:13, margin:0 }}>
+            {isToday ? `Today — ${DAYS[selectedDay]}` : DAYS[selectedDay]} · WK{weekNum}
+          </p>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:0.5 }}>Day</span>
+          <select value={selectedDay} onChange={e => setSelectedDay(Number(e.target.value))}
+            style={{ background:"#0f1a2e", border:"1px solid #1e2d45", color:"#f1f5f9", borderRadius:8, padding:"8px 12px", fontSize:13, outline:"none", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+            {DAYS.map((d, i) => {
+              const dayVendorCount = (vendors || []).filter(v => v.orderDays && v.orderDays.includes(i)).length;
+              return <option key={i} value={i}>{d}{i === today ? " (Today)" : ""}{dayVendorCount > 0 ? ` · ${dayVendorCount}` : ""}</option>;
+            })}
+          </select>
+        </div>
+      </div>
+
+      {/* No orders for this day */}
+      {dayVendors.length === 0 && (
+        <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:14, padding:"32px 20px", textAlign:"center" }}>
+          <div style={{ fontSize:36, marginBottom:10 }}>📭</div>
+          <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:600, marginBottom:6 }}>No orders scheduled for {DAYS[selectedDay]}</div>
+          <div style={{ color:"#94a3b8", fontSize:13 }}>
+            None of your vendors order on {DAYS[selectedDay]}. Use the dropdown above to switch days, or set vendor order days in Settings.
           </div>
         </div>
       )}
 
-      {/* Urgent items banner — only show when stock has been counted */}
-      {urgentCount > 0 && (
-        <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:12, padding:"12px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:12 }}>
+      {/* Per-vendor submission banner */}
+      {dayVendors.length > 0 && (
+        <div style={{ marginBottom:14, display:"flex", flexDirection:"column", gap:8 }}>
+          {dayVendors.map(v => {
+            const sub = submittedByVendor[v.name];
+            if (sub) {
+              const subTime = new Date(sub.date).toLocaleString("en-US", { hour:"numeric", minute:"2-digit", hour12:true });
+              return (
+                <div key={v.id} style={{ background:"linear-gradient(135deg, #022c22 0%, #0f1a2e 100%)", border:"1px solid #064e3b", borderRadius:12, padding:"12px 16px", display:"flex", alignItems:"center", gap:12 }}>
+                  <span style={{ fontSize:18 }}>✅</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ color:"#a7f3d0", fontWeight:600, fontSize:14 }}>{v.name} — order submitted</div>
+                    <div style={{ color:"#6ee7b7", fontSize:12, marginTop:2 }}>Submitted {DAYS[selectedDay]} at {subTime} · {(sub.lines || []).length} item{(sub.lines || []).length !== 1 ? "s" : ""}</div>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={v.id} style={{ background:"#422006", border:"1px solid #d97706", borderRadius:12, padding:"12px 16px", display:"flex", alignItems:"center", gap:12 }}>
+                <span style={{ fontSize:18 }}>📦</span>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ color:"#fbbf24", fontWeight:600, fontSize:14 }}>{v.name} — order ready to build</div>
+                  <div style={{ color:"#d97706", fontSize:12, marginTop:2 }}>Count {v.name}'s items below, then submit from Orders</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Urgent items banner — only show when stock has been counted and there are items showing */}
+      {urgentCount > 0 && filteredSections.length > 0 && !allSubmitted && (
+        <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:12, padding:"12px 16px", marginBottom:14, display:"flex", alignItems:"center", gap:12 }}>
           <span style={{ fontSize:18 }}>🔴</span>
           <div style={{ color:"#fca5a5", fontWeight:600, fontSize:13 }}>{urgentCount} item{urgentCount!==1?"s":""} below reorder point</div>
         </div>
       )}
 
-      <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 4px" }}>Inventory Count</h2>
-      <p style={{ color:"#475569", fontSize:13, margin:"0 0 16px" }}>Walk the kitchen, count by location</p>
+      {/* All submitted state */}
+      {allSubmitted && (
+        <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:14, padding:"28px 20px", textAlign:"center", marginTop:8 }}>
+          <div style={{ fontSize:36, marginBottom:10 }}>🎉</div>
+          <div style={{ color:"#f1f5f9", fontSize:16, fontWeight:600, marginBottom:6 }}>All orders for {DAYS[selectedDay]} have been submitted</div>
+          <div style={{ color:"#94a3b8", fontSize:13 }}>Nothing left to count for today. Check Orders to track delivery.</div>
+        </div>
+      )}
 
-      {inventory.map(section => {
-        const sectionItems = section.items;
-        if (sectionItems.length === 0) return null;
-        return (
-          <div key={section.section} style={{ marginBottom:16 }}>
-            {/* Section header */}
-            <div style={{ background:"#080c14", border:"1px solid #1e2d45", borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"8px 16px" }}>
-              <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>{section.section}</span>
-            </div>
-            {/* Items */}
-            <div style={{ border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
-              {sectionItems.map((item, idx) => {
-                const s = stock[item.id] ?? 0;
-                const status = getStatus(item, s);
-                const orderQty = calcOrderQty(item, s);
-                return (
-                  <div key={item.id} style={{ padding:"10px 14px", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none" }}>
-                    {/* Top row: name + vendor tag + status */}
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8, gap:6, flexWrap:"wrap" }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, minWidth:0 }}>
-                        <span style={{ color:"#e2e8f0", fontSize:14, fontWeight:500, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.name}</span>
-                        <span style={{ background:"#0f2040", border:"1px solid #1e3a5f", borderRadius:4, padding:"1px 6px", color:"#94a3b8", fontSize:9, fontFamily:"'DM Mono',monospace", flexShrink:0 }}>{item.vendor}</span>
-                      </div>
-                      <span style={{ background:status.bg, color:status.color, borderRadius:6, padding:"3px 8px", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", flexShrink:0 }}>{status.label}</span>
-                    </div>
-                    {/* Bottom row: stock controls + order qty */}
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                        <span style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", marginRight:2 }}>Current Stock</span>
-                        <button onClick={() => updateStock(item.id, Math.max(0, s-1))} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
-                        <input type="number" value={s} min={0} inputMode="numeric" pattern="[0-9]*"
-                          onChange={e => updateStock(item.id, e.target.value === "" ? 0 : e.target.value)}
-                          onFocus={e => e.target.select()}
-                          style={{ width:52, background:"#080c14", border:"1px solid #475569", borderRadius:8, padding:"6px", color:"#f1f5f9", fontSize:16, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
-                        <button onClick={() => updateStock(item.id, s+1)} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
-                      </div>
-                      <div>{orderQty > 0 ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"4px 10px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>Order {orderQty}</span> : null}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+      {/* Items to count, grouped by section, filtered to selected day's vendors */}
+      {dayVendors.length > 0 && !allSubmitted && filteredSections.map(section => (
+        <div key={section.section} style={{ marginBottom:16 }}>
+          <div style={{ background:"#080c14", border:"1px solid #1e2d45", borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"8px 16px" }}>
+            <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>{section.section}</span>
           </div>
-        );
-      })}
+          <div style={{ border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
+            {section.items.map((item, idx) => {
+              const s = stock[item.id] ?? 0;
+              const status = getStatus(item, s);
+              const orderQty = calcOrderQty(item, s);
+              const vendorSubmitted = !!submittedByVendor[item.vendor];
+              return (
+                <div key={item.id} style={{ padding:"10px 14px", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:idx>0?"1px solid #080c14":"none", opacity: vendorSubmitted ? 0.45 : 1 }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8, gap:6, flexWrap:"wrap" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, minWidth:0 }}>
+                      <span style={{ color:"#e2e8f0", fontSize:14, fontWeight:500, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.name}</span>
+                      <span style={{ background:"#0f2040", border:"1px solid #1e3a5f", borderRadius:4, padding:"1px 6px", color:"#94a3b8", fontSize:9, fontFamily:"'DM Mono',monospace", flexShrink:0 }}>{item.vendor}</span>
+                    </div>
+                    <span style={{ background:status.bg, color:status.color, borderRadius:6, padding:"3px 8px", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", flexShrink:0 }}>{status.label}</span>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <span style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", marginRight:2 }}>Current Stock</span>
+                      <button onClick={() => updateStock(item.id, Math.max(0, s-1))} disabled={vendorSubmitted} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor: vendorSubmitted ? "not-allowed" : "pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+                      <input type="number" value={s} min={0} inputMode="numeric" pattern="[0-9]*" disabled={vendorSubmitted}
+                        onChange={e => updateStock(item.id, e.target.value === "" ? 0 : e.target.value)}
+                        onFocus={e => e.target.select()}
+                        style={{ width:52, background:"#080c14", border:"1px solid #475569", borderRadius:8, padding:"6px", color:"#f1f5f9", fontSize:16, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
+                      <button onClick={() => updateStock(item.id, s+1)} disabled={vendorSubmitted} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor: vendorSubmitted ? "not-allowed" : "pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+                    </div>
+                    <div>{orderQty > 0 ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"4px 10px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>Order {orderQty}</span> : null}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
