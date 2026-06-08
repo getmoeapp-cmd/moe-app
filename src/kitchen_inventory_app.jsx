@@ -920,6 +920,7 @@ function MoeApp() {
             // Build the inventory sub-items (only those the user can access)
             const inventoryChildren = [
               ...(canAccess("inventory") ? [{ key:"inventory", label:"Place Order", icon:"inventory", desc:"Count stock & build order" }] : []),
+              ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
               ...(canAccess("history") ? [{ key:"history", label:"History", icon:"history", desc:"Past orders by week" }] : []),
               ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
               ...(canAccess("waste") ? [{ key:"waste", label:"Waste Log", icon:"waste", desc:"Track what's going in the trash" }] : []),
@@ -931,7 +932,6 @@ function MoeApp() {
             // Top-level items (flat). Inventory group is rendered specially below.
             const topLevel = [
               ...(user.role === "owner" ? [{ key:"dashboard", label:"Dashboard", icon:"dashboard", desc:"Overview & quick actions" }] : []),
-              ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
               ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes & Costs", icon:"recipes", desc:"Build recipes, see dish cost" }] : []),
               ...(canAccess("prices") ? [{ key:"prices", label:"Price Tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
               ...(canAccess("backend") ? [{ key:"backend", label:"Backend", icon:"backend", desc:"Add & edit items" }] : []),
@@ -2566,27 +2566,6 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
         </div>
       )}
 
-      {/* ── LOW & NOT ON ANY ORDER ── */}
-      {lowNotOrdered.length > 0 && (
-        <div style={{ background:"rgba(251,191,36,0.06)", border:"1px solid rgba(251,191,36,0.35)", borderRadius:12, padding:"14px 16px", marginBottom:16 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-            <Icon name="alert" size={16} color="#fbbf24" />
-            <span style={{ color:"#fbbf24", fontSize:14, fontWeight:700 }}>Low &amp; not ordered yet ({lowNotOrdered.length})</span>
-          </div>
-          <p style={{ color:"#94a3b8", fontSize:12.5, margin:"0 0 10px", lineHeight:1.5 }}>
-            At or below reorder point and not on any open order — easy to forget on the list.
-          </p>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-            {lowNotOrdered.map(item => (
-              <button key={item.id} onClick={() => addToNextOrder({ id:item.id, name:item.name, qty: Math.max(1, calcOrderQty(item, stock[item.id] ?? 0)), order_unit:item.order_unit, key:`low_${item.id}` })}
-                style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:8, padding:"7px 12px", color:"#e2e8f0", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
-                {item.name} <span style={{ color:"#fbbf24", fontFamily:"'DM Mono',monospace" }}>{stock[item.id] ?? 0} left</span> <Icon name="plus" size={12} color="#38bdf8" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ── QUICK ORDER PANEL ── */}
       {showQuick && (
         <div style={{ background: "#0f1a2e", border: "1px solid #1e3a5f", borderRadius: 12, padding: 20, marginBottom: 20 }}>
@@ -2671,7 +2650,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
       )}
 
       {/* Per-vendor submit UI moved to Place Order — this view only handles waiting deliveries, check-ins, and shortfalls */}
-      {awaitingDelivery.length === 0 && shortfalls.length === 0 && lowNotOrdered.length === 0 && missedOrders.length === 0 && !showQuick && (
+      {awaitingDelivery.length === 0 && shortfalls.length === 0 && missedOrders.length === 0 && !showQuick && (
         <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:40, textAlign:"center" }}>
           <div style={{ fontSize:42, marginBottom:14 }}>📭</div>
           <div style={{ color:"#e2e8f0", fontSize:16, fontWeight:600, marginBottom:6 }}>Nothing waiting on delivery</div>
