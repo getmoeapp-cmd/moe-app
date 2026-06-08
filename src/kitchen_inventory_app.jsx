@@ -918,7 +918,7 @@ function MoeApp() {
           {(() => {
             // Build the inventory sub-items (only those the user can access)
             const inventoryChildren = [
-              ...(canAccess("inventory") ? [{ key:"inventory", label:"Inventory", icon:"inventory", desc:"Count stock by location" }] : []),
+              ...(canAccess("inventory") ? [{ key:"inventory", label:"Place Order", icon:"inventory", desc:"Count stock & build order" }] : []),
               ...(canAccess("history") ? [{ key:"history", label:"History", icon:"history", desc:"Past orders by week" }] : []),
               ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
               ...(canAccess("waste") ? [{ key:"waste", label:"Waste Log", icon:"waste", desc:"Track what's going in the trash" }] : []),
