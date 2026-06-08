@@ -385,6 +385,7 @@ function MoeApp() {
   const [loginError, setLoginError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inventoryGroupOpen, setInventoryGroupOpen] = useState(true); // Sidebar Inventory submenu
+  const [menuGroupOpen, setMenuGroupOpen] = useState(true);           // Sidebar Menu submenu
   const [usageLog, setUsageLog]     = useState({});
   const [stockSnapshots, setStockSnapshots] = useState({}); // { [weekKey]: { [itemId]: count, _ts } }
   const [subscription, setSubscription] = useState(null); // { plan, status, trialStart, trialEnd, subscribedAt }
@@ -929,10 +930,17 @@ function MoeApp() {
             const inventoryActiveChild = inventoryChildKeys.includes(view);
             const showInventoryGroup = inventoryChildren.length > 0;
 
-            // Top-level items (flat). Inventory group is rendered specially below.
+            // Build the Menu sub-items (recipes, future menu builder, food cost, P&L)
+            const menuChildren = [
+              ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes & Costs", icon:"recipes", desc:"Build recipes, see dish cost" }] : []),
+            ];
+            const menuChildKeys = menuChildren.map(c => c.key);
+            const menuActiveChild = menuChildKeys.includes(view);
+            const showMenuGroup = menuChildren.length > 0;
+
+            // Top-level items (flat). Inventory & Menu groups are rendered specially below.
             const topLevel = [
               ...(user.role === "owner" ? [{ key:"dashboard", label:"Dashboard", icon:"dashboard", desc:"Overview & quick actions" }] : []),
-              ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes & Costs", icon:"recipes", desc:"Build recipes, see dish cost" }] : []),
               ...(canAccess("prices") ? [{ key:"prices", label:"Price Tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
               ...(canAccess("backend") ? [{ key:"backend", label:"Backend", icon:"backend", desc:"Add & edit items" }] : []),
               ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Vendors & team" }] : []),
@@ -981,6 +989,20 @@ function MoeApp() {
                       <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: inventoryGroupOpen ? "rotate(0deg)" : "rotate(-90deg)" }} />
                     </button>
                     {inventoryGroupOpen && inventoryChildren.map(child => renderNavItem(child, true))}
+                  </>
+                )}
+                {showMenuGroup && (
+                  <>
+                    <button onClick={() => setMenuGroupOpen(o => !o)}
+                      style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background: menuActiveChild ? "#0f1a2e" : "transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft: menuActiveChild ? "3px solid #38bdf8" : "3px solid transparent" }}>
+                      <Icon name="recipes" size={19} color={menuActiveChild ? "#38bdf8" : "#64748b"} />
+                      <div style={{ textAlign:"left", flex:1 }}>
+                        <div style={{ color: menuActiveChild ? "#f1f5f9" : "#94a3b8", fontSize:14, fontWeight: menuActiveChild ? 600 : 400 }}>Menu</div>
+                        <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{menuChildren.length} tool{menuChildren.length !== 1 ? "s" : ""}</div>
+                      </div>
+                      <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: menuGroupOpen ? "rotate(0deg)" : "rotate(-90deg)" }} />
+                    </button>
+                    {menuGroupOpen && menuChildren.map(child => renderNavItem(child, true))}
                   </>
                 )}
                 {afterDashboard.map(item => renderNavItem(item))}
