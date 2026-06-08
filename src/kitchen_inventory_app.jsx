@@ -1649,8 +1649,8 @@ function DashboardView({ user, inventory, stock, vendors, history, stockSnapshot
         <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10, fontFamily: "'DM Mono',monospace" }}>Quick actions</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
           {[
-            { key: "inventory", icon: "inventory", title: "Start Count", sub: "Take inventory now" },
-            { key: "orders", icon: "orders", title: "Place Order", sub: "Order from vendors" },
+            { key: "inventory", icon: "inventory", title: "Place Order", sub: "Count stock & build order" },
+            { key: "orders", icon: "orders", title: "Review Orders", sub: "Send to vendors & check in" },
             { key: "recipes", icon: "recipes", title: "Add Recipe", sub: "Build a dish recipe" },
             { key: "insights", icon: "insights", title: "View Insights", sub: "Usage & par suggestions" },
           ].map(a => (
