@@ -384,6 +384,7 @@ function MoeApp() {
   const [flash, setFlash]       = useState("");
   const [loginError, setLoginError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [inventoryGroupOpen, setInventoryGroupOpen] = useState(true); // Sidebar Inventory submenu
   const [usageLog, setUsageLog]     = useState({});
   const [stockSnapshots, setStockSnapshots] = useState({}); // { [weekKey]: { [itemId]: count, _ts } }
   const [subscription, setSubscription] = useState(null); // { plan, status, trialStart, trialEnd, subscribedAt }
@@ -914,36 +915,77 @@ function MoeApp() {
           <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · WK{weekNum} · {DAYS[getToday()]}</div>
         </div>
         <div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
-          {[
-            ...(user.role === "owner" ? [{ key:"dashboard", label:"Dashboard", icon:"dashboard", desc:"Overview & quick actions" }] : []),
-            ...(canAccess("inventory") ? [{ key:"inventory", label:"Inventory", icon:"inventory", desc:"Count stock by location" }] : []),
-            ...(canAccess("waste") ? [{ key:"waste", label:"Waste Log", icon:"waste", desc:"Track what's going in the trash" }] : []),
-            ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
-            ...(canAccess("history") ? [{ key:"history", label:"History", icon:"history", desc:"Past orders by week" }] : []),
-            ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-            ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes & Costs", icon:"recipes", desc:"Build recipes, see dish cost" }] : []),
-            ...(canAccess("prices") ? [{ key:"prices", label:"Price Tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-            ...(canAccess("backend") ? [{ key:"backend", label:"Backend", icon:"backend", desc:"Add & edit items" }] : []),
-            ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Vendors & team" }] : []),
-            ...(canAccess("import") ? [{ key:"import", label:"Import Items", icon:"doc", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-            ...(user.role === "owner" ? [
-              { key:"subscription", label:"Subscription", icon:"subscription", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
-              { key:"admin", label:"Admin", icon:"admin", desc:"Signups & accounts" },
-            ] : []),
-          ].map(item => {
-            const isActive = view === item.key;
+          {(() => {
+            // Build the inventory sub-items (only those the user can access)
+            const inventoryChildren = [
+              ...(canAccess("inventory") ? [{ key:"inventory", label:"Inventory", icon:"inventory", desc:"Count stock by location" }] : []),
+              ...(canAccess("history") ? [{ key:"history", label:"History", icon:"history", desc:"Past orders by week" }] : []),
+              ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+              ...(canAccess("waste") ? [{ key:"waste", label:"Waste Log", icon:"waste", desc:"Track what's going in the trash" }] : []),
+            ];
+            const inventoryChildKeys = inventoryChildren.map(c => c.key);
+            const inventoryActiveChild = inventoryChildKeys.includes(view);
+            const showInventoryGroup = inventoryChildren.length > 0;
+
+            // Top-level items (flat). Inventory group is rendered specially below.
+            const topLevel = [
+              ...(user.role === "owner" ? [{ key:"dashboard", label:"Dashboard", icon:"dashboard", desc:"Overview & quick actions" }] : []),
+              ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
+              ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes & Costs", icon:"recipes", desc:"Build recipes, see dish cost" }] : []),
+              ...(canAccess("prices") ? [{ key:"prices", label:"Price Tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+              ...(canAccess("backend") ? [{ key:"backend", label:"Backend", icon:"backend", desc:"Add & edit items" }] : []),
+              ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Vendors & team" }] : []),
+              ...(canAccess("import") ? [{ key:"import", label:"Import Items", icon:"doc", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+              ...(user.role === "owner" ? [
+                { key:"subscription", label:"Subscription", icon:"subscription", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
+                { key:"admin", label:"Admin", icon:"admin", desc:"Signups & accounts" },
+              ] : []),
+            ];
+
+            // Render an individual nav button (used for both top-level and child)
+            const renderNavItem = (item, isChild = false) => {
+              const isActive = view === item.key;
+              return (
+                <button key={item.key} className="moe-nav"
+                  onClick={() => { if (!item.locked) { setView(item.key); setSidebarOpen(false); } else { setView("subscription"); setSidebarOpen(false); } }}
+                  style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#0f1a2e":"transparent", border:"none", borderRadius:10,
+                    padding: isChild ? "9px 14px 9px 32px" : "11px 14px",
+                    cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #38bdf8":"3px solid transparent", opacity:item.locked?0.5:1 }}>
+                  <Icon name={item.icon} size={isChild ? 16 : 19} color={isActive ? "#38bdf8" : "#64748b"} />
+                  <div style={{ textAlign:"left", flex:1 }}>
+                    <div style={{ color:isActive?"#f1f5f9":"#94a3b8", fontSize: isChild ? 13 : 14, fontWeight:isActive?600:400, display:"flex", alignItems:"center", gap:6 }}>{item.label}{item.locked ? <Icon name="alert" size={12} color="#d97706" /> : null}</div>
+                    {!isChild && <div style={{ color:item.locked?"#d97706":"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>}
+                  </div>
+                  {item.badge > 0 && <span style={{ background:"rgba(56,189,248,0.15)", color:"#38bdf8", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
+                </button>
+              );
+            };
+
+            // Place Inventory group right after Dashboard
+            const dashboardItem = topLevel.find(t => t.key === "dashboard");
+            const afterDashboard = topLevel.filter(t => t.key !== "dashboard");
+
             return (
-              <button key={item.key} className="moe-nav" onClick={() => { if (!item.locked) { setView(item.key); setSidebarOpen(false); } else { setView("subscription"); setSidebarOpen(false); } }}
-                style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#0f1a2e":"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #38bdf8":"3px solid transparent", opacity:item.locked?0.5:1 }}>
-                <Icon name={item.icon} size={19} color={isActive ? "#38bdf8" : "#64748b"} />
-                <div style={{ textAlign:"left", flex:1 }}>
-                  <div style={{ color:isActive?"#f1f5f9":"#94a3b8", fontSize:14, fontWeight:isActive?600:400, display:"flex", alignItems:"center", gap:6 }}>{item.label}{item.locked ? <Icon name="alert" size={12} color="#d97706" /> : null}</div>
-                  <div style={{ color:item.locked?"#d97706":"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>
-                </div>
-                {item.badge > 0 && <span style={{ background:"rgba(56,189,248,0.15)", color:"#38bdf8", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
-              </button>
+              <>
+                {dashboardItem && renderNavItem(dashboardItem)}
+                {showInventoryGroup && (
+                  <>
+                    <button onClick={() => setInventoryGroupOpen(o => !o)}
+                      style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background: inventoryActiveChild ? "#0f1a2e" : "transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft: inventoryActiveChild ? "3px solid #38bdf8" : "3px solid transparent" }}>
+                      <Icon name="inventory" size={19} color={inventoryActiveChild ? "#38bdf8" : "#64748b"} />
+                      <div style={{ textAlign:"left", flex:1 }}>
+                        <div style={{ color: inventoryActiveChild ? "#f1f5f9" : "#94a3b8", fontSize:14, fontWeight: inventoryActiveChild ? 600 : 400 }}>Inventory</div>
+                        <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{inventoryChildren.length} tools</div>
+                      </div>
+                      <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: inventoryGroupOpen ? "rotate(0deg)" : "rotate(-90deg)" }} />
+                    </button>
+                    {inventoryGroupOpen && inventoryChildren.map(child => renderNavItem(child, true))}
+                  </>
+                )}
+                {afterDashboard.map(item => renderNavItem(item))}
+              </>
             );
-          })}
+          })()}
         </div>
         <div style={{ padding:"12px", borderTop:"1px solid #1e2d45" }}>
           <button onClick={() => setUser(null)} style={{ width:"100%", background:"transparent", border:"1px solid #1e2d45", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13 }}
@@ -1077,6 +1119,7 @@ function MoeIcons() {
         <symbol id="ic-dashboard" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"/></symbol>
         <symbol id="ic-recipes" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M6 2v20h12V2zM6 7h12M9 11h6M9 15h6M9 19h6"/></symbol>
         <symbol id="ic-arrow-right" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M13 5l7 7-7 7"/></symbol>
+        <symbol id="ic-chevron" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6"/></symbol>
       </defs>
     </svg>
   );
