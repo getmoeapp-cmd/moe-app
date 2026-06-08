@@ -625,7 +625,7 @@ function MoeApp() {
     setUsageLog(newUsageLog);
     save("usageLog", newUsageLog);
 
-    // 2. Save to history
+    // 2. Save to history (received:false → lives in Orders view until delivery is checked in)
     const entry = {
       id: `ord_${Date.now()}`,
       vendor: vendorName,
@@ -636,6 +636,7 @@ function MoeApp() {
       lines: orderLines,
       totalItems: orderLines.length,
       orderedBy: user?.name || "",
+      received: false,
     };
     const newHistory = [entry, ...history];
     setHistory(newHistory);
@@ -1076,7 +1077,7 @@ function MoeApp() {
           weekNum={weekNum}
           setView={setView}
         />}
-        {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} history={history} />}
+        {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} history={history} submitOrder={submitOrder} />}
         {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
         {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} submitOrderForWeek={submitOrderForWeek} checkInDelivery={checkInDelivery} history={history} user={user} />}
         {view === "history" && canAccess("history") && <HistoryView history={history} user={user} />}
@@ -2067,7 +2068,7 @@ function RecipeEditor({ initial, allItems, latestPricePerUnit, onSave, onCancel,
 // inventory to those vendors' items, marks vendors whose order has already
 // been submitted this week.
 // ═══════════════════════════════════════════════════════════════════════════════
-function InventoryView({ inventory, stock, updateStock, vendors, history }) {
+function InventoryView({ inventory, stock, updateStock, vendors, history, submitOrder }) {
   const [selectedDay, setSelectedDay] = useState(getToday());
   const today = getToday();
   const weekNum = getWeekNumber();
@@ -2217,6 +2218,56 @@ function InventoryView({ inventory, stock, updateStock, vendors, history }) {
           </div>
         </div>
       ))}
+
+      {/* SUBMIT FOOTER — only when there are unsubmitted vendors with items to order */}
+      {dayVendors.length > 0 && !allSubmitted && (() => {
+        const pending = dayVendors.filter(v => !submittedByVendor[v.name]);
+        const pendingWithOrders = pending.map(v => {
+          const items = flatItems(inventory).filter(i => i.vendor === v.name);
+          const lines = items.map(it => ({ ...it, orderQty: calcOrderQty(it, stock[it.id] ?? 0) })).filter(l => l.orderQty > 0);
+          return { vendor: v, lines };
+        });
+        const vendorsWithOrders = pendingWithOrders.filter(p => p.lines.length > 0);
+        const totalLines = vendorsWithOrders.reduce((sum, p) => sum + p.lines.length, 0);
+        const nothingToOrder = vendorsWithOrders.length === 0;
+        const submitAll = () => {
+          if (nothingToOrder) return;
+          const names = vendorsWithOrders.map(p => p.vendor.name).join(", ");
+          if (!window.confirm(`Submit ${vendorsWithOrders.length} order${vendorsWithOrders.length !== 1 ? "s" : ""} (${totalLines} item${totalLines !== 1 ? "s" : ""}) to ${names}?\n\nOnce submitted, the orders move to Orders → Waiting on delivery. You can't edit them — use Quick Order if you forget something.`)) return;
+          vendorsWithOrders.forEach(p => submitOrder && submitOrder(p.vendor.name));
+        };
+        return (
+          <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:14, padding:"16px 18px", marginTop:8 }}>
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.8, marginBottom:10, fontFamily:"'DM Mono',monospace" }}>Ready to submit</div>
+            {nothingToOrder ? (
+              <div style={{ color:"#64748b", fontSize:13, padding:"8px 0" }}>
+                Nothing below reorder point yet — count more items or switch to another day.
+              </div>
+            ) : (
+              <>
+                <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:14 }}>
+                  {vendorsWithOrders.map(p => (
+                    <div key={p.vendor.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 12px", background:"#0a1220", border:"1px solid #1e2d45", borderRadius:8 }}>
+                      <div>
+                        <div style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{p.vendor.name}</div>
+                        <div style={{ color:"#64748b", fontSize:11, marginTop:2, fontFamily:"'DM Mono',monospace" }}>{p.lines.length} item{p.lines.length !== 1 ? "s" : ""} to order</div>
+                      </div>
+                      <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"3px 10px", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{p.lines.reduce((s,l)=>s+l.orderQty,0)} units</span>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={submitAll}
+                  style={{ width:"100%", background:"linear-gradient(135deg,#22d3ee 0%,#0891b2 100%)", border:"none", borderRadius:10, padding:"14px", color:"#060a12", fontSize:15, fontWeight:700, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+                  Submit {vendorsWithOrders.length} order{vendorsWithOrders.length !== 1 ? "s" : ""} →
+                </button>
+                <div style={{ color:"#64748b", fontSize:11, textAlign:"center", marginTop:8 }}>
+                  Orders move to Orders → Waiting on delivery. Once submitted you can't edit.
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -2347,16 +2398,10 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
     <div>
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
         <div>
-          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 4px" }}>Orders — {DAYS[selectedDay]}, {fmtWeekLabel(weekNum)}</h2>
-          <p style={{ color:"#475569", fontSize:13, margin:0 }}>{dayVendors.length} vendor{dayVendors.length!==1?"s":""} {isPast ? "scheduled for " + DAYS[selectedDay] : "ordering today"}</p>
+          <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 4px" }}>Orders</h2>
+          <p style={{ color:"#475569", fontSize:13, margin:0 }}>Waiting on delivery · {awaitingDelivery.length} open</p>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>Day:</span>
-          <select value={selectedDay} onChange={e => { setSelectedDay(parseInt(e.target.value)); setSubmitted({}); }}
-            style={{ background:"#0f1a2e", border:`1px solid ${isPast ? "#d97706" : "#1e2d45"}`, borderRadius:8, padding:"7px 12px", color: isPast ? "#fbbf24" : "#f1f5f9", fontSize:13, outline:"none", cursor:"pointer", fontFamily:"'DM Mono',monospace" }}>
-            {DAYS.map((day, i) => <option key={i} value={i}>{day}{i === getToday() ? " (today)" : ""}</option>)}
-          </select>
-          {isPast && <span style={{ background:"#422006", border:"1px solid #d97706", borderRadius:6, padding:"3px 8px", color:"#fbbf24", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>Past day</span>}
           <button onClick={() => setShowQuick(!showQuick)}
             style={{ background: showQuick ? "#38bdf8" : "transparent", border: `1px solid ${showQuick ? "#38bdf8" : "#1e2d45"}`, borderRadius: 8, padding: "7px 14px", color: showQuick ? "#060a12" : "#38bdf8", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
             <Icon name="bolt" size={14} color={showQuick ? "#060a12" : "#38bdf8"} style={{ marginRight:6 }} />Quick Order
@@ -2625,100 +2670,15 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
         </div>
       )}
 
-      {dayVendors.length === 0 ? (
-        <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:32, textAlign:"center" }}>
-          <div style={{ fontSize:40, marginBottom:16 }}>📅</div>
-          <div style={{ color:"#94a3b8", fontSize:15, fontWeight:600, marginBottom:16 }}>No vendors order on {DAYS[selectedDay]}</div>
-          <div style={{ display:"flex", flexDirection:"column", gap:8, maxWidth:300, margin:"0 auto" }}>
-            {vendors.map(v => (
-              <div key={v.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#080c14", borderRadius:8, padding:"10px 14px" }}>
-                <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>📦 {v.name}</span>
-                <span style={{ color:"#a5b4fc", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{(v.orderDays || []).map(d => DAYS_SHORT[d]).join(", ")}</span>
-              </div>
-            ))}
+      {/* Per-vendor submit UI moved to Place Order — this view only handles waiting deliveries, check-ins, and shortfalls */}
+      {awaitingDelivery.length === 0 && shortfalls.length === 0 && lowNotOrdered.length === 0 && missedOrders.length === 0 && !showQuick && (
+        <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:40, textAlign:"center" }}>
+          <div style={{ fontSize:42, marginBottom:14 }}>📭</div>
+          <div style={{ color:"#e2e8f0", fontSize:16, fontWeight:600, marginBottom:6 }}>Nothing waiting on delivery</div>
+          <div style={{ color:"#64748b", fontSize:13, maxWidth:340, margin:"0 auto", lineHeight:1.5 }}>
+            When you submit an order from Place Order, it lands here. Check it in once the delivery shows up, and it moves to History.
           </div>
         </div>
-      ) : (
-        <>
-      {dayVendors.map(vendor => {
-        const vendorItems = allItems.filter(i => (i.vendor || "").trim().toLowerCase() === vendor.name.toLowerCase());
-        const orderLines = vendorItems.map(item => ({
-          ...item,
-          qty: calcOrderQty(item, stock[item.id] ?? 0),
-          currentStock: stock[item.id] ?? 0,
-        }));
-        const needsOrder = orderLines.filter(l => l.qty > 0);
-        const isSubmitted = submitted[vendor.name];
-
-        return (
-          <div key={vendor.id} style={{ marginBottom:24 }}>
-            {/* Vendor header */}
-            <div style={{ background:"#080c14", border:"1px solid #1e2d45", borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"12px 18px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-              <div>
-                <div style={{ color:"#e2e8f0", fontSize:16, fontWeight:700 }}>📦 {vendor.name}</div>
-                <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{vendorItems.length} items · {needsOrder.length} to order</div>
-              </div>
-              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                {!isSubmitted && needsOrder.length > 0 && (
-                  <button onClick={() => printVendorPDF({ vendorName: vendor.name, items: orderLines, weekNum, date: fmtDate(new Date()), businessName: user.business?.name || "", orderedBy: user.name })}
-                    style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:7, padding:"6px 14px", color:"#94a3b8", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#94a3b8"; }}>
-                    🖨 PDF
-                  </button>
-                )}
-                {isSubmitted ? (
-                  <span style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:8, padding:"6px 16px", color:"#4ade80", fontSize:13, fontWeight:600 }}>✓ Submitted</span>
-                ) : needsOrder.length > 0 ? (
-                  <button onClick={() => handleSubmit(vendor.name)}
-                    style={{ background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:"8px 20px", color:"#080c14", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                    Submit Order
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Order lines */}
-            <div style={{ border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
-              {isSubmitted ? (
-                <div style={{ padding:32, textAlign:"center", background:"#0f1a2e" }}>
-                  <div style={{ fontSize:32, marginBottom:8 }}>✅</div>
-                  <div style={{ color:"#4ade80", fontSize:15, fontWeight:700 }}>Order submitted!</div>
-                  <div style={{ color:"#475569", fontSize:12, marginTop:4 }}>Saved to history · Stock reset to zero for this vendor</div>
-                </div>
-              ) : needsOrder.length === 0 ? (
-                <div style={{ padding:32, textAlign:"center", background:"#0f1a2e" }}>
-                  <div style={{ fontSize:32, marginBottom:8 }}>✅</div>
-                  <div style={{ color:"#4ade80", fontSize:14, fontWeight:600 }}>All stocked up — nothing to order</div>
-                </div>
-              ) : (
-                <>
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 100px 80px 100px", background:"#080c14", padding:"6px 16px", gap:8 }}>
-                    {["Item","Stock","Status","Order Qty"].map(h => (
-                      <span key={h} style={{ color:"#475569", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", letterSpacing:"0.5px", textTransform:"uppercase" }}>{h}</span>
-                    ))}
-                  </div>
-                  {needsOrder.map((item, idx) => {
-                    const status = getStatus(item, item.currentStock);
-                    return (
-                      <div key={item.id} style={{ display:"grid", gridTemplateColumns:"1fr 100px 80px 100px", padding:"10px 16px", alignItems:"center", background:idx%2===0?"#0f1a2e":"#0a1220", borderTop:"1px solid #080c14", gap:8 }}>
-                        <div>
-                          <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:500 }}>{item.name}</div>
-                          <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace" }}>{item.section.replace(/[^\w\s\-&]/g,"").trim()} · {item.order_unit}</div>
-                        </div>
-                        <span style={{ color:"#94a3b8", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{item.currentStock} / {item.max_stock}</span>
-                        <span style={{ background:status.bg, color:status.color, borderRadius:5, padding:"2px 8px", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace" }}>{status.label}</span>
-                        <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:7, padding:"4px 10px", fontSize:13, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{item.qty} {item.order_unit}</span>
-                      </div>
-                    );
-                  })}
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })}
-        </>
       )}
     </div>
   );
@@ -2734,6 +2694,12 @@ function HistoryView({ history, user }) {
   const [expandedOrders, setExpandedOrders] = useState({});
   const [collapsedMonths, setCollapsedMonths] = useState({});
 
+  // Only show CLOSED orders: received regulars, quick orders, backfills, auto orders.
+  // Open (submitted-but-not-yet-checked-in) regular orders live in the Orders view.
+  const closed = (history || []).filter(e =>
+    e.received === true || e.type === "quick" || e.type === "auto" || e.backfill === true
+  );
+
   const typeOf = (e) => e.type === "quick" ? "quick" : e.type === "auto" ? "auto" : e.backfill ? "backfill" : "regular";
   const typeMeta = {
     quick:    { label:"QUICK",    icon:"bolt",    color:"#38bdf8", bg:"rgba(56,189,248,0.15)" },
@@ -2742,11 +2708,11 @@ function HistoryView({ history, user }) {
     regular:  { label:"",         icon:"orders",  color:"#94a3b8", bg:"transparent" },
   };
 
-  // All vendors that appear in history
-  const allVendors = [...new Set(history.map(e => e.vendor))].sort();
+  // All vendors that appear in closed history
+  const allVendors = [...new Set(closed.map(e => e.vendor))].sort();
 
   // Apply filters
-  const filtered = history.filter(e => {
+  const filtered = closed.filter(e => {
     if (filterVendor !== "ALL" && e.vendor !== filterVendor) return false;
     if (filterType !== "ALL" && typeOf(e) !== filterType) return false;
     if (search.trim()) {
@@ -2761,9 +2727,9 @@ function HistoryView({ history, user }) {
 
   // Stats
   const now = new Date();
-  const thisMonthCount = history.filter(e => { const d = new Date(e.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).length;
+  const thisMonthCount = closed.filter(e => { const d = new Date(e.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).length;
   const vendorCounts = {};
-  history.forEach(e => { if (typeOf(e) !== "auto") vendorCounts[e.vendor] = (vendorCounts[e.vendor] || 0) + 1; });
+  closed.forEach(e => { if (typeOf(e) !== "auto") vendorCounts[e.vendor] = (vendorCounts[e.vendor] || 0) + 1; });
   const topVendor = Object.entries(vendorCounts).sort((a,b) => b[1]-a[1])[0];
 
   // Group filtered → month → week
@@ -2784,15 +2750,15 @@ function HistoryView({ history, user }) {
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
         <div>
           <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:"0 0 4px" }}>Order History</h2>
-          <p style={{ color:"#64748b", fontSize:13, margin:0 }}>{history.length} order{history.length!==1?"s":""} across all time</p>
+          <p style={{ color:"#64748b", fontSize:13, margin:0 }}>{closed.length} closed order{closed.length!==1?"s":""} across all time</p>
         </div>
       </div>
 
       {/* Stats */}
-      {history.length > 0 && (
+      {closed.length > 0 && (
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:10, marginBottom:16 }}>
           <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"12px 16px" }}>
-            <div style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{history.length}</div>
+            <div style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{closed.length}</div>
             <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Total orders</div>
           </div>
           <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"12px 16px" }}>
@@ -2809,7 +2775,7 @@ function HistoryView({ history, user }) {
       )}
 
       {/* Search + filters */}
-      {history.length > 0 && (
+      {closed.length > 0 && (
         <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
           <div style={{ position:"relative", flex:"1 1 200px" }}>
             <Icon name="prices" size={15} color="#475569" style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)" }} />
@@ -2832,11 +2798,11 @@ function HistoryView({ history, user }) {
         </div>
       )}
 
-      {history.length === 0 ? (
+      {closed.length === 0 ? (
         <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:48, textAlign:"center" }}>
           <Icon name="history" size={36} color="#38bdf8" style={{ marginBottom:12 }} />
-          <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No orders yet</div>
-          <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Submitted orders will appear here</div>
+          <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No closed orders yet</div>
+          <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Orders move here once you check in the delivery</div>
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:40, textAlign:"center" }}>
