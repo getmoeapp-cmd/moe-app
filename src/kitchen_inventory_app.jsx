@@ -388,6 +388,12 @@ function MoeApp() {
   const [menuGroupOpen, setMenuGroupOpen] = useState(true);           // Sidebar Menu submenu
   const [usageLog, setUsageLog]     = useState({});
   const [stockSnapshots, setStockSnapshots] = useState({}); // { [weekKey]: { [itemId]: count, _ts } }
+  const [countLog, setCountLog]             = useState([]); // append-only: [{ i: itemId, q: qty, by, at }] newest first, capped
+  const countLogRef = useRef([]);            // mirror for debounced appends (avoids stale closures)
+  const countTimersRef = useRef({});         // { [itemId]: timeoutId } for per-item debounce
+  const stockSaveTimerRef = useRef(null);    // debounce timer for stock/snapshot blob writes
+  const pendingStockRef = useRef(null);      // latest stock awaiting save
+  const pendingSnapsRef = useRef(null);      // latest snapshots awaiting save
   const [subscription, setSubscription] = useState(null); // { plan, status, trialStart, trialEnd, subscribedAt }
   const [team, setTeam]                 = useState([]); // [{ id, email, name, role, addedAt }]
   const [wasteLog, setWasteLog]         = useState([]);
@@ -444,6 +450,7 @@ function MoeApp() {
       const wl = await load("wasteLog", []);
       const ph = await load("priceHistory", {});
       const rc = await load("recipes", []);
+      const cl = await load("countLog", []);
       const perms = await load("permissions", null);
       const ob = await load("onboarding", null);
       const autoSub = await load("autoSubmit", true);
@@ -452,6 +459,8 @@ function MoeApp() {
       setStock(st); setVendors(vd); setHistory(hi); setInventory(inv);
       setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl); setPriceHistory(ph);
       setRecipes(Array.isArray(rc) ? rc : []);
+      const loadedLog = Array.isArray(cl) ? cl : [];
+      setCountLog(loadedLog); countLogRef.current = loadedLog;
       setStockSnapshots(snaps || {});
       if (perms) setPermissions(perms);
       setOnboarding(ob);
@@ -479,6 +488,17 @@ function MoeApp() {
     init();
   }, [user, group]);
 
+  // ── Flush pending debounced saves if the tab hides or closes ─────────────
+  useEffect(() => {
+    const flush = () => {
+      if (pendingStockRef.current) { save("stock", pendingStockRef.current); pendingStockRef.current = null; }
+      if (pendingSnapsRef.current) { save("stockSnapshots", pendingSnapsRef.current); pendingSnapsRef.current = null; }
+    };
+    document.addEventListener("visibilitychange", flush);
+    window.addEventListener("pagehide", flush);
+    return () => { flush(); document.removeEventListener("visibilitychange", flush); window.removeEventListener("pagehide", flush); };
+  }, [group]);
+
   // ── Real-time sync ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!group || !user) return;
@@ -499,6 +519,7 @@ function MoeApp() {
         if (data_key === "wasteLog")    setWasteLog(value);
         if (data_key === "priceHistory") setPriceHistory(value);
         if (data_key === "recipes")     setRecipes(Array.isArray(value) ? value : []);
+        if (data_key === "countLog")    { const v = Array.isArray(value) ? value : []; setCountLog(v); countLogRef.current = v; }
         if (data_key === "permissions") setPermissions(value);
       } catch {}
     }).subscribe();
@@ -506,18 +527,38 @@ function MoeApp() {
   }, [group, user]);
 
   // ── Stock update ─────────────────────────────────────────────────────────
+  // UI updates instantly; Supabase writes are debounced (1.5s after the last
+  // tap) so a burst of +/+/+ taps = ONE network write instead of one per tap.
   const updateStock = (id, val) => {
     const n = parseInt(val);
-    const newStock = { ...stock, [id]: isNaN(n) ? 0 : Math.max(0, n) };
+    const finalQty = isNaN(n) ? 0 : Math.max(0, n);
+    const newStock = { ...stock, [id]: finalQty };
     setStock(newStock);
-    save("stock", newStock);
+    pendingStockRef.current = newStock;
     // Record a snapshot of the current week's stock count (latest count of the week wins)
     const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2,"0")}`;
     setStockSnapshots(prev => {
-      const next = { ...prev, [wk]: { ...(prev[wk] || {}), [id]: newStock[id], _ts: new Date().toISOString() } };
-      save("stockSnapshots", next);
+      const next = { ...prev, [wk]: { ...(prev[wk] || {}), [id]: finalQty, _ts: new Date().toISOString() } };
+      pendingSnapsRef.current = next;
       return next;
     });
+    clearTimeout(stockSaveTimerRef.current);
+    stockSaveTimerRef.current = setTimeout(() => {
+      if (pendingStockRef.current) save("stock", pendingStockRef.current);
+      if (pendingSnapsRef.current) save("stockSnapshots", pendingSnapsRef.current);
+      pendingStockRef.current = null;
+      pendingSnapsRef.current = null;
+    }, 1500);
+    // Append-only count log — per-item debounce so a burst of +/+/+ taps logs
+    // ONE entry with the settled value. Powers "last counted" + usage history.
+    clearTimeout(countTimersRef.current[id]);
+    countTimersRef.current[id] = setTimeout(() => {
+      const entry = { i: id, q: finalQty, by: user?.name || "", at: new Date().toISOString() };
+      const newLog = [entry, ...countLogRef.current].slice(0, 3000); // cap to keep the blob lean
+      countLogRef.current = newLog;
+      setCountLog(newLog);
+      save("countLog", newLog);
+    }, 4000);
   };
 
   // ── Auto-submit missed orders for completed weeks ────────────────────────
@@ -643,11 +684,9 @@ function MoeApp() {
     setHistory(newHistory);
     save("history", newHistory);
 
-    // 3. Reset this vendor's items to 0
-    const newStock = { ...stock };
-    vendorItems.forEach(item => { newStock[item.id] = 0; });
-    setStock(newStock);
-    save("stock", newStock);
+    // NOTE: We intentionally do NOT reset stock to 0 anymore. The counted
+    // values are real data — they stay until the next physical count.
+    // The count at submit time is preserved on each line as `currentStock`.
 
     showFlash(`✓ ${vendorName} order submitted`);
   };
@@ -1099,7 +1138,7 @@ function MoeApp() {
           weekNum={weekNum}
           setView={setView}
         />}
-        {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} history={history} submitOrder={submitOrder} />}
+        {view === "inventory" && canAccess("inventory") && <InventoryView inventory={inventory} stock={stock} updateStock={updateStock} vendors={vendors} history={history} submitOrder={submitOrder} countLog={countLog} />}
         {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
         {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} submitOrderForWeek={submitOrderForWeek} checkInDelivery={checkInDelivery} history={history} user={user} />}
         {view === "history" && canAccess("history") && <HistoryView history={history} user={user} />}
@@ -2090,7 +2129,7 @@ function RecipeEditor({ initial, allItems, latestPricePerUnit, onSave, onCancel,
 // inventory to those vendors' items, marks vendors whose order has already
 // been submitted this week.
 // ═══════════════════════════════════════════════════════════════════════════════
-function InventoryView({ inventory, stock, updateStock, vendors, history, submitOrder }) {
+function InventoryView({ inventory, stock, updateStock, vendors, history, submitOrder, countLog }) {
   const [selectedDay, setSelectedDay] = useState(getToday());
   const today = getToday();
   const weekNum = getWeekNumber();
@@ -2098,6 +2137,20 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
   const allItems = flatItems(inventory);
   const hasStockData = Object.values(stock).some(v => v > 0);
   const urgentCount = hasStockData ? allItems.filter(i => (stock[i.id] ?? 0) < i.reorder).length : 0;
+
+  // Last-counted timestamp per item (countLog is newest-first, so first hit wins)
+  const lastCounted = {};
+  (countLog || []).forEach(e => { if (!(e.i in lastCounted)) lastCounted[e.i] = e.at; });
+  const agoLabel = (iso) => {
+    if (!iso) return null;
+    const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return days === 1 ? "1d ago" : `${days}d ago`;
+  };
 
   // Vendors that order on the selected day
   const dayVendors = (vendors || []).filter(v => v.orderDays && v.orderDays.includes(selectedDay));
@@ -2121,6 +2174,11 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
 
   const isToday = selectedDay === today;
 
+  // Count progress for the visible items (counted = logged today)
+  const todayStr = new Date().toDateString();
+  const visibleItems = filteredSections.flatMap(s => s.items);
+  const countedToday = visibleItems.filter(i => lastCounted[i.id] && new Date(lastCounted[i.id]).toDateString() === todayStr).length;
+
   return (
     <div style={{ overflow:"hidden" }}>
       {/* Day selector + label */}
@@ -2129,6 +2187,11 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
           <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 2px" }}>Place Order</h2>
           <p style={{ color:"#475569", fontSize:13, margin:0 }}>
             {isToday ? `Today — ${DAYS[selectedDay]}` : DAYS[selectedDay]} · WK{weekNum}
+            {visibleItems.length > 0 && !allSubmitted && (
+              <span style={{ marginLeft:8, color: countedToday === visibleItems.length ? "#4ade80" : "#94a3b8", fontFamily:"'DM Mono',monospace", fontSize:11 }}>
+                {countedToday}/{visibleItems.length} counted
+              </span>
+            )}
           </p>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
@@ -2204,7 +2267,7 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
       {/* Items to count, grouped by section, filtered to selected day's vendors */}
       {dayVendors.length > 0 && !allSubmitted && filteredSections.map(section => (
         <div key={section.section} style={{ marginBottom:16 }}>
-          <div style={{ background:"#080c14", border:"1px solid #1e2d45", borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"8px 16px" }}>
+          <div style={{ background:"#080c14", border:"1px solid #1e2d45", borderBottom:"none", borderRadius:"12px 12px 0 0", padding:"8px 16px", position:"sticky", top:52, zIndex:5 }}>
             <span style={{ color:"#e2e8f0", fontSize:11, fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>{section.section}</span>
           </div>
           <div style={{ border:"1px solid #1e2d45", borderTop:"none", borderRadius:"0 0 12px 12px", overflow:"hidden" }}>
@@ -2219,18 +2282,19 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
                     <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, minWidth:0 }}>
                       <span style={{ color:"#e2e8f0", fontSize:14, fontWeight:500, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.name}</span>
                       <span style={{ background:"#0f2040", border:"1px solid #1e3a5f", borderRadius:4, padding:"1px 6px", color:"#94a3b8", fontSize:9, fontFamily:"'DM Mono',monospace", flexShrink:0 }}>{item.vendor}</span>
+                      {lastCounted[item.id] && <span style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace", flexShrink:0 }}>✓ {agoLabel(lastCounted[item.id])}</span>}
                     </div>
                     <span style={{ background:status.bg, color:status.color, borderRadius:6, padding:"3px 8px", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", flexShrink:0 }}>{status.label}</span>
                   </div>
                   <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                       <span style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace", textTransform:"uppercase", letterSpacing:"0.5px", marginRight:2 }}>Current Stock</span>
-                      <button onClick={() => updateStock(item.id, Math.max(0, s-1))} disabled={vendorSubmitted} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor: vendorSubmitted ? "not-allowed" : "pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+                      <button onClick={() => updateStock(item.id, Math.max(0, s-1))} disabled={vendorSubmitted} style={{ width:40, height:40, background:"#1e2d45", border:"none", borderRadius:10, color:"#94a3b8", cursor: vendorSubmitted ? "not-allowed" : "pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
                       <input type="number" value={s} min={0} inputMode="numeric" pattern="[0-9]*" disabled={vendorSubmitted}
                         onChange={e => updateStock(item.id, e.target.value === "" ? 0 : e.target.value)}
                         onFocus={e => e.target.select()}
-                        style={{ width:52, background:"#080c14", border:"1px solid #475569", borderRadius:8, padding:"6px", color:"#f1f5f9", fontSize:16, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
-                      <button onClick={() => updateStock(item.id, s+1)} disabled={vendorSubmitted} style={{ width:32, height:32, background:"#1e2d45", border:"none", borderRadius:8, color:"#94a3b8", cursor: vendorSubmitted ? "not-allowed" : "pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+                        style={{ width:54, background:"#080c14", border:"1px solid #475569", borderRadius:10, padding:"9px 6px", color:"#f1f5f9", fontSize:16, fontWeight:700, textAlign:"center", outline:"none", fontFamily:"'DM Mono',monospace" }} />
+                      <button onClick={() => updateStock(item.id, s+1)} disabled={vendorSubmitted} style={{ width:40, height:40, background:"#1e2d45", border:"none", borderRadius:10, color:"#94a3b8", cursor: vendorSubmitted ? "not-allowed" : "pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
                     </div>
                     <div>{orderQty > 0 ? <span style={{ background:"#7f1d1d", color:"#fca5a5", borderRadius:6, padding:"4px 10px", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>Order {orderQty}</span> : null}</div>
                   </div>
@@ -3428,6 +3492,21 @@ function BackendView({ inventory, saveInventory, vendors, stock }) {
   const saveItemField = (itemId, field, rawVal) => {
     const numFields = ["upu", "max_stock", "reorder"];
     const val = numFields.includes(field) ? (parseInt(rawVal) || 0) : rawVal;
+    // Duplicate guard: when naming an item, warn if a very similar name already exists
+    if (field === "name" && typeof val === "string" && val.trim() && val.trim().toLowerCase() !== "new item") {
+      const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const target = norm(val);
+      if (target.length >= 3) {
+        const dupe = flatItems(inventory).find(i => {
+          if (i.id === itemId) return false;
+          const other = norm(i.name);
+          return other === target || (other.length >= 4 && (other.includes(target) || target.includes(other)));
+        });
+        if (dupe && !window.confirm(`"${dupe.name}" already exists in ${dupe.section}.\n\nAdd "${val.trim()}" anyway?`)) {
+          return; // keep the old name
+        }
+      }
+    }
     saveInventory(inventory.map(s => ({ ...s, items: s.items.map(i => i.id === itemId ? { ...i, [field]: val } : i) })));
   };
 
