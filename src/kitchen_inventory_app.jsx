@@ -3770,7 +3770,7 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
   // Pad on the left so we always render 4 columns
   const colWeeks = [...Array(4 - recentWeeks.length).fill(null), ...recentWeeks];
 
-  const weekLabel = (wk, idx) => wk ? `W${wk.split("-WK")[1] || ""}` : `Wk ${idx + 1}`;
+  const weekLabel = (wk) => wk ? `W${wk.split("-WK")[1] || ""}` : "—";
 
   // Build per-item rows — EVERY item, even with no data
   // All numbers display in ORDER UNITS (cases / each / etc) — the unit you actually order in.
@@ -3780,13 +3780,28 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
     const upu = item.upu || 1;
     const orderUnit = (item.order_unit || "unit").toLowerCase();
     const isCase = upu > 1;
+    // A week "counted" an item if that week's snapshot is real. Every item is
+    // counted every week, so a missing item in an otherwise-populated week means
+    // it was 0 (empty → order to par), NOT "skip". We only skip a week entirely
+    // when its snapshot is missing or too sparse to be a real count (e.g. an
+    // interrupted count that never finished), which would otherwise invent a
+    // giant fake usage spike for every item that didn't save.
+    const REAL_COUNT_MIN = 10; // a real weekly count has at least this many items
+    const weekItemCount = (wk) => {
+      const snap = stockSnapshots[wk];
+      if (!snap) return 0;
+      return Object.keys(snap).filter(k => k !== "_ts").length;
+    };
     // Per-week usage in INDIVIDUALS first, then convert
     const usageByWeek = {};
     for (let i = 0; i < snapWeeks.length - 1; i++) {
       const wkA = snapWeeks[i], wkB = snapWeeks[i + 1];
-      const startCount = stockSnapshots[wkA]?.[id];
-      const endCount = stockSnapshots[wkB]?.[id];
-      if (startCount === undefined || endCount === undefined) continue;
+      const aReal = weekItemCount(wkA) >= REAL_COUNT_MIN;
+      const bReal = weekItemCount(wkB) >= REAL_COUNT_MIN;
+      if (!aReal || !bReal) continue; // one of the weeks wasn't a real full count — can't trust the delta
+      // Within a real count week, a missing item == counted 0 (empty).
+      const startCount = stockSnapshots[wkA]?.[id] ?? 0;
+      const endCount = stockSnapshots[wkB]?.[id] ?? 0;
       const received = receivedUnits(id, wkA);
       const usageIndividuals = startCount + received - endCount;
       if (usageIndividuals >= 0) {
