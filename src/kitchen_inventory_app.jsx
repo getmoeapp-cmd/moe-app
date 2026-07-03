@@ -226,10 +226,15 @@ const getSB = () => {
   return _sb;
 };
 
-// Load Supabase client script
+// Load Supabase client script.
+// Caches the load promise so a second caller waits for the SAME script load
+// instead of resolving early while the script is still downloading.
+let _sbLoadPromise = null;
 const loadSupabase = () => {
-  if (typeof window === "undefined" || document.getElementById("sb-script")) return Promise.resolve();
-  return new Promise((resolve) => {
+  if (typeof window === "undefined" || window.supabase) return Promise.resolve();
+  if (_sbLoadPromise) return _sbLoadPromise;
+  if (document.getElementById("sb-script")) return Promise.resolve();
+  _sbLoadPromise = new Promise((resolve) => {
     const s = document.createElement("script");
     s.id = "sb-script";
     s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";
@@ -237,9 +242,39 @@ const loadSupabase = () => {
     s.onerror = resolve;
     document.head.appendChild(s);
   });
+  return _sbLoadPromise;
 };
 const sbGet = async (grp, key) => { const sb = getSB(); if (!sb) return null; try { const { data, error } = await sb.from("moe_data").select("data_value").eq("group_id", grp).eq("data_key", key).single(); if (error || !data) return null; return JSON.parse(data.data_value); } catch { return null; } };
 const sbSet = async (grp, key, value) => { const sb = getSB(); if (!sb) return; try { await sb.from("moe_data").upsert({ group_id: grp, data_key: key, data_value: JSON.stringify(value) }, { onConflict: "group_id,data_key" }); } catch {} };
+
+// ─── PRICE HELPERS ────────────────────────────────────────────────────────────
+// ONE canonical way to read a price out of priceHistory, used by every section
+// (Recipes, Dashboard, Price Tracker, Waste Log, Food Cost). Handles all the
+// entry formats that exist in production data:
+//   • basis:"unit" entries (new format)      → perUnit is already per INDIVIDUAL unit
+//   • legacy entries WITH perUnit            → inline-edit / order-review typed the
+//     ORDER-unit (case) price, so divide by upu to get the individual-unit price
+//   • legacy entries WITHOUT perUnit         → invoice/CSV/manual-entry flows already
+//     stored price per INDIVIDUAL unit (post-UPU expansion)
+const entryPerUnit = (entry, upu = 1) => {
+  if (!entry) return null;
+  const u = Math.max(1, Number(upu) || 1);
+  if (entry.basis === "unit" && entry.perUnit != null) return Number(entry.perUnit);
+  if (entry.perUnit != null) return Number(entry.perUnit) / u;
+  return entry.price != null ? Number(entry.price) : null;
+};
+const latestPriceEntry = (priceHistory, itemId) => {
+  const ph = priceHistory?.[itemId];
+  if (!Array.isArray(ph) || ph.length === 0) return null;
+  return [...ph].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+};
+// Latest price per INDIVIDUAL unit (what one egg / one gallon / one block costs)
+const latestPerUnit = (priceHistory, item) => entryPerUnit(latestPriceEntry(priceHistory, item?.id), item?.upu || 1);
+// Latest price per ORDER unit (what one case / bag / each costs — what you pay the vendor)
+const latestPerOrderUnit = (priceHistory, item) => {
+  const p = latestPerUnit(priceHistory, item);
+  return p == null ? null : p * Math.max(1, Number(item?.upu) || 1);
+};
 
 // ─── DATE HELPERS ─────────────────────────────────────────────────────────────
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -350,9 +385,13 @@ const PLANS = {
 };
 const TRIAL_DAYS = 14;
 const DEMO_GROUPS = ["demo"]; // Demo accounts skip subscription
+// Platform admin — ONLY these emails see the 👑 Admin panel (all signups, reps, announcements).
+// Every registered restaurant owner has role "owner", so role alone must NOT unlock Admin.
+const ADMIN_EMAILS = ["tommyspizza11419@gmail.com", "owner@kitchen.com"];
+const isPlatformAdmin = (user) => !!user && ADMIN_EMAILS.includes((user.email || "").toLowerCase().trim());
 
 // ─── PDF GENERATOR ────────────────────────────────────────────────────────────
-const printVendorPDF = ({ vendorName, items, weekNum, date, businessName, orderedBy }) => {
+const printVendorPDF = ({ vendorName, items, weekNum, year, date, businessName, orderedBy }) => {
   const win = window.open("", "_blank");
   const rows = items.filter(i => i.qty > 0).map(item =>
     `<tr><td>${item.name}</td><td style="text-align:center">${(item.section || "").replace(/[^\w\s\-&]/g,"").trim()}</td><td style="text-align:center;font-weight:700">${item.qty} ${item.order_unit}</td></tr>`
@@ -362,7 +401,7 @@ const printVendorPDF = ({ vendorName, items, weekNum, date, businessName, ordere
     <style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}.biz{font-size:24px;font-weight:900;color:#111;margin:0 0 2px;text-transform:uppercase;letter-spacing:1px}.vendor{font-size:22px;font-weight:700;color:#444;margin:0 0 6px}.meta{color:#666;font-size:12px;margin-bottom:24px;padding-bottom:12px;border-bottom:2px solid #e5e7eb}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1e293b;color:#fff;padding:10px 14px;text-align:left}th:last-child{text-align:center}td{padding:10px 14px;border-bottom:1px solid #e5e7eb}tr:nth-child(even) td{background:#f9fafb}.footer{margin-top:20px;color:#999;font-size:11px;border-top:1px solid #e5e7eb;padding-top:12px}@media print{body{padding:16px}}</style></head><body>
     ${businessName ? `<div class="biz">${businessName}</div>` : ""}
     <div class="vendor">${vendorName}</div>
-    <h1>Order — Week ${weekNum} (Mon ${(() => { const m = new Date(); const day = m.getDay(); const diff = m.getDate() - day + (day === 0 ? -6 : 1); m.setDate(diff); return m.toLocaleDateString("en-US", { month:"short", day:"numeric" }); })()})</h1>
+    <h1>Order — Week ${weekNum} (Mon ${getWeekMonday(weekNum, year || new Date().getFullYear()).toLocaleDateString("en-US", { month:"short", day:"numeric" })})</h1>
     <div class="meta">${date} · ${totalItems} item${totalItems!==1?"s":""} · Ordered by: <strong>${orderedBy || "—"}</strong></div>
     <table><thead><tr><th>Item</th><th style="text-align:center">Location</th><th style="text-align:center">Qty to Order</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="footer">MOE · Make Ordering Easy · Printed ${new Date().toLocaleDateString()}</div>
@@ -986,6 +1025,8 @@ function MoeApp() {
               ...(canAccess("import") ? [{ key:"import", label:"Import Items", icon:"doc", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
               ...(user.role === "owner" ? [
                 { key:"subscription", label:"Subscription", icon:"subscription", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
+              ] : []),
+              ...(isPlatformAdmin(user) ? [
                 { key:"admin", label:"Admin", icon:"admin", desc:"Signups & accounts" },
               ] : []),
             ];
@@ -1078,8 +1119,8 @@ function MoeApp() {
           <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", whiteSpace:"nowrap" }}>{view.toUpperCase()}</span>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
-          {todayVendors.length > 0 && view !== "orders" && (
-            <button onClick={() => setView("orders")} style={{ background:"#422006", border:"1px solid #d97706", borderRadius:6, padding:"3px 8px", color:"#fbbf24", fontSize:10, fontFamily:"'DM Mono',monospace", fontWeight:600, cursor:"pointer", whiteSpace:"nowrap" }}>
+          {todayVendors.length > 0 && view !== "inventory" && (
+            <button onClick={() => setView("inventory")} style={{ background:"#422006", border:"1px solid #d97706", borderRadius:6, padding:"3px 8px", color:"#fbbf24", fontSize:10, fontFamily:"'DM Mono',monospace", fontWeight:600, cursor:"pointer", whiteSpace:"nowrap" }}>
               {todayVendors.length} due
             </button>
           )}
@@ -1149,7 +1190,7 @@ function MoeApp() {
         {view === "backend" && canAccess("backend") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
         {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} user={user} allFeatures={ALL_FEATURES} autoSubmit={autoSubmit} setAutoSubmit={(v) => { setAutoSubmit(v); save("autoSubmit", v); }} foodCost={foodCost} setFoodCost={(v) => { setFoodCost(v); save("foodCost", v); }} />}
         {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
-        {view === "admin" && user.role === "owner" && <AdminView />}
+        {view === "admin" && isPlatformAdmin(user) && <AdminView />}
       </main>
     </div>
   );
@@ -1576,13 +1617,11 @@ function DashboardView({ user, inventory, stock, vendors, history, stockSnapshot
   const ordersThisWeek = (history || []).filter(o => o.weekNumber === weekNum && o.year === currentYear);
   const ordersThisWeekCount = ordersThisWeek.length;
 
-  // Estimated spend this week (best-effort using latest priceHistory)
-  const latestPrice = (itemId) => {
-    const entries = priceHistory?.[itemId];
-    if (!Array.isArray(entries) || entries.length === 0) return null;
-    const sorted = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
-    return sorted[0]?.price ?? null;
-  };
+  // Estimated spend this week — price per ORDER unit (case/bag/each) × qty ordered.
+  // Uses the shared price helpers so it matches Price Tracker and Recipes exactly.
+  const itemById = {};
+  allItems.forEach(i => { itemById[i.id] = i; });
+  const latestPrice = (itemId) => latestPerOrderUnit(priceHistory, itemById[itemId]);
   let weekSpend = 0;
   let weekSpendComplete = true;
   ordersThisWeek.forEach(o => {
@@ -1600,11 +1639,11 @@ function DashboardView({ user, inventory, stock, vendors, history, stockSnapshot
     .sort((a, b) => b - a)[0];
   const daysSinceCount = lastCountTs ? Math.floor((Date.now() - lastCountTs) / 86400000) : null;
 
-  // Items low on stock (current stock < par/3, simple heuristic)
+  // Items at/below their reorder point — same rule as Place Order and Orders use
   const lowItems = allItems.filter(i => {
     const s = stock?.[i.id] ?? 0;
-    const par = Number(i.par || 0);
-    return par > 0 && s < par * 0.34;
+    const reorder = Number(i.reorder || 0);
+    return reorder > 0 && s <= reorder;
   });
 
   // Recent orders (last 5 across all weeks)
@@ -1663,7 +1702,7 @@ function DashboardView({ user, inventory, stock, vendors, history, stockSnapshot
           <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10, fontFamily: "'DM Mono',monospace" }}>Heads up</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
             {todayVendors.length > 0 && (
-              <button onClick={() => setView("orders")} style={{ ...cardBase, textAlign: "left", cursor: "pointer", borderColor: "#0c4a6e", background: "linear-gradient(135deg, #082f49 0%, #0f1a2e 100%)" }}>
+              <button onClick={() => setView("inventory")} style={{ ...cardBase, textAlign: "left", cursor: "pointer", borderColor: "#0c4a6e", background: "linear-gradient(135deg, #082f49 0%, #0f1a2e 100%)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 12 }}>
                   <div>
                     <div style={{ color: "#38bdf8", fontSize: 12, fontWeight: 600, marginBottom: 6, fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: 0.5 }}>Orders due today</div>
@@ -1775,17 +1814,11 @@ function RecipesView({ inventory, priceHistory, recipes, saveRecipes }) {
   const [editingId, setEditingId] = useState(null); // null = list view, "new" = create, "id" = edit
   const allItems = flatItems(inventory);
 
-  // Latest price per individual unit for an item
+  // Latest price per individual unit for an item — via the shared price helper
+  // so Recipes, Dashboard, Price Tracker, and Waste Log all agree on the number.
   const latestPricePerUnit = (itemId) => {
-    const entries = priceHistory?.[itemId];
-    if (!Array.isArray(entries) || entries.length === 0) return null;
-    const sorted = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
-    const top = sorted[0];
-    if (top?.perUnit != null) return Number(top.perUnit);
-    // Fallback: price ÷ qty (case → per unit) if upu known via item
     const item = allItems.find(i => i.id === itemId);
-    const upu = Number(item?.units_per_unit || item?.upu || 1) || 1;
-    return top?.price != null ? Number(top.price) / upu : null;
+    return latestPerUnit(priceHistory, item || { id: itemId, upu: 1 });
   };
 
   // Cost out a recipe's ingredients
@@ -2159,10 +2192,14 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
   // This week's submitted orders (non-quick)
   const thisWeekOrders = (history || []).filter(h => h.weekNumber === weekNum && h.year === curYear && h.type !== "quick");
 
-  // Submission status per vendor for the selected day
+  // Submission status per vendor for the selected day.
+  // Match on vendor + this week (normalized) — NOT on the stamped day name.
+  // Orders are stamped with the day they were SUBMITTED (e.g. Tuesday night for a
+  // Wednesday vendor), so a day-name match would show "ready to build" after
+  // submitting and allow a double submit.
   const submittedByVendor = {};
   dayVendors.forEach(v => {
-    const found = thisWeekOrders.find(o => o.vendor === v.name && o.day === DAYS[selectedDay]);
+    const found = thisWeekOrders.find(o => (o.vendor || "").trim().toLowerCase() === (v.name || "").trim().toLowerCase());
     if (found) submittedByVendor[v.name] = found;
   });
   const allSubmitted = dayVendors.length > 0 && dayVendors.every(v => submittedByVendor[v.name]);
@@ -2228,8 +2265,8 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
                 <div key={v.id} style={{ background:"linear-gradient(135deg, #022c22 0%, #0f1a2e 100%)", border:"1px solid #064e3b", borderRadius:12, padding:"12px 16px", display:"flex", alignItems:"center", gap:12 }}>
                   <span style={{ fontSize:18 }}>✅</span>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ color:"#a7f3d0", fontWeight:600, fontSize:14 }}>{v.name} — order submitted</div>
-                    <div style={{ color:"#6ee7b7", fontSize:12, marginTop:2 }}>Submitted {DAYS[selectedDay]} at {subTime} · {(sub.lines || []).length} item{(sub.lines || []).length !== 1 ? "s" : ""}</div>
+                    <div style={{ color:"#a7f3d0", fontWeight:600, fontSize:14 }}>{v.name} — order submitted this week</div>
+                    <div style={{ color:"#6ee7b7", fontSize:12, marginTop:2 }}>Submitted {sub.day || ""} at {subTime} · {(sub.lines || []).length} item{(sub.lines || []).length !== 1 ? "s" : ""}</div>
                   </div>
                 </div>
               );
@@ -2239,7 +2276,7 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
                 <span style={{ fontSize:18 }}>📦</span>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ color:"#fbbf24", fontWeight:600, fontSize:14 }}>{v.name} — order ready to build</div>
-                  <div style={{ color:"#d97706", fontSize:12, marginTop:2 }}>Count {v.name}'s items below, then submit from Orders</div>
+                  <div style={{ color:"#d97706", fontSize:12, marginTop:2 }}>Count {v.name}'s items below, then submit at the bottom of this page</div>
                 </div>
               </div>
             );
@@ -2309,7 +2346,7 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
       {dayVendors.length > 0 && !allSubmitted && (() => {
         const pending = dayVendors.filter(v => !submittedByVendor[v.name]);
         const pendingWithOrders = pending.map(v => {
-          const items = flatItems(inventory).filter(i => i.vendor === v.name);
+          const items = flatItems(inventory).filter(i => (i.vendor || "").trim().toLowerCase() === (v.name || "").trim().toLowerCase());
           const lines = items.map(it => ({ ...it, orderQty: calcOrderQty(it, stock[it.id] ?? 0) })).filter(l => l.orderQty > 0);
           return { vendor: v, lines };
         });
@@ -2760,9 +2797,12 @@ function HistoryView({ history, user }) {
   const [collapsedMonths, setCollapsedMonths] = useState({});
 
   // Only show CLOSED orders: received regulars, quick orders, backfills, auto orders.
-  // Open (submitted-but-not-yet-checked-in) regular orders live in the Orders view.
+  // Open (submitted-but-not-yet-checked-in) regular orders live in the Orders view —
+  // BUT the Orders view only shows them for 14 days, so anything older than that
+  // rolls into History here (never checked in ≠ gone).
   const closed = (history || []).filter(e =>
     e.received === true || e.type === "quick" || e.type === "auto" || e.backfill === true
+    || (e.received !== true && (Date.now() - new Date(e.date).getTime()) >= 14 * 86400000)
   );
 
   const typeOf = (e) => e.type === "quick" ? "quick" : e.type === "auto" ? "auto" : e.backfill ? "backfill" : "regular";
@@ -2925,7 +2965,7 @@ function HistoryView({ history, user }) {
                                   style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:12, padding:"4px" }}>
                                   {isOpen ? "Hide" : "View"}
                                 </button>
-                                <button onClick={() => printVendorPDF({ vendorName: entry.vendor, items: entry.lines, weekNum: entry.weekNumber, date: fmtDate(entry.date), businessName: user.business?.name || "", orderedBy: entry.orderedBy || user.name })}
+                                <button onClick={() => printVendorPDF({ vendorName: entry.vendor, items: entry.lines, weekNum: entry.weekNumber, year: entry.year, date: fmtDate(entry.date), businessName: user.business?.name || "", orderedBy: entry.orderedBy || user.name })}
                                   style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"5px 10px", color:"#94a3b8", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}>
                                   <Icon name="doc" size={13} /> PDF
                                 </button>
@@ -3016,6 +3056,12 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
   const [activeTab, setActiveTab] = useState("vendors");
   const [localVendors, setLocalVendors] = useState(vendors);
   const [dirty, setDirty] = useState(false);
+
+  // Keep the local editing copy in sync with the live vendors data (real-time
+  // sync from another device, async load finishing, or a confirmed rep invite).
+  // Only when there are no unsaved edits — otherwise a save here could silently
+  // wipe a vendor that was added elsewhere.
+  useEffect(() => { if (!dirty) setLocalVendors(vendors); }, [vendors, dirty]);
 
   // ── Vendor management ──────────────────────────────────────────────────
   const update = (id, field, value) => {
@@ -3814,12 +3860,15 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
     const weeks = values.length;
     const avg = weeks > 0 ? Math.round((values.reduce((a, b) => a + b, 0) / weeks) * 10) / 10 : null;
     const peak = weeks > 0 ? Math.max(...values) : null;
-    // Recommended par in order units (cases) — peak + 20% buffer, rounded up to whole cases
+    // Recommended par in ORDER UNITS (cases) — peak + 20% buffer, rounded up to whole cases
     const recommendedPar = weeks >= 2 ? Math.ceil(peak * 1.2) : null;
-    const overStock = recommendedPar !== null ? (item.max_stock || 0) - recommendedPar : null;
+    // Current par converted to ORDER UNITS so the whole grid speaks one language.
+    // max_stock is stored in INDIVIDUAL units (see calcOrderQty), so divide by upu.
+    const parOrderUnits = Math.round(((item.max_stock || 0) / upu) * 10) / 10;
+    const overStock = recommendedPar !== null ? parOrderUnits - recommendedPar : null;
     return {
       id, name: item.name, section: item.section || "Other",
-      max_stock: item.max_stock || 0,
+      max_stock: item.max_stock || 0, parOrderUnits,
       orderUnit, upu, isCase,
       cells, weeks, avg, peak, recommendedPar, overStock,
     };
@@ -3917,15 +3966,15 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
                   <span style={{ color: ready ? "#f1f5f9" : "#2a3444", fontSize:14, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>
                     {ready ? s.avg : "—"}
                   </span>
-                  <span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.max_stock || "—"}</span>
+                  <span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.parOrderUnits || "—"}</span>
                   <div style={{ textAlign:"right" }}>
                     {canCut && applyParSuggestion ? (
-                      <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
+                      <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar * (s.upu || 1)); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
                         style={{ background:"none", border:"none", color:"#fbbf24", fontSize:12, fontWeight:700, cursor:"pointer", padding:0, fontFamily:"'DM Mono',monospace" }}>
                         {s.recommendedPar} ▸
                       </button>
                     ) : isShort && applyParSuggestion ? (
-                      <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
+                      <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar * (s.upu || 1)); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
                         style={{ background:"none", border:"none", color:"#38bdf8", fontSize:12, fontWeight:700, cursor:"pointer", padding:0, fontFamily:"'DM Mono',monospace" }}>
                         {s.recommendedPar} ▸
                       </button>
@@ -5054,11 +5103,11 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
   const allItems = flatItems(inventory);
   const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2, "0")}`;
 
-  // Get latest price for an item from price tracker
+  // Get latest price for an item from price tracker — per INDIVIDUAL unit,
+  // since waste is logged in individual units (blocks, gallons, pieces).
   const getPrice = (itemId) => {
-    const hist = priceHistory?.[itemId];
-    if (!hist || hist.length === 0) return null;
-    return [...hist].sort((a, b) => new Date(b.date) - new Date(a.date))[0].price;
+    const item = allItems.find(i => i.id === itemId);
+    return latestPerUnit(priceHistory, item || { id: itemId, upu: 1 });
   };
   const getCost = (entry) => { const p = getPrice(entry.itemId); return p ? p * entry.qty : null; };
 
@@ -5422,10 +5471,12 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors, 
     if (isNaN(price) || price < 0) { setEditingId(null); return; }
     const rounded = Math.round(price * 100) / 100;
     const item = allItems.find(i => String(i.id) === String(itemId));
+    const upu = Math.max(1, Number(item?.upu) || 1);
     const newPH = { ...priceHistory };
     if (!newPH[itemId]) newPH[itemId] = [];
     const curWkKey = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2,"0")}`;
-    newPH[itemId] = [...newPH[itemId], { price: rounded, perUnit: rounded, qty: 1, unit: item?.order_unit || "", date: new Date().toISOString(), weekKey: curWkKey, vendor: item?.vendor || "", source: "manual" }];
+    // Typed value = price per ORDER unit (case/bag/each). perUnit = per individual unit.
+    newPH[itemId] = [...newPH[itemId], { price: rounded, perUnit: Math.round((rounded / upu) * 10000) / 10000, basis: "unit", qty: upu, unit: item?.order_unit || "", date: new Date().toISOString(), weekKey: curWkKey, vendor: item?.vendor || "", source: "manual" }];
     savePriceHistory(newPH);
     setEditingId(null); setEditVal("");
   };
@@ -5439,7 +5490,7 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors, 
       const perUnit = Math.round((total / qty) * 100) / 100;
       const item = allItems.find(i => String(i.id) === String(id));
       if (!newPH[id]) newPH[id] = [];
-      newPH[id].push({ price: perUnit, date: getSelectedDate(), weekKey: wk, vendor: item?.vendor || "", source: "manual" });
+      newPH[id].push({ price: perUnit, perUnit, basis: "unit", date: getSelectedDate(), weekKey: wk, vendor: item?.vendor || "", source: "manual" });
     });
     savePriceHistory(newPH);
     setManualPrices({});
@@ -5567,9 +5618,9 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
       if (!p.matched || isNaN(p.price)) return;
       const item = allItems.find(i => i.id === p.matched);
       const qty = Math.max(1, p.qty || 1);
-      const perUnit = p.price / qty;
+      const perUnit = Math.round((p.price / qty) * 100) / 100;
       if (!newPH[p.matched]) newPH[p.matched] = [];
-      newPH[p.matched].push({ price: Math.round(perUnit * 100) / 100, date: getSelectedDate(), weekKey: wk, vendor: item?.vendor || "", source });
+      newPH[p.matched].push({ price: perUnit, perUnit, basis: "unit", date: getSelectedDate(), weekKey: wk, vendor: item?.vendor || "", source });
     });
     savePriceHistory(newPH);
     setParsedPrices([]);
@@ -5616,21 +5667,26 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
   }, [parsedPrices.length]);
 
   // ── Build dashboard data ────────────────────────────────────────────────
+  // Everything compared/displayed per ORDER unit (what you pay the vendor for a
+  // case/bag/each) via the shared helpers — consistent across mixed entry formats.
   const flagged = [];
   const allTracked = [];
   allItems.forEach(item => {
     const itemPH = priceHistory[item.id];
     if (!itemPH || itemPH.length === 0) return;
+    const upu = Math.max(1, Number(item.upu) || 1);
     const sorted = [...itemPH].sort((a, b) => new Date(b.date) - new Date(a.date));
     const current = sorted[0];
     const previous = sorted[1];
-    const entry = { id: item.id, name: item.name, vendor: item.vendor || "", unit: item.order_unit, currentPrice: current.price, currentDate: current.date, currentWeek: current.weekKey, previousPrice: previous?.price || null, previousDate: previous?.date || null, totalEntries: sorted.length, priceHistory: sorted };
-    if (previous) {
-      entry.change = current.price - previous.price;
-      entry.changePct = ((entry.change / previous.price) * 100).toFixed(1);
+    const curPrice = entryPerUnit(current, upu) * upu;
+    const prevPrice = previous ? entryPerUnit(previous, upu) * upu : null;
+    const entry = { id: item.id, name: item.name, vendor: item.vendor || "", unit: item.order_unit, currentPrice: curPrice, currentDate: current.date, currentWeek: current.weekKey, previousPrice: prevPrice, previousDate: previous?.date || null, totalEntries: sorted.length, priceHistory: sorted };
+    if (previous && prevPrice > 0) {
+      entry.change = curPrice - prevPrice;
+      entry.changePct = ((entry.change / prevPrice) * 100).toFixed(1);
     }
     allTracked.push(entry);
-    if (entry.change && entry.change > 0) flagged.push(entry);
+    if (entry.change && entry.change > 0.001) flagged.push(entry);
   });
 
   flagged.sort((a, b) => parseFloat(b.changePct) - parseFloat(a.changePct));
@@ -5640,12 +5696,12 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
   const manualItems = allItems.filter(i => (filterVendor === "ALL" || (i.vendor || "") === filterVendor) && (!search || i.name.toLowerCase().includes(search.toLowerCase())));
 
   // ══ FOOD COST ADD-ON ═══════════════════════════════════════════════════════
-  // Standing price for an item = most recent price entry's perUnit
+  // Standing price PER ORDER UNIT (what one case/bag/each costs) — this is what
+  // the review inputs hold, since line totals = price × qty-in-order-units.
   const standingPrice = (itemId) => {
-    const ph = priceHistory[itemId];
-    if (!ph || ph.length === 0) return null;
-    const sorted = [...ph].sort((a, b) => new Date(b.date) - new Date(a.date));
-    return sorted[0].perUnit ?? sorted[0].price ?? null;
+    const item = allItems.find(i => i.id === itemId);
+    const p = latestPerOrderUnit(priceHistory, item || { id: itemId, upu: 1 });
+    return p == null ? null : Math.round(p * 100) / 100;
   };
   // Last price an item was costed at in a previous order (for comparison)
   const lastOrderedPrice = (itemId, beforeDate) => {
@@ -5738,8 +5794,11 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
       if (line.unitPrice > 0 && line.delivered === "delivered") {
         const sp = standingPrice(line.id);
         if (sp == null || Math.abs(sp - line.unitPrice) > 0.001) {
+          const invItem = allItems.find(i => i.id === line.id);
+          const upu = Math.max(1, Number(invItem?.upu) || 1);
           if (!newPH[line.id]) newPH[line.id] = [];
-          newPH[line.id] = [...newPH[line.id], { price: line.unitPrice, perUnit: line.unitPrice, qty: 1, unit: line.order_unit, date: order.date, weekKey: `${order.year}-WK${String(order.weekNumber).padStart(2,"0")}`, vendor: order.vendor, source: "order-review" }];
+          // unitPrice is per ORDER unit — store per-individual perUnit alongside it
+          newPH[line.id] = [...newPH[line.id], { price: line.unitPrice, perUnit: Math.round((line.unitPrice / upu) * 10000) / 10000, basis: "unit", qty: upu, unit: line.order_unit, date: order.date, weekKey: `${order.year}-WK${String(order.weekNumber).padStart(2,"0")}`, vendor: order.vendor, source: "order-review" }];
         }
       }
     });
