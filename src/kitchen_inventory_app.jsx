@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { SUPABASE_URL, SUPABASE_ANON_KEY as SUPABASE_ANON } from "./lib/config";
 import { DEFAULT_INVENTORY, DEFAULT_VENDORS, DEMO_USERS as USERS } from "./lib/defaults";
+import { calcQuizSavings, quizPaybackDays, quizRoiMultiple } from "./lib/quizMath";
 import {
   DAYS, DAYS_SHORT, getWeekNumber, getToday, fmtDate, getWeekMonday, fmtWeekLabel,
   calcOrderQty, getStatus, flatItems, vendorsOrderingToday,
@@ -167,8 +169,8 @@ export function MoeApp() {
   const [flash, setFlash]       = useState("");
   const [loginError, setLoginError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [inventoryGroupOpen, setInventoryGroupOpen] = useState(true); // Sidebar Inventory submenu
-  const [menuGroupOpen, setMenuGroupOpen] = useState(true);           // Sidebar Menu submenu
+  const [moreOpen, setMoreOpen] = useState(false);
+  const navOpenedAt = useRef(0);
   const [usageLog, setUsageLog]     = useState({});
   const [stockSnapshots, setStockSnapshots] = useState({}); // { [weekKey]: { [itemId]: count, _ts } }
   const [countLog, setCountLog]             = useState([]); // append-only: [{ i: itemId, q: qty, by, at }] newest first, capped
@@ -666,6 +668,14 @@ export function MoeApp() {
 
   const todayVendors = vendorsOrderingToday(vendors);
   const weekNum = getWeekNumber();
+  const openNav = () => {
+    navOpenedAt.current = Date.now();
+    setSidebarOpen(true);
+  };
+  const closeNavFromOverlay = () => {
+    if (Date.now() - navOpenedAt.current < 400) return;
+    setSidebarOpen(false);
+  };
 
   // All features that can be toggled
   const ALL_FEATURES = [
@@ -730,128 +740,88 @@ export function MoeApp() {
         </div>
       )}
 
-      {/* Sidebar overlay */}
-      {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200 }} />}
-
-      {/* Sidebar */}
-      <div style={{ position:"fixed", top:0, left:0, height:"100vh", width:260, background:"#0f1a2e", borderRight:"1px solid #1e2d45", transform:sidebarOpen?"translateX(0)":"translateX(-100%)", transition:"transform 0.25s ease", zIndex:201, display:"flex", flexDirection:"column" }}>
-        <div style={{ padding:"20px", borderBottom:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <MoeLogo size="md" />
-          <button onClick={() => setSidebarOpen(false)} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:18 }}>✕</button>
-        </div>
-        <div style={{ padding:"14px 20px", borderBottom:"1px solid #1e2d45" }}>
-          <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{user.name}</div>
-          <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · WK{weekNum} · {DAYS[getToday()]}</div>
-        </div>
-        <div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
-          {(() => {
-            // Build the inventory sub-items (only those the user can access)
-            const inventoryChildren = [
-              ...(canAccess("inventory") ? [{ key:"inventory", label:"Place Order", icon:"inventory", desc:"Count stock & build order" }] : []),
-              ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
-              ...(canAccess("history") ? [{ key:"history", label:"History", icon:"history", desc:"Past orders by week" }] : []),
-              ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-              ...(canAccess("waste") ? [{ key:"waste", label:"Waste Log", icon:"waste", desc:"Track what's going in the trash" }] : []),
-              ...(canAccess("backend") ? [{ key:"backend", label:"Backend", icon:"backend", desc:"Add & edit items" }] : []),
-            ];
-            const inventoryChildKeys = inventoryChildren.map(c => c.key);
-            const inventoryActiveChild = inventoryChildKeys.includes(view);
-            const showInventoryGroup = inventoryChildren.length > 0;
-
-            // Build the Menu sub-items (recipes, future menu builder, food cost, P&L)
-            const menuChildren = [
-              ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes & Costs", icon:"recipes", desc:"Build recipes, see dish cost" }] : []),
-            ];
-            const menuChildKeys = menuChildren.map(c => c.key);
-            const menuActiveChild = menuChildKeys.includes(view);
-            const showMenuGroup = menuChildren.length > 0;
-
-            // Top-level items (flat). Inventory & Menu groups are rendered specially below.
-            const topLevel = [
-              ...(user.role === "owner" ? [{ key:"dashboard", label:"Dashboard", icon:"dashboard", desc:"Overview & quick actions" }] : []),
-              ...(canAccess("prices") ? [{ key:"prices", label:"Price Tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-              ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Vendors & team" }] : []),
-              ...(canAccess("import") ? [{ key:"import", label:"Import Items", icon:"doc", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-              ...(user.role === "owner" ? [
-                { key:"subscription", label:"Subscription", icon:"subscription", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
-              ] : []),
-              ...(isPlatformAdmin(user) ? [
-                { key:"admin", label:"Admin", icon:"admin", desc:"Signups & accounts" },
-              ] : []),
-            ];
-
-            // Render an individual nav button (used for both top-level and child)
-            const renderNavItem = (item, isChild = false) => {
-              const isActive = view === item.key;
-              return (
-                <button key={item.key} className="moe-nav"
-                  onClick={() => { if (!item.locked) { setView(item.key); setSidebarOpen(false); } else { setView("subscription"); setSidebarOpen(false); } }}
-                  style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#0f1a2e":"transparent", border:"none", borderRadius:10,
-                    padding: isChild ? "9px 14px 9px 32px" : "11px 14px",
-                    cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #38bdf8":"3px solid transparent", opacity:item.locked?0.5:1 }}>
-                  <Icon name={item.icon} size={isChild ? 16 : 19} color={isActive ? "#38bdf8" : "#64748b"} />
-                  <div style={{ textAlign:"left", flex:1 }}>
-                    <div style={{ color:isActive?"#f1f5f9":"#94a3b8", fontSize: isChild ? 13 : 14, fontWeight:isActive?600:400, display:"flex", alignItems:"center", gap:6 }}>{item.label}{item.locked ? <Icon name="alert" size={12} color="#d97706" /> : null}</div>
-                    {!isChild && <div style={{ color:item.locked?"#d97706":"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>}
-                  </div>
-                  {item.badge > 0 && <span style={{ background:"rgba(56,189,248,0.15)", color:"#38bdf8", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
-                </button>
-              );
-            };
-
-            // Place Inventory group right after Dashboard
-            const dashboardItem = topLevel.find(t => t.key === "dashboard");
-            const afterDashboard = topLevel.filter(t => t.key !== "dashboard");
-
-            return (
-              <>
-                {dashboardItem && renderNavItem(dashboardItem)}
-                {showInventoryGroup && (
-                  <>
-                    <button onClick={() => setInventoryGroupOpen(o => !o)}
-                      style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background: inventoryActiveChild ? "#0f1a2e" : "transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft: inventoryActiveChild ? "3px solid #38bdf8" : "3px solid transparent" }}>
-                      <Icon name="inventory" size={19} color={inventoryActiveChild ? "#38bdf8" : "#64748b"} />
+      {sidebarOpen && createPortal(
+        <>
+          <div onClick={closeNavFromOverlay} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:10000 }} />
+          <div role="dialog" aria-label="Menu" style={{ position:"fixed", top:0, left:0, height:"100dvh", width:"min(260px, 88vw)", background:"#0f1a2e", borderRight:"1px solid #1e2d45", zIndex:10001, display:"flex", flexDirection:"column", boxShadow:"8px 0 24px rgba(0,0,0,0.35)" }}>
+            <div style={{ padding:"20px", borderBottom:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+              <MoeLogo size="md" />
+              <button type="button" aria-label="Close menu" onClick={() => setSidebarOpen(false)} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:18 }}>✕</button>
+            </div>
+            <div style={{ padding:"14px 20px", borderBottom:"1px solid #1e2d45", flexShrink:0 }}>
+              <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{user.name}</div>
+              <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · WK{weekNum} · {DAYS[getToday()]}</div>
+            </div>
+            <div style={{ flex:1, minHeight:0, padding:"12px", overflowY:"auto" }}>
+              {(() => {
+                const go = (key) => { setView(key); setSidebarOpen(false); };
+                const primary = [
+                  ...(user.role === "owner" ? [{ key:"dashboard", label:"Dashboard", icon:"dashboard", desc:"Overview" }] : []),
+                  ...(canAccess("inventory") ? [{ key:"inventory", label:"Place Order", icon:"inventory", desc:"Count stock and order" }] : []),
+                  ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} supplier${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
+                  ...(canAccess("history") ? [{ key:"history", label:"Order History", icon:"history", desc:"Past supplier orders" }] : []),
+                  ...(canAccess("backend") ? [{ key:"backend", label:"Edit items", icon:"backend", desc:"Names, pars, suppliers" }] : []),
+                  ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Suppliers and team" }] : []),
+                ];
+                const more = [
+                  ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Usage suggestions", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+                  ...(canAccess("waste") ? [{ key:"waste", label:"Waste log", icon:"waste", desc:"Parked until the count is in use" }] : []),
+                  ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes", icon:"recipes", desc:"Dish cost" }] : []),
+                  ...(canAccess("prices") ? [{ key:"prices", label:"Price tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice prices", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+                  ...(canAccess("import") ? [{ key:"import", label:"Import items", icon:"doc", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload a list or invoice", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+                  ...(user.role === "owner" ? [{ key:"subscription", label:"Subscription", icon:"subscription", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") }] : []),
+                  ...(isPlatformAdmin(user) ? [{ key:"admin", label:"Admin", icon:"admin", desc:"Accounts" }] : []),
+                ];
+                const moreExpanded = moreOpen || more.some(item => item.key === view);
+                const renderNavItem = (item) => {
+                  const isActive = view === item.key;
+                  return (
+                    <button key={item.key} type="button" className="moe-nav"
+                      onClick={() => go(item.locked ? "subscription" : item.key)}
+                      style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#0f1a2e":"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #38bdf8":"3px solid transparent", opacity:item.locked?0.5:1 }}>
+                      <Icon name={item.icon} size={19} color={isActive ? "#38bdf8" : "#64748b"} />
                       <div style={{ textAlign:"left", flex:1 }}>
-                        <div style={{ color: inventoryActiveChild ? "#f1f5f9" : "#94a3b8", fontSize:14, fontWeight: inventoryActiveChild ? 600 : 400 }}>Inventory</div>
-                        <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{inventoryChildren.length} tools</div>
+                        <div style={{ color:isActive?"#f1f5f9":"#94a3b8", fontSize:14, fontWeight:isActive?600:400, display:"flex", alignItems:"center", gap:6 }}>{item.label}{item.locked ? <Icon name="alert" size={12} color="#d97706" /> : null}</div>
+                        <div style={{ color:item.locked?"#d97706":"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>
                       </div>
-                      <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: inventoryGroupOpen ? "rotate(0deg)" : "rotate(-90deg)" }} />
+                      {item.badge > 0 && <span style={{ background:"rgba(56,189,248,0.15)", color:"#38bdf8", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
                     </button>
-                    {inventoryGroupOpen && inventoryChildren.map(child => renderNavItem(child, true))}
-                  </>
-                )}
-                {showMenuGroup && (
+                  );
+                };
+                return (
                   <>
-                    <button onClick={() => setMenuGroupOpen(o => !o)}
-                      style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background: menuActiveChild ? "#0f1a2e" : "transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft: menuActiveChild ? "3px solid #38bdf8" : "3px solid transparent" }}>
-                      <Icon name="recipes" size={19} color={menuActiveChild ? "#38bdf8" : "#64748b"} />
-                      <div style={{ textAlign:"left", flex:1 }}>
-                        <div style={{ color: menuActiveChild ? "#f1f5f9" : "#94a3b8", fontSize:14, fontWeight: menuActiveChild ? 600 : 400 }}>Menu</div>
-                        <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{menuChildren.length} tool{menuChildren.length !== 1 ? "s" : ""}</div>
-                      </div>
-                      <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: menuGroupOpen ? "rotate(0deg)" : "rotate(-90deg)" }} />
-                    </button>
-                    {menuGroupOpen && menuChildren.map(child => renderNavItem(child, true))}
+                    {primary.map(renderNavItem)}
+                    {more.length > 0 && (
+                      <>
+                        <button type="button" onClick={() => setMoreOpen(open => !open)}
+                          style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginTop:8, borderLeft:"3px solid transparent" }}>
+                          <div style={{ textAlign:"left", flex:1 }}>
+                            <div style={{ color:"#64748b", fontSize:13, fontWeight:600 }}>More</div>
+                            <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>Waste, prices, recipes, import</div>
+                          </div>
+                          <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: moreExpanded ? "rotate(0deg)" : "rotate(-90deg)" }} />
+                        </button>
+                        {moreExpanded && more.map(renderNavItem)}
+                      </>
+                    )}
                   </>
-                )}
-                {afterDashboard.map(item => renderNavItem(item))}
-              </>
-            );
-          })()}
-        </div>
-        <div style={{ padding:"12px", borderTop:"1px solid #1e2d45" }}>
-          <button onClick={() => setUser(null)} style={{ width:"100%", background:"transparent", border:"1px solid #1e2d45", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13 }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#64748b"; }}>
-            Sign Out
-          </button>
-        </div>
-      </div>
+                );
+              })()}
+            </div>
+            <div style={{ padding:"12px", borderTop:"1px solid #1e2d45", flexShrink:0 }}>
+              <button type="button" onClick={() => setUser(null)} style={{ width:"100%", background:"transparent", border:"1px solid #1e2d45", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13 }}>
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
 
       {/* Header */}
       <header style={{ background:"#0f1a2e", borderBottom:"1px solid #1e2d45", padding:"0 12px", display:"flex", alignItems:"center", justifyContent:"space-between", height:52, position:"sticky", top:0, zIndex:101, gap:8, overflow:"hidden" }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
-          <button onClick={() => setSidebarOpen(true)} style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}
+          <button type="button" aria-label="Open menu" onPointerUp={(event) => { event.preventDefault(); event.stopPropagation(); openNav(); }} style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}
             onMouseEnter={e => e.currentTarget.style.background="#1e2d45"} onMouseLeave={e => e.currentTarget.style.background="none"}>
             <span style={{ display:"block", width:18, height:2, background:"#94a3b8", borderRadius:2 }} />
             <span style={{ display:"block", width:18, height:2, background:"#94a3b8", borderRadius:2 }} />
@@ -1108,13 +1078,13 @@ function LoginScreen({ onLogin, error, setError }) {
 
   // Also check registered accounts and team members on login
   const handleLoginWithAccounts = async () => {
-    await loadSupabase();
     const emailLower = email.toLowerCase().trim();
     const rememberEmail = () => { try { localStorage.setItem("moe_last_email", emailLower); } catch {} };
 
-    // Check hardcoded demo users first
     const u = USERS[emailLower];
     if (u && u.password === pass) { rememberEmail(); onLogin({ ...u, email: emailLower }); return; }
+
+    await loadSupabase();
 
     // Check registered owner accounts
     const accounts = await sbGet("__moe_accounts__", "accounts") || {};
@@ -1336,13 +1306,6 @@ function LoginScreen({ onLogin, error, setError }) {
           </div>
         )}
 
-        {/* Demo credentials */}
-        {mode === "signin" && (
-          <div style={{ marginTop:20, background:"#0f1a2e", borderRadius:12, border:"1px solid #1e2d45", padding:"14px 18px" }}>
-            <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Demo Credentials</div>
-            <div style={{ color:"#94a3b8", fontSize:12, lineHeight:2 }}><span style={{ color:"#e2e8f0" }}>Owner:</span> owner@kitchen.com / owner123<br /><span style={{ color:"#22c55e" }}>Employee:</span> employee@kitchen.com / employee123</div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -2887,13 +2850,17 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
 
       {/* Tabs */}
       <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
-        {[{ key:"vendors", label:"Vendors", icon:"📦" }, { key:"team", label:"Team", icon:"👥" }, { key:"permissions", label:"Permissions", icon:"🔐" }].map(tab => (
+        {[{ key:"vendors", label:"Vendors", icon:"📦" }, { key:"team", label:"Team", icon:"👥" }].map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             style={{ background:activeTab===tab.key?"#e2e8f0":"transparent", border:`1px solid ${activeTab===tab.key?"#e2e8f0":"#1e2d45"}`, borderRadius:8, padding:"7px 16px", color:activeTab===tab.key?"#080c14":"#64748b", fontSize:13, fontWeight:activeTab===tab.key?600:400, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
             {tab.icon} {tab.label}
             {tab.key === "team" && <span style={{ background:"#0f2040", color:"#a5b4fc", borderRadius:10, padding:"1px 7px", fontSize:10, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{team.length}</span>}
           </button>
         ))}
+        <button type="button" onClick={() => setActiveTab("permissions")}
+          style={{ background:"none", border:"none", color:activeTab==="permissions"?"#e2e8f0":"#475569", fontSize:12, cursor:"pointer", padding:"7px 8px" }}>
+          Role permissions
+        </button>
       </div>
 
       {/* ── VENDORS TAB ── */}
@@ -4507,7 +4474,7 @@ function LandingPage() {
       {/* ═══ NAV ═══ */}
       <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "16px 0", background: "rgba(6,10,18,0.8)", backdropFilter: "blur(20px)", borderBottom: "1px solid var(--border)" }}>
         <div className="ctn" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <a href="#" style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, fontSize: "1.25rem", letterSpacing: "-0.02em" }}>
+          <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, fontSize: "1.25rem", letterSpacing: "-0.02em", color: "inherit", textDecoration: "none" }}>
             <svg viewBox="0 0 40 40" fill="none" width="36" height="36">
               <polygon points="20,2.5 36.5,11.25 36.5,28.75 20,37.5 3.5,28.75 3.5,11.25" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.35"/>
               <polygon points="20,8 31,14 31,26 20,32 9,26 9,14" fill="none" stroke="#38bdf8" strokeWidth="1.2" opacity="0.5"/>
@@ -4788,9 +4755,9 @@ function LandingPage() {
         <div className="ctn" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
           <div style={{ fontSize: "0.8rem", color: "var(--t3)" }}>© {new Date().getFullYear()} MOE — Make Ordering Easy. All rights reserved.</div>
           <div style={{ display: "flex", gap: 24 }}>
-            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Privacy</a>
-            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Terms</a>
-            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Contact</a>
+            <a href="/privacy" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Privacy</a>
+            <a href="/terms" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Terms</a>
+            <a href="/contact" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Contact</a>
           </div>
         </div>
       </footer>
@@ -6312,21 +6279,8 @@ function SavingsQuiz() {
 
   const update = (field, val) => setAnswers(prev => ({ ...prev, [field]: val }));
 
-  const calcSavings = () => {
-    const spend = { "$1,000-$3,000": 2000, "$3,000-$5,000": 4000, "$5,000-$10,000": 7500, "$10,000+": 12000 }[answers.weeklySpend] || 3000;
-    const overOrderPct = { "Rarely": 0.03, "Sometimes": 0.06, "Often": 0.10, "All the time": 0.15 }[answers.overOrder] || 0.06;
-    const emergencyAmt = { "Never": 0, "1-2x/month": 75, "Weekly": 150, "Multiple/week": 300 }[answers.emergencyRuns] || 75;
-    const teamHours = { "Just me": 3, "2-5": 4, "6-10": 5, "10+": 7 }[answers.teamSize] || 4;
-    const wastePct = answers.trackWaste === "No" ? 0.05 : 0.02;
-    const overOrdering = Math.round(spend * overOrderPct);
-    const emergency = emergencyAmt;
-    const labor = Math.round(teamHours * 28);
-    const waste = Math.round(spend * wastePct);
-    const weekly = overOrdering + emergency + labor + waste;
-    return { overOrdering, emergency, labor, waste, weekly, monthly: Math.round(weekly * 4.3), annual: Math.round(weekly * 52) };
-  };
-
-  const savings = calcSavings();
+  const savings = calcQuizSavings(answers);
+  const paybackDays = quizPaybackDays(savings.monthly);
 
   useEffect(() => {
     if (!showResults) return;
@@ -6447,12 +6401,13 @@ function SavingsQuiz() {
               ${animatedTotal.toLocaleString()}
             </div>
             <div style={{ color:"#fca5a5", fontSize:16, fontWeight:600, marginBottom:4 }}>per month</div>
-            <div style={{ color:"#475569", fontSize:13, marginBottom:24 }}>That's ${savings.annual.toLocaleString()} per year walking out the door</div>
+            <div style={{ color:"#475569", fontSize:13, marginBottom:8 }}>${savings.annual.toLocaleString()} per year · monthly total × 12</div>
+            <div style={{ color:"#334155", fontSize:12, marginBottom:24 }}>Each line is a month. They add up to the total above.</div>
 
             <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:14, padding:"20px", marginBottom:20, textAlign:"left" }}>
-              <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:14, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Where it's going</div>
+              <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:14, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Where it is going</div>
               {[
-                { label:"Over-ordering & spoilage", value:savings.overOrdering, icon:"📦", color:"#fca5a5" },
+                { label:"Over-ordering and spoilage", value:savings.overOrdering, icon:"📦", color:"#fca5a5" },
                 { label:"Emergency supply runs", value:savings.emergency, icon:"🚗", color:"#fbbf24" },
                 { label:"Manager time on manual ordering", value:savings.labor, icon:"⏰", color:"#a5b4fc" },
                 { label:"Untracked waste", value:savings.waste, icon:"🗑️", color:"#f87171" },
@@ -6462,12 +6417,12 @@ function SavingsQuiz() {
                     <span style={{ fontSize:16 }}>{item.icon}</span>
                     <span style={{ color:"#94a3b8", fontSize:13 }}>{item.label}</span>
                   </div>
-                  <span style={{ color:item.color, fontSize:15, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${item.value}/wk</span>
+                  <span style={{ color:item.color, fontSize:15, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${item.value.toLocaleString()}/mo</span>
                 </div>
               ))}
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 0 0", borderTop:"2px solid #1e2d45", marginTop:6 }}>
-                <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:700 }}>Total weekly loss</span>
-                <span style={{ color:"#ef4444", fontSize:18, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>${savings.weekly}/wk</span>
+                <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:700 }}>Monthly total</span>
+                <span style={{ color:"#ef4444", fontSize:18, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>${savings.monthly.toLocaleString()}/mo</span>
               </div>
             </div>
 
@@ -6475,16 +6430,16 @@ function SavingsQuiz() {
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                 <div>
                   <div style={{ color:"#4ade80", fontSize:14, fontWeight:700 }}>MOE Pro — $399/month</div>
-                  <div style={{ color:"#22c55e", fontSize:12, marginTop:2 }}>Pays for itself in {Math.max(1, Math.ceil(399 / savings.weekly * 7))} days</div>
+                  <div style={{ color:"#22c55e", fontSize:12, marginTop:2 }}>{paybackDays ? `Pays for itself in ${paybackDays} days` : "These answers do not show a monthly loss"}</div>
                 </div>
                 <div style={{ textAlign:"right" }}>
-                  <div style={{ color:"#4ade80", fontSize:20, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>{Math.round((savings.monthly / 399) * 10) / 10}x</div>
+                  <div style={{ color:"#4ade80", fontSize:20, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>{quizRoiMultiple(savings.monthly)}x</div>
                   <div style={{ color:"#22c55e", fontSize:10 }}>ROI</div>
                 </div>
               </div>
             </div>
 
-            <button onClick={() => window.__moeNavigate("/app")}
+            <button onClick={() => window.__moeNavigate("/app?signup=1")}
               style={{ width:"100%", background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:12, padding:"16px", color:"#080c14", fontSize:17, fontWeight:700, cursor:"pointer", letterSpacing:"-0.3px", marginBottom:10 }}>
               Start Your Free 14-Day Trial
             </button>

@@ -2,7 +2,13 @@ import { useState } from "react";
 import { signIn, signUp } from "../lib/auth";
 
 export default function LoginScreen({ onLogin }) {
-  const [mode, setMode] = useState("signin");
+  const [mode, setMode] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get("signup") === "1" ? "register" : "signin";
+    } catch {
+      return "signin";
+    }
+  });
   const [email, setEmail] = useState(() => {
     try { return localStorage.getItem("moe_last_email") || ""; } catch { return ""; }
   });
@@ -42,7 +48,7 @@ export default function LoginScreen({ onLogin }) {
   return (
     <main className="shell login">
       <p className="brand">MOE</p>
-      <h1>Count stock. Order what you are low on.</h1>
+      <h1>{mode === "register" ? "Create your kitchen account" : "Count stock. Order what you are low on."}</h1>
       <p className="muted">Kitchen inventory and supplier orders. One restaurant at a time.</p>
 
       {mode === "signin" ? (
@@ -59,7 +65,6 @@ export default function LoginScreen({ onLogin }) {
             New restaurant?{" "}
             <button type="button" className="btn quiet" onClick={() => { setMode("register"); setError(""); }}>Create an account</button>
           </p>
-          <p className="note">Demo kitchen: owner@kitchen.com / owner123</p>
         </form>
       ) : (
         <form onSubmit={submitSignUp} style={{ marginTop: 24 }}>

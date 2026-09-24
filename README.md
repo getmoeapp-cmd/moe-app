@@ -2,7 +2,7 @@
 
 MOE is a kitchen inventory and supplier-ordering app for restaurants. Count what is on hand, see what is low, and place an order with the supplier who sells it.
 
-The default app at `/app` is that path only. Recipes, invoice scanning, waste, insights, team permissions, subscriptions marketing, and sales-rep tools stay in the classic app.
+The default app at `/app` is that path only. Waste, the price tracker, invoice import, recipes, role permissions, and subscription screens stay in the classic app, behind a closed More menu.
 
 ## Run
 
@@ -24,11 +24,15 @@ Create React App builds the client. `vercel.json` rewrites non-API routes to `in
 | URL | What opens |
 | --- | --- |
 | `/` | Marketing site |
-| `/app` | Simplified kitchen (stock, low, order, settings) |
+| `/quiz` | Savings estimate. The trial button opens account creation. |
+| `/app` | Sign in |
+| `/app?signup=1` | Create a restaurant account |
 | `/app?classic=1` or `/classic` | Previous full app |
-| `/quiz` | Savings quiz |
+| `/privacy`, `/terms`, `/contact` | Plain-language pages. No placeholder links. |
 
-Demo kitchen: `owner@kitchen.com` / `owner123`. Employee demo: `employee@kitchen.com` / `employee123` (can count, cannot place orders).
+Sign-in does not display a demo password. Create an account from the quiz or from Create an account. The classic menu keeps Place Order, Orders, Order History, Edit items, and Settings in front. Waste, insights, recipes, the price tracker, invoice import, subscription, and admin sit under More. Role permissions are a text link inside Settings, after Vendors and Team.
+
+The quiz reports one monthly total. The four lines are monthly and add up to it. The year figure is that monthly total times 12. Payback uses the same monthly number against the $399 plan.
 
 ## Environment
 
@@ -73,8 +77,9 @@ Choosing a plan after a trial writes `subscription.status = "active"`. It does n
 ```
 src/App.jsx                 route switch
 src/simple/                 default kitchen UI
-src/lib/                    Supabase, stock math, orders, auth
-src/lib/defaults.js         demo starter list (shared with classic)
+src/lib/                    Supabase, stock math, orders, auth, quiz math
+src/lib/defaults.js         starter list shared with classic
+src/pages/LegalPage.jsx     privacy, terms, contact
 src/kitchen_inventory_app.jsx
 api/claude.js               classic Anthropic proxy
 ```
