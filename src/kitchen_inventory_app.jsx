@@ -1,224 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
+import { SUPABASE_URL, SUPABASE_ANON_KEY as SUPABASE_ANON } from "./lib/config";
+import { DEFAULT_INVENTORY, DEFAULT_VENDORS, DEMO_USERS as USERS } from "./lib/defaults";
+import { calcQuizSavings, quizPaybackDays, quizRoiMultiple } from "./lib/quizMath";
+import {
+  DAYS, DAYS_SHORT, getWeekNumber, getToday, fmtDate, getWeekMonday, fmtWeekLabel,
+  calcOrderQty, getStatus, flatItems, vendorsOrderingToday,
+} from "./lib/stockMath";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MOE — Make Ordering Easy
+// Simplified kitchen flow: src/simple (default at /app). This file is classic MOE (/app?classic=1 or /classic).
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DEFAULT_INVENTORY = [
-  { section: "🌾  DRY GOODS", items: [
-    { id: 5,  name: "Flour",                          order_unit: "Unit",    upu: 1,   vendor: "Anacapri", max_stock: 17,   reorder: 4   },
-    { id: 6,  name: "Yeast",                          order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-  ]},
-  { section: "🥦  PRODUCE", items: [
-    { id: 8,  name: "Basil - Fresh",                  order_unit: "Each",    upu: 1,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 9,  name: "Broccoli Crowns",                order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 10, name: "Cherry Tomatoes",                order_unit: "Unit",    upu: 1,   vendor: "Market",   max_stock: 4,    reorder: 1   },
-    { id: 11, name: "Eggplant",                       order_unit: "Each",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 12, name: "Garlic - Peeled",                order_unit: "Each",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 13, name: "Jalapenos",                      order_unit: "Lbs",     upu: 1,   vendor: "Market",   max_stock: 4,    reorder: 1   },
-    { id: 14, name: "Lemons",                         order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 15, name: "Mushrooms",                      order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 16, name: "Onions - Red",                   order_unit: "Bag",     upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 17, name: "Onions - Yellow",                order_unit: "Bag",     upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 18, name: "Parsley - Fresh",                order_unit: "Unit",    upu: 1,   vendor: "Market",   max_stock: 4,    reorder: 1   },
-    { id: 19, name: "Potatoes",                       order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 20, name: "Romaine Lettuce",                order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 21, name: "Red Peppers",                    order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 22, name: "Green Peppers",                  order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 23, name: "Carrots",                        order_unit: "Bag",     upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 24, name: "Tomatoes",                       order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-  ]},
-  { section: "🧀  DAIRY", items: [
-    { id: 26, name: "American Cheese",                order_unit: "Unit",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 27, name: "Butter Blocks",                  order_unit: "Case",    upu: 36,  vendor: "Anacapri", max_stock: 36,   reorder: 6   },
-    { id: 28, name: "Butter Cups",                    order_unit: "Case",    upu: 100, vendor: "Anacapri", max_stock: 200,  reorder: 50  },
-    { id: 29, name: "Eggs 15 Doz",                    order_unit: "Case",    upu: 2,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 30, name: "Heavy Cream",                    order_unit: "Case",    upu: 12,  vendor: "Anacapri", max_stock: 12,   reorder: 4   },
-    { id: 31, name: "Mozzarella - Curd",              order_unit: "Unit",    upu: 1,   vendor: "Anacapri", max_stock: 5,    reorder: 2   },
-    { id: 32, name: "Mozzarella Grande",              order_unit: "Case",    upu: 2,   vendor: "Anacapri", max_stock: 10,   reorder: 3   },
-    { id: 33, name: "Mozzarella Polly-O",             order_unit: "Case",    upu: 2,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 34, name: "Pecorino Romano - Wheel",        order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 35, name: "Ricotta Cheese Grande",          order_unit: "Case",    upu: 4,   vendor: "Anacapri", max_stock: 8,    reorder: 2   },
-    { id: 36, name: "Velveeta Cheese",                order_unit: "Unit",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 37, name: "Whole Milk",                     order_unit: "Case",    upu: 4,   vendor: "Anacapri", max_stock: 8,    reorder: 2   },
-  ]},
-  { section: "🥩  FRESH MEAT", items: [
-    { id: 39, name: "Chicken Breast - Chicks Choice", order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 10,   reorder: 3   },
-    { id: 40, name: "Chicken Wings - Party",          order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 41, name: "Ham",                            order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-  ]},
-  { section: "🫙  OILS & CANNED GOODS", items: [
-    { id: 43, name: "Liquid Clear Shortening",        order_unit: "Unit",    upu: 1,   vendor: "",         max_stock: 3,    reorder: 1   },
-    { id: 44, name: "Soybean Oil",                    order_unit: "Unit",    upu: 1,   vendor: "",         max_stock: 3,    reorder: 1   },
-    { id: 45, name: "711 (Tomato Sauce)",             order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 24,   reorder: 6   },
-    { id: 46, name: "Saporito",                       order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 24,   reorder: 6   },
-    { id: 47, name: "Valoroso",                       order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 24,   reorder: 6   },
-    { id: 48, name: "Pineapple",                      order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 49, name: "Black Sliced Olives",            order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 50, name: "San Marzano Tomatoes",           order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-  ]},
-  { section: "🍝  PASTA & RICE", items: [
-    { id: 52, name: "Penne",                          order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 40,   reorder: 10  },
-    { id: 53, name: "Spaghetti",                      order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 54, name: "Linguine",                       order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 55, name: "Fettuccine",                     order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 56, name: "Capellini",                      order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 57, name: "Rigatoni",                       order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 58, name: "Whole Wheat Pasta",              order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 59, name: "Jumbo Shells",                   order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 60, name: "Lasagna",                        order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 61, name: "Carolina Rice Extra Long Grain", order_unit: "Bag",     upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-  ]},
-  { section: "❄️  FREEZER 1", items: [
-    { id: 63, name: "Chicken Nuggets",                order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 64, name: "Chicken Tenders",                order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 65, name: "Boneless Wings",                 order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 66, name: "French Fries",                   order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 67, name: "Sweet Potato Fries",             order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 68, name: "Burgers",                        order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 60,   reorder: 20  },
-    { id: 69, name: "Wraps",                          order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 70, name: "Zucchini Sticks",                order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 71, name: "Cheese Ravioli",                 order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 72, name: "Mozzarella Sticks",              order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-  ]},
-  { section: "❄️  FREEZER 2", items: [
-    { id: 74, name: "Chopped Spinach",                order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 75, name: "Bacon Bits",                     order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 76, name: "Turkey",                         order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 77, name: "Pepperoni",                      order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 78, name: "Ribeye Steak",                   order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 79, name: "Veal",                           order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 80, name: "Chopped Meat",                   order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 81, name: "Sausage",                        order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 82, name: "Calamari",                       order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 83, name: "Peeled Shrimp",                  order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 84, name: "Baby Clams",                     order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 85, name: "Mussels",                        order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 86, name: "Tilapia",                        order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-  ]},
-  { section: "🗃️  RACK 1", items: [
-    { id: 88, name: "Salt",                           order_unit: "Bag",     upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 89, name: "Sugar",                          order_unit: "Bag",     upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 90, name: "Bread Crumbs",                   order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 91, name: "Panko Bread Crumbs",             order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 92, name: "Napkins",                        order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 93, name: "Paper Plates",                   order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-  ]},
-  { section: "🗄️  SHELF 1", items: [
-    { id: 95,  name: "Powdered Sugar",                order_unit: "Bag",     upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 96,  name: "Cannoli Shells",                order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 97,  name: "Tie Bags",                      order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 98,  name: "Ziplock Bags Gallon",           order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 99,  name: "Straws",                        order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 100, name: "Forks",                         order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 101, name: "Knives",                        order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 102, name: "Spoons",                        order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 103, name: "Pizza Stack",                   order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 104, name: "Gloves L",                      order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 105, name: "Gloves XL",                     order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 106, name: "18in Clear Film",               order_unit: "Roll",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 107, name: "24in Clear Film",               order_unit: "Roll",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 108, name: "12in Aluminum Foil",            order_unit: "Roll",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 109, name: "Plastic Bags",                  order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 110, name: "Junior Wax",                    order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 111, name: "16oz Deli Container",           order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 112, name: "5¾x6x3 Container",             order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 113, name: "5¼x5⅜x2⅝ Container",          order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-  ]},
-  { section: "🗄️  SHELF 2", items: [
-    { id: 115, name: "8in Dome Lids",                 order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 116, name: "8in Aluminum Dish",             order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 117, name: "7in Dome Lids",                 order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 118, name: "7in Aluminum Dish",             order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 119, name: "20Lb Brown Bags",               order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 120, name: "12Lb Brown Bags",               order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 121, name: "Hero Containers",               order_unit: "Case",    upu: 200, vendor: "",         max_stock: 400,  reorder: 100 },
-    { id: 122, name: "4oz Souffle Lids",              order_unit: "Case",    upu: 200, vendor: "",         max_stock: 400,  reorder: 100 },
-    { id: 123, name: "4oz Souffle Cups",              order_unit: "Case",    upu: 200, vendor: "",         max_stock: 400,  reorder: 100 },
-    { id: 124, name: "2oz Souffle Lids",              order_unit: "Case",    upu: 200, vendor: "",         max_stock: 400,  reorder: 100 },
-    { id: 125, name: "2oz Souffle Cups",              order_unit: "Case",    upu: 200, vendor: "",         max_stock: 400,  reorder: 100 },
-    { id: 126, name: "Heinz Ketchup",                 order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 127, name: "Mayo",                          order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 128, name: "Honey Mustard Dressing",        order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 129, name: "Blue Cheese Dressing",          order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 130, name: "Ranch Dressing",                order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 131, name: "Vinegar",                       order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 132, name: "Italian Dressing",              order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 133, name: "Balsamic Dressing",             order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 134, name: "Olive Oil",                     order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 135, name: "White Wine",                    order_unit: "Case",    upu: 12,  vendor: "",         max_stock: 12,   reorder: 4   },
-    { id: 136, name: "Vodka",                         order_unit: "Case",    upu: 12,  vendor: "",         max_stock: 12,   reorder: 4   },
-    { id: 137, name: "Marsala Wine",                  order_unit: "Case",    upu: 12,  vendor: "",         max_stock: 12,   reorder: 4   },
-  ]},
-  { section: "🥫  CONDIMENTS & SAUCES", items: [
-    { id: 139, name: "Mango",                         order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 140, name: "Garlic Parm",                   order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 141, name: "Franks Red Hot",                order_unit: "Gallon",  upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 142, name: "BBQ Sauce",                     order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 143, name: "Honey BBQ Sauce",               order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 144, name: "Taco Sauce",                    order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 145, name: "Tarter Sauce",                  order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 146, name: "Lemon Juice",                   order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-  ]},
-  { section: "📦  BOXES", items: [
-    { id: 148, name: "18in Boxes",                    order_unit: "Bundle",  upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 149, name: "16in Boxes",                    order_unit: "Bundle",  upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 150, name: "14in Boxes",                    order_unit: "Bundle",  upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 151, name: "12in Boxes",                    order_unit: "Bundle",  upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 152, name: "10in Boxes",                    order_unit: "Bundle",  upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 153, name: "Tommys Paper Cups",             order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-  ]},
-  { section: "🛍️  DISPOSABLES & PACKAGING", items: [
-    { id: 155, name: "Full Size Medium Trays",        order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 156, name: "Half Size Medium Trays",        order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 157, name: "Full Size Deep Trays",          order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 158, name: "Half Size Deep Trays",          order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 50,   reorder: 15  },
-    { id: 159, name: "Full Size Lids",                order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 160, name: "Half Size Lids",                order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 161, name: "Masking Tape Roll",             order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 162, name: "Clear Bags",                    order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 163, name: "Black Bags",                    order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-  ]},
-  { section: "🧹  CLEANING SUPPLIES", items: [
-    { id: 166, name: "Bleach",                        order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 167, name: "Pine Cleaner",                  order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 168, name: "Oven Cleaner",                  order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 169, name: "Glass Cleaner",                 order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 170, name: "Joy Dish Soap",                 order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 171, name: "Steel Sponge",                  order_unit: "Case",    upu: 12,  vendor: "",         max_stock: 24,   reorder: 6   },
-    { id: 172, name: "Broom Head",                    order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 173, name: "Mop Head",                      order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 174, name: "Toilet Bowl Gel",               order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 175, name: "Bathroom Bleach Foamer Spray",  order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 176, name: "Scrubbing Bubbles",             order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 177, name: "Lysol Spray",                   order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 178, name: "Brillo Pads",                   order_unit: "Case",    upu: 12,  vendor: "",         max_stock: 24,   reorder: 6   },
-  ]},
-  { section: "❄️  BOX ROOM FREEZER", items: [
-    { id: 180, name: "Cheesecake",                    order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 181, name: "Tres Leche",                    order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 182, name: "Chocolate Moose",               order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 183, name: "Red Velvet",                    order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 184, name: "Cannoli Cream",                 order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 185, name: "Tiramisu",                      order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-  ]},
-];
-
-const USERS = {
-  "owner@kitchen.com":    { password: "owner123",    role: "owner",    name: "Owner",    group: "demo" },
-  "employee@kitchen.com": { password: "employee123", role: "employee", name: "Employee", group: "demo" },
-  "rep@anacapri.com":     { password: "rep123",       role: "rep",      name: "Enzo Marino", repCode: "DEMO", repCompany: "Anacapri" },
-};
-
-// ─── DEFAULT VENDORS (Tommy's starter) ───────────────────────────────────────
-const DEFAULT_VENDORS = [
-  { id: 1, name: "Anacapri", orderDays: [3] },   // Wednesday
-  { id: 2, name: "Market",   orderDays: [4] },   // Thursday
-];
-
 // ─── SUPABASE ─────────────────────────────────────────────────────────────────
-const SUPABASE_URL  = "https://fsvlxosbbevzyvegbqry.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdmx4b3NiYmV2enl2ZWdicXJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0NzQ2MjgsImV4cCI6MjA4OTA1MDYyOH0.AcnnB4QecNHEu3-N_VS6aPHrpt9kq464arjNc2DNugU";
 let _sb = null;
 const getSB = () => {
   if (_sb) return _sb;
@@ -276,49 +71,6 @@ const latestPerOrderUnit = (priceHistory, item) => {
   return p == null ? null : p * Math.max(1, Number(item?.upu) || 1);
 };
 
-// ─── DATE HELPERS ─────────────────────────────────────────────────────────────
-const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-const DAYS_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const getWeekNumber = (d = new Date()) => { const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7)); const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1)); return Math.ceil((((date - yearStart) / 86400000) + 1) / 7); };
-const getToday = () => new Date().getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-const fmtDate = (d) => new Date(d).toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" });
-
-// Get Monday's date for a given ISO week number and year
-// ISO 8601: week 1 is the week containing Jan 4 — anchor there so this
-// always agrees with getWeekNumber (which is ISO-based).
-const getWeekMonday = (weekNum, year = new Date().getFullYear()) => {
-  const jan4 = new Date(year, 0, 4);
-  const jan4Day = jan4.getDay() || 7; // Mon=1..Sun=7
-  const week1Monday = new Date(year, 0, 4 - (jan4Day - 1));
-  const monday = new Date(week1Monday);
-  monday.setDate(monday.getDate() + (weekNum - 1) * 7);
-  return monday;
-};
-
-// Format: "WK15 · Mon Apr 7"
-const fmtWeekLabel = (weekNum, year) => {
-  const mon = getWeekMonday(weekNum, year);
-  return `WK${weekNum} · Mon ${mon.toLocaleDateString("en-US", { month:"short", day:"numeric" })}`;
-};
-
-// ─── STOCK HELPERS ────────────────────────────────────────────────────────────
-const calcOrderQty = (item, stock) => {
-  const s = stock ?? 0;
-  if (s >= item.reorder) return 0;
-  return Math.ceil(Math.max(0, item.max_stock - s) / Math.max(1, item.upu));
-};
-
-const getStatus = (item, stock) => {
-  const s = stock ?? 0;
-  if (s >= item.max_stock) return { label: "FULL",      color: "#16a34a", bg: "#052e16" };
-  if (s >= item.reorder)   return { label: "OK",        color: "#22c55e", bg: "#052e16" };
-  if (s > 0)               return { label: "LOW",       color: "#f59e0b", bg: "#422006" };
-  return                          { label: "EMPTY",     color: "#ef4444", bg: "#450a0a" };
-};
-
-// Get all items flat with their section + vendor info
-const flatItems = (inventory) => inventory.flatMap(s => s.items.map(i => ({ ...i, section: s.section })));
-
 // Compress image to max 1200px wide, JPEG quality 0.7 — keeps it under Vercel's 4.5MB limit
 const compressImage = (file, maxWidth = 1200, quality = 0.7) => new Promise(async (resolve, reject) => {
   try {
@@ -371,12 +123,6 @@ const compressImage = (file, maxWidth = 1200, quality = 0.7) => new Promise(asyn
   } catch (err) { reject(err); }
 });
 
-// Get vendors ordering today
-const vendorsOrderingToday = (vendors) => {
-  const today = getToday();
-  return vendors.filter(v => v.orderDays && v.orderDays.includes(today));
-};
-
 // ─── SUBSCRIPTION PLANS ──────────────────────────────────────────────────────
 const PLANS = {
   starter:    { name: "Starter",    price: 299, vendors: 3,        items: 100,      users: 2,        label: "For small kitchens" },
@@ -412,7 +158,7 @@ const printVendorPDF = ({ vendorName, items, weekNum, year, date, businessName, 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════════
-function MoeApp() {
+export function MoeApp() {
   const [user, setUser]         = useState(null);
   const [stock, setStock]       = useState({});
   const [vendors, setVendors]   = useState(DEFAULT_VENDORS);
@@ -423,8 +169,8 @@ function MoeApp() {
   const [flash, setFlash]       = useState("");
   const [loginError, setLoginError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [inventoryGroupOpen, setInventoryGroupOpen] = useState(true); // Sidebar Inventory submenu
-  const [menuGroupOpen, setMenuGroupOpen] = useState(true);           // Sidebar Menu submenu
+  const [moreOpen, setMoreOpen] = useState(false);
+  const navOpenedAt = useRef(0);
   const [usageLog, setUsageLog]     = useState({});
   const [stockSnapshots, setStockSnapshots] = useState({}); // { [weekKey]: { [itemId]: count, _ts } }
   const [countLog, setCountLog]             = useState([]); // append-only: [{ i: itemId, q: qty, by, at }] newest first, capped
@@ -922,6 +668,14 @@ function MoeApp() {
 
   const todayVendors = vendorsOrderingToday(vendors);
   const weekNum = getWeekNumber();
+  const openNav = () => {
+    navOpenedAt.current = Date.now();
+    setSidebarOpen(true);
+  };
+  const closeNavFromOverlay = () => {
+    if (Date.now() - navOpenedAt.current < 400) return;
+    setSidebarOpen(false);
+  };
 
   // All features that can be toggled
   const ALL_FEATURES = [
@@ -980,129 +734,94 @@ function MoeApp() {
       `}</style>
 
       <MoeIcons />
-
-      {/* Sidebar overlay */}
-      {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200 }} />}
-
-      {/* Sidebar */}
-      <div style={{ position:"fixed", top:0, left:0, height:"100vh", width:260, background:"#0f1a2e", borderRight:"1px solid #1e2d45", transform:sidebarOpen?"translateX(0)":"translateX(-100%)", transition:"transform 0.25s ease", zIndex:201, display:"flex", flexDirection:"column" }}>
-        <div style={{ padding:"20px", borderBottom:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <MoeLogo size="md" />
-          <button onClick={() => setSidebarOpen(false)} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:18 }}>✕</button>
+      {(new URLSearchParams(window.location.search).get("classic") === "1" || window.location.pathname.startsWith("/classic")) && (
+        <div style={{ background:"#0c1220", color:"#94a3b8", fontSize:12, textAlign:"center", padding:"8px 12px", borderBottom:"1px solid #1e2d45" }}>
+          Classic MOE. <a href="/app" style={{ color:"#38bdf8", fontWeight:700 }}>Switch to the simpler kitchen</a>
         </div>
-        <div style={{ padding:"14px 20px", borderBottom:"1px solid #1e2d45" }}>
-          <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{user.name}</div>
-          <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · WK{weekNum} · {DAYS[getToday()]}</div>
-        </div>
-        <div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
-          {(() => {
-            // Build the inventory sub-items (only those the user can access)
-            const inventoryChildren = [
-              ...(canAccess("inventory") ? [{ key:"inventory", label:"Place Order", icon:"inventory", desc:"Count stock & build order" }] : []),
-              ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
-              ...(canAccess("history") ? [{ key:"history", label:"History", icon:"history", desc:"Past orders by week" }] : []),
-              ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-              ...(canAccess("waste") ? [{ key:"waste", label:"Waste Log", icon:"waste", desc:"Track what's going in the trash" }] : []),
-              ...(canAccess("backend") ? [{ key:"backend", label:"Backend", icon:"backend", desc:"Add & edit items" }] : []),
-            ];
-            const inventoryChildKeys = inventoryChildren.map(c => c.key);
-            const inventoryActiveChild = inventoryChildKeys.includes(view);
-            const showInventoryGroup = inventoryChildren.length > 0;
+      )}
 
-            // Build the Menu sub-items (recipes, future menu builder, food cost, P&L)
-            const menuChildren = [
-              ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes & Costs", icon:"recipes", desc:"Build recipes, see dish cost" }] : []),
-            ];
-            const menuChildKeys = menuChildren.map(c => c.key);
-            const menuActiveChild = menuChildKeys.includes(view);
-            const showMenuGroup = menuChildren.length > 0;
-
-            // Top-level items (flat). Inventory & Menu groups are rendered specially below.
-            const topLevel = [
-              ...(user.role === "owner" ? [{ key:"dashboard", label:"Dashboard", icon:"dashboard", desc:"Overview & quick actions" }] : []),
-              ...(canAccess("prices") ? [{ key:"prices", label:"Price Tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-              ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Vendors & team" }] : []),
-              ...(canAccess("import") ? [{ key:"import", label:"Import Items", icon:"doc", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-              ...(user.role === "owner" ? [
-                { key:"subscription", label:"Subscription", icon:"subscription", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
-              ] : []),
-              ...(isPlatformAdmin(user) ? [
-                { key:"admin", label:"Admin", icon:"admin", desc:"Signups & accounts" },
-              ] : []),
-            ];
-
-            // Render an individual nav button (used for both top-level and child)
-            const renderNavItem = (item, isChild = false) => {
-              const isActive = view === item.key;
-              return (
-                <button key={item.key} className="moe-nav"
-                  onClick={() => { if (!item.locked) { setView(item.key); setSidebarOpen(false); } else { setView("subscription"); setSidebarOpen(false); } }}
-                  style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#0f1a2e":"transparent", border:"none", borderRadius:10,
-                    padding: isChild ? "9px 14px 9px 32px" : "11px 14px",
-                    cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #38bdf8":"3px solid transparent", opacity:item.locked?0.5:1 }}>
-                  <Icon name={item.icon} size={isChild ? 16 : 19} color={isActive ? "#38bdf8" : "#64748b"} />
-                  <div style={{ textAlign:"left", flex:1 }}>
-                    <div style={{ color:isActive?"#f1f5f9":"#94a3b8", fontSize: isChild ? 13 : 14, fontWeight:isActive?600:400, display:"flex", alignItems:"center", gap:6 }}>{item.label}{item.locked ? <Icon name="alert" size={12} color="#d97706" /> : null}</div>
-                    {!isChild && <div style={{ color:item.locked?"#d97706":"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>}
-                  </div>
-                  {item.badge > 0 && <span style={{ background:"rgba(56,189,248,0.15)", color:"#38bdf8", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
-                </button>
-              );
-            };
-
-            // Place Inventory group right after Dashboard
-            const dashboardItem = topLevel.find(t => t.key === "dashboard");
-            const afterDashboard = topLevel.filter(t => t.key !== "dashboard");
-
-            return (
-              <>
-                {dashboardItem && renderNavItem(dashboardItem)}
-                {showInventoryGroup && (
-                  <>
-                    <button onClick={() => setInventoryGroupOpen(o => !o)}
-                      style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background: inventoryActiveChild ? "#0f1a2e" : "transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft: inventoryActiveChild ? "3px solid #38bdf8" : "3px solid transparent" }}>
-                      <Icon name="inventory" size={19} color={inventoryActiveChild ? "#38bdf8" : "#64748b"} />
+      {sidebarOpen && createPortal(
+        <>
+          <div onClick={closeNavFromOverlay} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:10000 }} />
+          <div role="dialog" aria-label="Menu" style={{ position:"fixed", top:0, left:0, height:"100dvh", width:"min(260px, 88vw)", background:"#0f1a2e", borderRight:"1px solid #1e2d45", zIndex:10001, display:"flex", flexDirection:"column", boxShadow:"8px 0 24px rgba(0,0,0,0.35)" }}>
+            <div style={{ padding:"20px", borderBottom:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+              <MoeLogo size="md" />
+              <button type="button" aria-label="Close menu" onClick={() => setSidebarOpen(false)} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:18 }}>✕</button>
+            </div>
+            <div style={{ padding:"14px 20px", borderBottom:"1px solid #1e2d45", flexShrink:0 }}>
+              <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{user.name}</div>
+              <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · WK{weekNum} · {DAYS[getToday()]}</div>
+            </div>
+            <div style={{ flex:1, minHeight:0, padding:"12px", overflowY:"auto" }}>
+              {(() => {
+                const go = (key) => { setView(key); setSidebarOpen(false); };
+                const primary = [
+                  ...(user.role === "owner" ? [{ key:"dashboard", label:"Dashboard", icon:"dashboard", desc:"Overview" }] : []),
+                  ...(canAccess("inventory") ? [{ key:"inventory", label:"Place Order", icon:"inventory", desc:"Count stock and order" }] : []),
+                  ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} supplier${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
+                  ...(canAccess("history") ? [{ key:"history", label:"Order History", icon:"history", desc:"Past supplier orders" }] : []),
+                  ...(canAccess("backend") ? [{ key:"backend", label:"Edit items", icon:"backend", desc:"Names, pars, suppliers" }] : []),
+                  ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Suppliers and team" }] : []),
+                ];
+                const more = [
+                  ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Usage suggestions", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+                  ...(canAccess("waste") ? [{ key:"waste", label:"Waste log", icon:"waste", desc:"Parked until the count is in use" }] : []),
+                  ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes", icon:"recipes", desc:"Dish cost" }] : []),
+                  ...(canAccess("prices") ? [{ key:"prices", label:"Price tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice prices", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+                  ...(canAccess("import") ? [{ key:"import", label:"Import items", icon:"doc", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload a list or invoice", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+                  ...(user.role === "owner" ? [{ key:"subscription", label:"Subscription", icon:"subscription", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") }] : []),
+                  ...(isPlatformAdmin(user) ? [{ key:"admin", label:"Admin", icon:"admin", desc:"Accounts" }] : []),
+                ];
+                const moreExpanded = moreOpen || more.some(item => item.key === view);
+                const renderNavItem = (item) => {
+                  const isActive = view === item.key;
+                  return (
+                    <button key={item.key} type="button" className="moe-nav"
+                      onClick={() => go(item.locked ? "subscription" : item.key)}
+                      style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#0f1a2e":"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #38bdf8":"3px solid transparent", opacity:item.locked?0.5:1 }}>
+                      <Icon name={item.icon} size={19} color={isActive ? "#38bdf8" : "#64748b"} />
                       <div style={{ textAlign:"left", flex:1 }}>
-                        <div style={{ color: inventoryActiveChild ? "#f1f5f9" : "#94a3b8", fontSize:14, fontWeight: inventoryActiveChild ? 600 : 400 }}>Inventory</div>
-                        <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{inventoryChildren.length} tools</div>
+                        <div style={{ color:isActive?"#f1f5f9":"#94a3b8", fontSize:14, fontWeight:isActive?600:400, display:"flex", alignItems:"center", gap:6 }}>{item.label}{item.locked ? <Icon name="alert" size={12} color="#d97706" /> : null}</div>
+                        <div style={{ color:item.locked?"#d97706":"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>
                       </div>
-                      <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: inventoryGroupOpen ? "rotate(0deg)" : "rotate(-90deg)" }} />
+                      {item.badge > 0 && <span style={{ background:"rgba(56,189,248,0.15)", color:"#38bdf8", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
                     </button>
-                    {inventoryGroupOpen && inventoryChildren.map(child => renderNavItem(child, true))}
-                  </>
-                )}
-                {showMenuGroup && (
+                  );
+                };
+                return (
                   <>
-                    <button onClick={() => setMenuGroupOpen(o => !o)}
-                      style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background: menuActiveChild ? "#0f1a2e" : "transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft: menuActiveChild ? "3px solid #38bdf8" : "3px solid transparent" }}>
-                      <Icon name="recipes" size={19} color={menuActiveChild ? "#38bdf8" : "#64748b"} />
-                      <div style={{ textAlign:"left", flex:1 }}>
-                        <div style={{ color: menuActiveChild ? "#f1f5f9" : "#94a3b8", fontSize:14, fontWeight: menuActiveChild ? 600 : 400 }}>Menu</div>
-                        <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{menuChildren.length} tool{menuChildren.length !== 1 ? "s" : ""}</div>
-                      </div>
-                      <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: menuGroupOpen ? "rotate(0deg)" : "rotate(-90deg)" }} />
-                    </button>
-                    {menuGroupOpen && menuChildren.map(child => renderNavItem(child, true))}
+                    {primary.map(renderNavItem)}
+                    {more.length > 0 && (
+                      <>
+                        <button type="button" onClick={() => setMoreOpen(open => !open)}
+                          style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginTop:8, borderLeft:"3px solid transparent" }}>
+                          <div style={{ textAlign:"left", flex:1 }}>
+                            <div style={{ color:"#64748b", fontSize:13, fontWeight:600 }}>More</div>
+                            <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>Waste, prices, recipes, import</div>
+                          </div>
+                          <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: moreExpanded ? "rotate(0deg)" : "rotate(-90deg)" }} />
+                        </button>
+                        {moreExpanded && more.map(renderNavItem)}
+                      </>
+                    )}
                   </>
-                )}
-                {afterDashboard.map(item => renderNavItem(item))}
-              </>
-            );
-          })()}
-        </div>
-        <div style={{ padding:"12px", borderTop:"1px solid #1e2d45" }}>
-          <button onClick={() => setUser(null)} style={{ width:"100%", background:"transparent", border:"1px solid #1e2d45", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13 }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#64748b"; }}>
-            Sign Out
-          </button>
-        </div>
-      </div>
+                );
+              })()}
+            </div>
+            <div style={{ padding:"12px", borderTop:"1px solid #1e2d45", flexShrink:0 }}>
+              <button type="button" onClick={() => setUser(null)} style={{ width:"100%", background:"transparent", border:"1px solid #1e2d45", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13 }}>
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
 
       {/* Header */}
       <header style={{ background:"#0f1a2e", borderBottom:"1px solid #1e2d45", padding:"0 12px", display:"flex", alignItems:"center", justifyContent:"space-between", height:52, position:"sticky", top:0, zIndex:101, gap:8, overflow:"hidden" }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
-          <button onClick={() => setSidebarOpen(true)} style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}
+          <button type="button" aria-label="Open menu" onPointerUp={(event) => { event.preventDefault(); event.stopPropagation(); openNav(); }} style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}
             onMouseEnter={e => e.currentTarget.style.background="#1e2d45"} onMouseLeave={e => e.currentTarget.style.background="none"}>
             <span style={{ display:"block", width:18, height:2, background:"#94a3b8", borderRadius:2 }} />
             <span style={{ display:"block", width:18, height:2, background:"#94a3b8", borderRadius:2 }} />
@@ -1359,13 +1078,13 @@ function LoginScreen({ onLogin, error, setError }) {
 
   // Also check registered accounts and team members on login
   const handleLoginWithAccounts = async () => {
-    await loadSupabase();
     const emailLower = email.toLowerCase().trim();
     const rememberEmail = () => { try { localStorage.setItem("moe_last_email", emailLower); } catch {} };
 
-    // Check hardcoded demo users first
     const u = USERS[emailLower];
     if (u && u.password === pass) { rememberEmail(); onLogin({ ...u, email: emailLower }); return; }
+
+    await loadSupabase();
 
     // Check registered owner accounts
     const accounts = await sbGet("__moe_accounts__", "accounts") || {};
@@ -1587,13 +1306,6 @@ function LoginScreen({ onLogin, error, setError }) {
           </div>
         )}
 
-        {/* Demo credentials */}
-        {mode === "signin" && (
-          <div style={{ marginTop:20, background:"#0f1a2e", borderRadius:12, border:"1px solid #1e2d45", padding:"14px 18px" }}>
-            <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Demo Credentials</div>
-            <div style={{ color:"#94a3b8", fontSize:12, lineHeight:2 }}><span style={{ color:"#e2e8f0" }}>Owner:</span> owner@kitchen.com / owner123<br /><span style={{ color:"#22c55e" }}>Employee:</span> employee@kitchen.com / employee123</div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -3138,13 +2850,17 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
 
       {/* Tabs */}
       <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
-        {[{ key:"vendors", label:"Vendors", icon:"📦" }, { key:"team", label:"Team", icon:"👥" }, { key:"permissions", label:"Permissions", icon:"🔐" }].map(tab => (
+        {[{ key:"vendors", label:"Vendors", icon:"📦" }, { key:"team", label:"Team", icon:"👥" }].map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             style={{ background:activeTab===tab.key?"#e2e8f0":"transparent", border:`1px solid ${activeTab===tab.key?"#e2e8f0":"#1e2d45"}`, borderRadius:8, padding:"7px 16px", color:activeTab===tab.key?"#080c14":"#64748b", fontSize:13, fontWeight:activeTab===tab.key?600:400, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
             {tab.icon} {tab.label}
             {tab.key === "team" && <span style={{ background:"#0f2040", color:"#a5b4fc", borderRadius:10, padding:"1px 7px", fontSize:10, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{team.length}</span>}
           </button>
         ))}
+        <button type="button" onClick={() => setActiveTab("permissions")}
+          style={{ background:"none", border:"none", color:activeTab==="permissions"?"#e2e8f0":"#475569", fontSize:12, cursor:"pointer", padding:"7px 8px" }}>
+          Role permissions
+        </button>
       </div>
 
       {/* ── VENDORS TAB ── */}
@@ -4758,7 +4474,7 @@ function LandingPage() {
       {/* ═══ NAV ═══ */}
       <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "16px 0", background: "rgba(6,10,18,0.8)", backdropFilter: "blur(20px)", borderBottom: "1px solid var(--border)" }}>
         <div className="ctn" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <a href="#" style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, fontSize: "1.25rem", letterSpacing: "-0.02em" }}>
+          <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, fontSize: "1.25rem", letterSpacing: "-0.02em", color: "inherit", textDecoration: "none" }}>
             <svg viewBox="0 0 40 40" fill="none" width="36" height="36">
               <polygon points="20,2.5 36.5,11.25 36.5,28.75 20,37.5 3.5,28.75 3.5,11.25" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.35"/>
               <polygon points="20,8 31,14 31,26 20,32 9,26 9,14" fill="none" stroke="#38bdf8" strokeWidth="1.2" opacity="0.5"/>
@@ -5039,9 +4755,9 @@ function LandingPage() {
         <div className="ctn" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
           <div style={{ fontSize: "0.8rem", color: "var(--t3)" }}>© {new Date().getFullYear()} MOE — Make Ordering Easy. All rights reserved.</div>
           <div style={{ display: "flex", gap: 24 }}>
-            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Privacy</a>
-            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Terms</a>
-            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Contact</a>
+            <a href="/privacy" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Privacy</a>
+            <a href="/terms" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Terms</a>
+            <a href="/contact" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Contact</a>
           </div>
         </div>
       </footer>
@@ -5073,11 +4789,16 @@ export default function Router() {
   }, []);
 
   window.__moeNavigate = (to) => {
+    // /app is the simplified shell owned by src/App.jsx. Full load avoids
+    // rendering classic MOE for a moment on the way out of the marketing page.
+    if (typeof to === "string" && (to === "/app" || to.startsWith("/app/") || to.startsWith("/app?") || to.startsWith("/classic"))) {
+      window.location.assign(to);
+      return;
+    }
     try { window.history.pushState({}, "", to); } catch {
       window.location.hash = to;
     }
-    if (to === "/app") setRoute("app");
-    else if (to === "/quiz") setRoute("quiz");
+    if (to === "/quiz" || (typeof to === "string" && to.startsWith("/quiz"))) setRoute("quiz");
     else setRoute("landing");
   };
 
@@ -6558,21 +6279,8 @@ function SavingsQuiz() {
 
   const update = (field, val) => setAnswers(prev => ({ ...prev, [field]: val }));
 
-  const calcSavings = () => {
-    const spend = { "$1,000-$3,000": 2000, "$3,000-$5,000": 4000, "$5,000-$10,000": 7500, "$10,000+": 12000 }[answers.weeklySpend] || 3000;
-    const overOrderPct = { "Rarely": 0.03, "Sometimes": 0.06, "Often": 0.10, "All the time": 0.15 }[answers.overOrder] || 0.06;
-    const emergencyAmt = { "Never": 0, "1-2x/month": 75, "Weekly": 150, "Multiple/week": 300 }[answers.emergencyRuns] || 75;
-    const teamHours = { "Just me": 3, "2-5": 4, "6-10": 5, "10+": 7 }[answers.teamSize] || 4;
-    const wastePct = answers.trackWaste === "No" ? 0.05 : 0.02;
-    const overOrdering = Math.round(spend * overOrderPct);
-    const emergency = emergencyAmt;
-    const labor = Math.round(teamHours * 28);
-    const waste = Math.round(spend * wastePct);
-    const weekly = overOrdering + emergency + labor + waste;
-    return { overOrdering, emergency, labor, waste, weekly, monthly: Math.round(weekly * 4.3), annual: Math.round(weekly * 52) };
-  };
-
-  const savings = calcSavings();
+  const savings = calcQuizSavings(answers);
+  const paybackDays = quizPaybackDays(savings.monthly);
 
   useEffect(() => {
     if (!showResults) return;
@@ -6693,12 +6401,13 @@ function SavingsQuiz() {
               ${animatedTotal.toLocaleString()}
             </div>
             <div style={{ color:"#fca5a5", fontSize:16, fontWeight:600, marginBottom:4 }}>per month</div>
-            <div style={{ color:"#475569", fontSize:13, marginBottom:24 }}>That's ${savings.annual.toLocaleString()} per year walking out the door</div>
+            <div style={{ color:"#475569", fontSize:13, marginBottom:8 }}>${savings.annual.toLocaleString()} per year · monthly total × 12</div>
+            <div style={{ color:"#334155", fontSize:12, marginBottom:24 }}>Each line is a month. They add up to the total above.</div>
 
             <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:14, padding:"20px", marginBottom:20, textAlign:"left" }}>
-              <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:14, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Where it's going</div>
+              <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:14, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Where it is going</div>
               {[
-                { label:"Over-ordering & spoilage", value:savings.overOrdering, icon:"📦", color:"#fca5a5" },
+                { label:"Over-ordering and spoilage", value:savings.overOrdering, icon:"📦", color:"#fca5a5" },
                 { label:"Emergency supply runs", value:savings.emergency, icon:"🚗", color:"#fbbf24" },
                 { label:"Manager time on manual ordering", value:savings.labor, icon:"⏰", color:"#a5b4fc" },
                 { label:"Untracked waste", value:savings.waste, icon:"🗑️", color:"#f87171" },
@@ -6708,12 +6417,12 @@ function SavingsQuiz() {
                     <span style={{ fontSize:16 }}>{item.icon}</span>
                     <span style={{ color:"#94a3b8", fontSize:13 }}>{item.label}</span>
                   </div>
-                  <span style={{ color:item.color, fontSize:15, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${item.value}/wk</span>
+                  <span style={{ color:item.color, fontSize:15, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${item.value.toLocaleString()}/mo</span>
                 </div>
               ))}
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 0 0", borderTop:"2px solid #1e2d45", marginTop:6 }}>
-                <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:700 }}>Total weekly loss</span>
-                <span style={{ color:"#ef4444", fontSize:18, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>${savings.weekly}/wk</span>
+                <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:700 }}>Monthly total</span>
+                <span style={{ color:"#ef4444", fontSize:18, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>${savings.monthly.toLocaleString()}/mo</span>
               </div>
             </div>
 
@@ -6721,16 +6430,16 @@ function SavingsQuiz() {
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                 <div>
                   <div style={{ color:"#4ade80", fontSize:14, fontWeight:700 }}>MOE Pro — $399/month</div>
-                  <div style={{ color:"#22c55e", fontSize:12, marginTop:2 }}>Pays for itself in {Math.max(1, Math.ceil(399 / savings.weekly * 7))} days</div>
+                  <div style={{ color:"#22c55e", fontSize:12, marginTop:2 }}>{paybackDays ? `Pays for itself in ${paybackDays} days` : "These answers do not show a monthly loss"}</div>
                 </div>
                 <div style={{ textAlign:"right" }}>
-                  <div style={{ color:"#4ade80", fontSize:20, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>{Math.round((savings.monthly / 399) * 10) / 10}x</div>
+                  <div style={{ color:"#4ade80", fontSize:20, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>{quizRoiMultiple(savings.monthly)}x</div>
                   <div style={{ color:"#22c55e", fontSize:10 }}>ROI</div>
                 </div>
               </div>
             </div>
 
-            <button onClick={() => window.__moeNavigate("/app")}
+            <button onClick={() => window.__moeNavigate("/app?signup=1")}
               style={{ width:"100%", background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:12, padding:"16px", color:"#080c14", fontSize:17, fontWeight:700, cursor:"pointer", letterSpacing:"-0.3px", marginBottom:10 }}>
               Start Your Free 14-Day Trial
             </button>
