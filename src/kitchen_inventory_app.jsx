@@ -1,251 +1,51 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
+import { SUPPORT_EMAIL } from "./lib/config";
+import { DEFAULT_INVENTORY, DEFAULT_VENDORS } from "./lib/defaults";
+import { getSB, sbGetMany, sbSet as sbSetResult, sbMerge, sbPrepend, sbMergeUsage, sbRpc } from "./lib/supabaseClient";
+import TeamPanel from "./simple/TeamPanel";
+import { calcQuizSavings, quizPaybackDays, quizRoiMultiple } from "./lib/quizMath";
+import {
+  DAYS, DAYS_SHORT, getWeekNumber, getWeekYear, weekKey, getToday, fmtDate, getWeekMonday, fmtWeekLabel,
+  calcOrderQty, getStatus, flatItems, vendorsOrderingToday,
+} from "./lib/stockMath";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MOE — Make Ordering Easy
+// Simplified kitchen flow: src/simple (default at /app). This file is classic MOE (/app?classic=1 or /classic).
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DEFAULT_INVENTORY = [
-  { section: "🌾  DRY GOODS", items: [
-    { id: 5,  name: "Flour",                          order_unit: "Unit",    upu: 1,   vendor: "Anacapri", max_stock: 17,   reorder: 4   },
-    { id: 6,  name: "Yeast",                          order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-  ]},
-  { section: "🥦  PRODUCE", items: [
-    { id: 8,  name: "Basil - Fresh",                  order_unit: "Each",    upu: 1,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 9,  name: "Broccoli Crowns",                order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 10, name: "Cherry Tomatoes",                order_unit: "Unit",    upu: 1,   vendor: "Market",   max_stock: 4,    reorder: 1   },
-    { id: 11, name: "Eggplant",                       order_unit: "Each",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 12, name: "Garlic - Peeled",                order_unit: "Each",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 13, name: "Jalapenos",                      order_unit: "Lbs",     upu: 1,   vendor: "Market",   max_stock: 4,    reorder: 1   },
-    { id: 14, name: "Lemons",                         order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 15, name: "Mushrooms",                      order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 16, name: "Onions - Red",                   order_unit: "Bag",     upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 17, name: "Onions - Yellow",                order_unit: "Bag",     upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 18, name: "Parsley - Fresh",                order_unit: "Unit",    upu: 1,   vendor: "Market",   max_stock: 4,    reorder: 1   },
-    { id: 19, name: "Potatoes",                       order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 20, name: "Romaine Lettuce",                order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 21, name: "Red Peppers",                    order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 22, name: "Green Peppers",                  order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 23, name: "Carrots",                        order_unit: "Bag",     upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 24, name: "Tomatoes",                       order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-  ]},
-  { section: "🧀  DAIRY", items: [
-    { id: 26, name: "American Cheese",                order_unit: "Unit",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 27, name: "Butter Blocks",                  order_unit: "Case",    upu: 36,  vendor: "Anacapri", max_stock: 36,   reorder: 6   },
-    { id: 28, name: "Butter Cups",                    order_unit: "Case",    upu: 100, vendor: "Anacapri", max_stock: 200,  reorder: 50  },
-    { id: 29, name: "Eggs 15 Doz",                    order_unit: "Case",    upu: 2,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 30, name: "Heavy Cream",                    order_unit: "Case",    upu: 12,  vendor: "Anacapri", max_stock: 12,   reorder: 4   },
-    { id: 31, name: "Mozzarella - Curd",              order_unit: "Unit",    upu: 1,   vendor: "Anacapri", max_stock: 5,    reorder: 2   },
-    { id: 32, name: "Mozzarella Grande",              order_unit: "Case",    upu: 2,   vendor: "Anacapri", max_stock: 10,   reorder: 3   },
-    { id: 33, name: "Mozzarella Polly-O",             order_unit: "Case",    upu: 2,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 34, name: "Pecorino Romano - Wheel",        order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 35, name: "Ricotta Cheese Grande",          order_unit: "Case",    upu: 4,   vendor: "Anacapri", max_stock: 8,    reorder: 2   },
-    { id: 36, name: "Velveeta Cheese",                order_unit: "Unit",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-    { id: 37, name: "Whole Milk",                     order_unit: "Case",    upu: 4,   vendor: "Anacapri", max_stock: 8,    reorder: 2   },
-  ]},
-  { section: "🥩  FRESH MEAT", items: [
-    { id: 39, name: "Chicken Breast - Chicks Choice", order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 10,   reorder: 3   },
-    { id: 40, name: "Chicken Wings - Party",          order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 4,    reorder: 1   },
-    { id: 41, name: "Ham",                            order_unit: "Case",    upu: 1,   vendor: "Anacapri", max_stock: 2,    reorder: 1   },
-  ]},
-  { section: "🫙  OILS & CANNED GOODS", items: [
-    { id: 43, name: "Liquid Clear Shortening",        order_unit: "Unit",    upu: 1,   vendor: "",         max_stock: 3,    reorder: 1   },
-    { id: 44, name: "Soybean Oil",                    order_unit: "Unit",    upu: 1,   vendor: "",         max_stock: 3,    reorder: 1   },
-    { id: 45, name: "711 (Tomato Sauce)",             order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 24,   reorder: 6   },
-    { id: 46, name: "Saporito",                       order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 24,   reorder: 6   },
-    { id: 47, name: "Valoroso",                       order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 24,   reorder: 6   },
-    { id: 48, name: "Pineapple",                      order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 49, name: "Black Sliced Olives",            order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 50, name: "San Marzano Tomatoes",           order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-  ]},
-  { section: "🍝  PASTA & RICE", items: [
-    { id: 52, name: "Penne",                          order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 40,   reorder: 10  },
-    { id: 53, name: "Spaghetti",                      order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 54, name: "Linguine",                       order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 55, name: "Fettuccine",                     order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 56, name: "Capellini",                      order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 57, name: "Rigatoni",                       order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 58, name: "Whole Wheat Pasta",              order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 59, name: "Jumbo Shells",                   order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 60, name: "Lasagna",                        order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 20,   reorder: 5   },
-    { id: 61, name: "Carolina Rice Extra Long Grain", order_unit: "Bag",     upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-  ]},
-  { section: "❄️  FREEZER 1", items: [
-    { id: 63, name: "Chicken Nuggets",                order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 64, name: "Chicken Tenders",                order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 65, name: "Boneless Wings",                 order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 66, name: "French Fries",                   order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 67, name: "Sweet Potato Fries",             order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 68, name: "Burgers",                        order_unit: "Case",    upu: 20,  vendor: "",         max_stock: 60,   reorder: 20  },
-    { id: 69, name: "Wraps",                          order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 70, name: "Zucchini Sticks",                order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 71, name: "Cheese Ravioli",                 order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 72, name: "Mozzarella Sticks",              order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-  ]},
-  { section: "❄️  FREEZER 2", items: [
-    { id: 74, name: "Chopped Spinach",                order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 75, name: "Bacon Bits",                     order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 76, name: "Turkey",                         order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 77, name: "Pepperoni",                      order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 78, name: "Ribeye Steak",                   order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 79, name: "Veal",                           order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 80, name: "Chopped Meat",                   order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 81, name: "Sausage",                        order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 82, name: "Calamari",                       order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 83, name: "Peeled Shrimp",                  order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 84, name: "Baby Clams",                     order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 85, name: "Mussels",                        order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 86, name: "Tilapia",                        order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-  ]},
-  { section: "🗃️  RACK 1", items: [
-    { id: 88, name: "Salt",                           order_unit: "Bag",     upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 89, name: "Sugar",                          order_unit: "Bag",     upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 90, name: "Bread Crumbs",                   order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 91, name: "Panko Bread Crumbs",             order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 92, name: "Napkins",                        order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 93, name: "Paper Plates",                   order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-  ]},
-  { section: "🗄️  SHELF 1", items: [
-    { id: 95,  name: "Powdered Sugar",                order_unit: "Bag",     upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 96,  name: "Cannoli Shells",                order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 97,  name: "Tie Bags",                      order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 98,  name: "Ziplock Bags Gallon",           order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 99,  name: "Straws",                        order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 100, name: "Forks",                         order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 101, name: "Knives",                        order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 102, name: "Spoons",                        order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 103, name: "Pizza Stack",                   order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 104, name: "Gloves L",                      order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 105, name: "Gloves XL",                     order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 106, name: "18in Clear Film",               order_unit: "Roll",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 107, name: "24in Clear Film",               order_unit: "Roll",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 108, name: "12in Aluminum Foil",            order_unit: "Roll",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 109, name: "Plastic Bags",                  order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 110, name: "Junior Wax",                    order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 111, name: "16oz Deli Container",           order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 112, name: "5¾x6x3 Container",             order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 113, name: "5¼x5⅜x2⅝ Container",          order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-  ]},
-  { section: "🗄️  SHELF 2", items: [
-    { id: 115, name: "8in Dome Lids",                 order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 116, name: "8in Aluminum Dish",             order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 117, name: "7in Dome Lids",                 order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 118, name: "7in Aluminum Dish",             order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 119, name: "20Lb Brown Bags",               order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 120, name: "12Lb Brown Bags",               order_unit: "Case",    upu: 500, vendor: "",         max_stock: 1000, reorder: 200 },
-    { id: 121, name: "Hero Containers",               order_unit: "Case",    upu: 200, vendor: "",         max_stock: 400,  reorder: 100 },
-    { id: 122, name: "4oz Souffle Lids",              order_unit: "Case",    upu: 200, vendor: "",         max_stock: 400,  reorder: 100 },
-    { id: 123, name: "4oz Souffle Cups",              order_unit: "Case",    upu: 200, vendor: "",         max_stock: 400,  reorder: 100 },
-    { id: 124, name: "2oz Souffle Lids",              order_unit: "Case",    upu: 200, vendor: "",         max_stock: 400,  reorder: 100 },
-    { id: 125, name: "2oz Souffle Cups",              order_unit: "Case",    upu: 200, vendor: "",         max_stock: 400,  reorder: 100 },
-    { id: 126, name: "Heinz Ketchup",                 order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 127, name: "Mayo",                          order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 128, name: "Honey Mustard Dressing",        order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 129, name: "Blue Cheese Dressing",          order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 130, name: "Ranch Dressing",                order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 131, name: "Vinegar",                       order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 132, name: "Italian Dressing",              order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 133, name: "Balsamic Dressing",             order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 134, name: "Olive Oil",                     order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 6,    reorder: 2   },
-    { id: 135, name: "White Wine",                    order_unit: "Case",    upu: 12,  vendor: "",         max_stock: 12,   reorder: 4   },
-    { id: 136, name: "Vodka",                         order_unit: "Case",    upu: 12,  vendor: "",         max_stock: 12,   reorder: 4   },
-    { id: 137, name: "Marsala Wine",                  order_unit: "Case",    upu: 12,  vendor: "",         max_stock: 12,   reorder: 4   },
-  ]},
-  { section: "🥫  CONDIMENTS & SAUCES", items: [
-    { id: 139, name: "Mango",                         order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 140, name: "Garlic Parm",                   order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 141, name: "Franks Red Hot",                order_unit: "Gallon",  upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 142, name: "BBQ Sauce",                     order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 143, name: "Honey BBQ Sauce",               order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 144, name: "Taco Sauce",                    order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 145, name: "Tarter Sauce",                  order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 146, name: "Lemon Juice",                   order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-  ]},
-  { section: "📦  BOXES", items: [
-    { id: 148, name: "18in Boxes",                    order_unit: "Bundle",  upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 149, name: "16in Boxes",                    order_unit: "Bundle",  upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 150, name: "14in Boxes",                    order_unit: "Bundle",  upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 151, name: "12in Boxes",                    order_unit: "Bundle",  upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 152, name: "10in Boxes",                    order_unit: "Bundle",  upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 153, name: "Tommys Paper Cups",             order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-  ]},
-  { section: "🛍️  DISPOSABLES & PACKAGING", items: [
-    { id: 155, name: "Full Size Medium Trays",        order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 156, name: "Half Size Medium Trays",        order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 157, name: "Full Size Deep Trays",          order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 158, name: "Half Size Deep Trays",          order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 50,   reorder: 15  },
-    { id: 159, name: "Full Size Lids",                order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 160, name: "Half Size Lids",                order_unit: "Case",    upu: 50,  vendor: "",         max_stock: 100,  reorder: 25  },
-    { id: 161, name: "Masking Tape Roll",             order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 162, name: "Clear Bags",                    order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-    { id: 163, name: "Black Bags",                    order_unit: "Case",    upu: 100, vendor: "",         max_stock: 200,  reorder: 50  },
-  ]},
-  { section: "🧹  CLEANING SUPPLIES", items: [
-    { id: 166, name: "Bleach",                        order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 167, name: "Pine Cleaner",                  order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 168, name: "Oven Cleaner",                  order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 169, name: "Glass Cleaner",                 order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 170, name: "Joy Dish Soap",                 order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 171, name: "Steel Sponge",                  order_unit: "Case",    upu: 12,  vendor: "",         max_stock: 24,   reorder: 6   },
-    { id: 172, name: "Broom Head",                    order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 173, name: "Mop Head",                      order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 174, name: "Toilet Bowl Gel",               order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 175, name: "Bathroom Bleach Foamer Spray",  order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 176, name: "Scrubbing Bubbles",             order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 177, name: "Lysol Spray",                   order_unit: "Case",    upu: 6,   vendor: "",         max_stock: 12,   reorder: 3   },
-    { id: 178, name: "Brillo Pads",                   order_unit: "Case",    upu: 12,  vendor: "",         max_stock: 24,   reorder: 6   },
-  ]},
-  { section: "❄️  BOX ROOM FREEZER", items: [
-    { id: 180, name: "Cheesecake",                    order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 181, name: "Tres Leche",                    order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 182, name: "Chocolate Moose",               order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-    { id: 183, name: "Red Velvet",                    order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 184, name: "Cannoli Cream",                 order_unit: "Each",    upu: 1,   vendor: "",         max_stock: 4,    reorder: 1   },
-    { id: 185, name: "Tiramisu",                      order_unit: "Case",    upu: 1,   vendor: "",         max_stock: 2,    reorder: 1   },
-  ]},
-];
-
-const USERS = {
-  "owner@kitchen.com":    { password: "owner123",    role: "owner",    name: "Owner",    group: "demo" },
-  "employee@kitchen.com": { password: "employee123", role: "employee", name: "Employee", group: "demo" },
-  "rep@anacapri.com":     { password: "rep123",       role: "rep",      name: "Enzo Marino", repCode: "DEMO", repCompany: "Anacapri" },
-};
-
-// ─── DEFAULT VENDORS (Tommy's starter) ───────────────────────────────────────
-const DEFAULT_VENDORS = [
-  { id: 1, name: "Anacapri", orderDays: [3] },   // Wednesday
-  { id: 2, name: "Market",   orderDays: [4] },   // Thursday
-];
-
 // ─── SUPABASE ─────────────────────────────────────────────────────────────────
-const SUPABASE_URL  = "https://fsvlxosbbevzyvegbqry.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdmx4b3NiYmV2enl2ZWdicXJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0NzQ2MjgsImV4cCI6MjA4OTA1MDYyOH0.AcnnB4QecNHEu3-N_VS6aPHrpt9kq464arjNc2DNugU";
-let _sb = null;
-const getSB = () => {
-  if (_sb) return _sb;
-  if (typeof window !== "undefined" && window.supabase) { _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON); }
-  return _sb;
+// Shared client from src/lib (signed-in session + row-level security).
+const loadSupabase = () => Promise.resolve();
+const sbSet = (grp, key, value) => sbSetResult(grp, key, value);
+const normName = (v) => String(v || "").trim().toLowerCase();
+// Whole number from user/AI input; keeps an explicit 0 instead of turning it into the default.
+const intOr = (v, d) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 ? n : d; };
+// Split one CSV/TSV line, respecting "quoted, fields".
+const splitDelimited = (line, sep) => {
+  if (sep !== ",") return line.split(sep).map(c => c.trim());
+  const out = []; let cur = ""; let q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+    else if (ch === "," && !q) { out.push(cur.trim()); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
 };
-
-// Load Supabase client script.
-// Caches the load promise so a second caller waits for the SAME script load
-// instead of resolving early while the script is still downloading.
-let _sbLoadPromise = null;
-const loadSupabase = () => {
-  if (typeof window === "undefined" || window.supabase) return Promise.resolve();
-  if (_sbLoadPromise) return _sbLoadPromise;
-  if (document.getElementById("sb-script")) return Promise.resolve();
-  _sbLoadPromise = new Promise((resolve) => {
-    const s = document.createElement("script");
-    s.id = "sb-script";
-    s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";
-    s.onload = resolve;
-    s.onerror = resolve;
-    document.head.appendChild(s);
+// Server-side AI proxy. Sends the signed-in session so /api/claude can refuse anonymous callers.
+const callClaude = async (body) => {
+  const sb = getSB();
+  const { data } = sb ? await sb.auth.getSession() : { data: null };
+  const token = data?.session?.access_token || "";
+  return fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
   });
-  return _sbLoadPromise;
 };
-const sbGet = async (grp, key) => { const sb = getSB(); if (!sb) return null; try { const { data, error } = await sb.from("moe_data").select("data_value").eq("group_id", grp).eq("data_key", key).single(); if (error || !data) return null; return JSON.parse(data.data_value); } catch { return null; } };
-const sbSet = async (grp, key, value) => { const sb = getSB(); if (!sb) return; try { await sb.from("moe_data").upsert({ group_id: grp, data_key: key, data_value: JSON.stringify(value) }, { onConflict: "group_id,data_key" }); } catch {} };
 
 // ─── PRICE HELPERS ────────────────────────────────────────────────────────────
 // ONE canonical way to read a price out of priceHistory, used by every section
@@ -275,49 +75,6 @@ const latestPerOrderUnit = (priceHistory, item) => {
   const p = latestPerUnit(priceHistory, item);
   return p == null ? null : p * Math.max(1, Number(item?.upu) || 1);
 };
-
-// ─── DATE HELPERS ─────────────────────────────────────────────────────────────
-const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-const DAYS_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const getWeekNumber = (d = new Date()) => { const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7)); const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1)); return Math.ceil((((date - yearStart) / 86400000) + 1) / 7); };
-const getToday = () => new Date().getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-const fmtDate = (d) => new Date(d).toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" });
-
-// Get Monday's date for a given ISO week number and year
-// ISO 8601: week 1 is the week containing Jan 4 — anchor there so this
-// always agrees with getWeekNumber (which is ISO-based).
-const getWeekMonday = (weekNum, year = new Date().getFullYear()) => {
-  const jan4 = new Date(year, 0, 4);
-  const jan4Day = jan4.getDay() || 7; // Mon=1..Sun=7
-  const week1Monday = new Date(year, 0, 4 - (jan4Day - 1));
-  const monday = new Date(week1Monday);
-  monday.setDate(monday.getDate() + (weekNum - 1) * 7);
-  return monday;
-};
-
-// Format: "WK15 · Mon Apr 7"
-const fmtWeekLabel = (weekNum, year) => {
-  const mon = getWeekMonday(weekNum, year);
-  return `WK${weekNum} · Mon ${mon.toLocaleDateString("en-US", { month:"short", day:"numeric" })}`;
-};
-
-// ─── STOCK HELPERS ────────────────────────────────────────────────────────────
-const calcOrderQty = (item, stock) => {
-  const s = stock ?? 0;
-  if (s >= item.reorder) return 0;
-  return Math.ceil(Math.max(0, item.max_stock - s) / Math.max(1, item.upu));
-};
-
-const getStatus = (item, stock) => {
-  const s = stock ?? 0;
-  if (s >= item.max_stock) return { label: "FULL",      color: "#16a34a", bg: "#052e16" };
-  if (s >= item.reorder)   return { label: "OK",        color: "#22c55e", bg: "#052e16" };
-  if (s > 0)               return { label: "LOW",       color: "#f59e0b", bg: "#422006" };
-  return                          { label: "EMPTY",     color: "#ef4444", bg: "#450a0a" };
-};
-
-// Get all items flat with their section + vendor info
-const flatItems = (inventory) => inventory.flatMap(s => s.items.map(i => ({ ...i, section: s.section })));
 
 // Compress image to max 1200px wide, JPEG quality 0.7 — keeps it under Vercel's 4.5MB limit
 const compressImage = (file, maxWidth = 1200, quality = 0.7) => new Promise(async (resolve, reject) => {
@@ -371,12 +128,6 @@ const compressImage = (file, maxWidth = 1200, quality = 0.7) => new Promise(asyn
   } catch (err) { reject(err); }
 });
 
-// Get vendors ordering today
-const vendorsOrderingToday = (vendors) => {
-  const today = getToday();
-  return vendors.filter(v => v.orderDays && v.orderDays.includes(today));
-};
-
 // ─── SUBSCRIPTION PLANS ──────────────────────────────────────────────────────
 const PLANS = {
   starter:    { name: "Starter",    price: 299, vendors: 3,        items: 100,      users: 2,        label: "For small kitchens" },
@@ -385,24 +136,25 @@ const PLANS = {
 };
 const TRIAL_DAYS = 14;
 const DEMO_GROUPS = ["demo"]; // Demo accounts skip subscription
-// Platform admin — ONLY these emails see the 👑 Admin panel (all signups, reps, announcements).
-// Every registered restaurant owner has role "owner", so role alone must NOT unlock Admin.
-const ADMIN_EMAILS = ["tommyspizza11419@gmail.com", "owner@kitchen.com"];
-const isPlatformAdmin = (user) => !!user && ADMIN_EMAILS.includes((user.email || "").toLowerCase().trim());
+// Platform admin comes from the server (moe_platform_admins), never from an email list in the browser.
+const isPlatformAdmin = (user) => !!user?.isAdmin;
+const subscribeHref = (user, planName = "") => `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`MOE subscription — ${user?.business?.name || "my kitchen"}`)}&body=${encodeURIComponent(`Hi, I'd like to subscribe to MOE${planName ? ` ${planName}` : ""}.\n\nRestaurant: ${user?.business?.name || ""}\nLogin email: ${user?.email || ""}\n`)}`;
+const escHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 
 // ─── PDF GENERATOR ────────────────────────────────────────────────────────────
 const printVendorPDF = ({ vendorName, items, weekNum, year, date, businessName, orderedBy }) => {
   const win = window.open("", "_blank");
+  if (!win) { alert("Allow pop-ups for this site to print the order."); return; }
   const rows = items.filter(i => i.qty > 0).map(item =>
-    `<tr><td>${item.name}</td><td style="text-align:center">${(item.section || "").replace(/[^\w\s\-&]/g,"").trim()}</td><td style="text-align:center;font-weight:700">${item.qty} ${item.order_unit}</td></tr>`
+    `<tr><td>${escHtml(item.name)}</td><td style="text-align:center">${escHtml((item.section || "").replace(/[^\w\s\-&]/g,"").trim())}</td><td style="text-align:center;font-weight:700">${escHtml(item.qty)} ${escHtml(item.order_unit)}</td></tr>`
   ).join("");
   const totalItems = items.filter(i => i.qty > 0).length;
-  win.document.write(`<html><head><title>${vendorName} — WK${weekNum}</title>
+  win.document.write(`<html><head><title>${escHtml(vendorName)} — WK${weekNum}</title>
     <style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}.biz{font-size:24px;font-weight:900;color:#111;margin:0 0 2px;text-transform:uppercase;letter-spacing:1px}.vendor{font-size:22px;font-weight:700;color:#444;margin:0 0 6px}.meta{color:#666;font-size:12px;margin-bottom:24px;padding-bottom:12px;border-bottom:2px solid #e5e7eb}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1e293b;color:#fff;padding:10px 14px;text-align:left}th:last-child{text-align:center}td{padding:10px 14px;border-bottom:1px solid #e5e7eb}tr:nth-child(even) td{background:#f9fafb}.footer{margin-top:20px;color:#999;font-size:11px;border-top:1px solid #e5e7eb;padding-top:12px}@media print{body{padding:16px}}</style></head><body>
-    ${businessName ? `<div class="biz">${businessName}</div>` : ""}
-    <div class="vendor">${vendorName}</div>
-    <h1>Order — Week ${weekNum} (Mon ${getWeekMonday(weekNum, year || new Date().getFullYear()).toLocaleDateString("en-US", { month:"short", day:"numeric" })})</h1>
-    <div class="meta">${date} · ${totalItems} item${totalItems!==1?"s":""} · Ordered by: <strong>${orderedBy || "—"}</strong></div>
+    ${businessName ? `<div class="biz">${escHtml(businessName)}</div>` : ""}
+    <div class="vendor">${escHtml(vendorName)}</div>
+    <h1>Order — Week ${weekNum} (Mon ${getWeekMonday(weekNum, year || getWeekYear()).toLocaleDateString("en-US", { month:"short", day:"numeric" })})</h1>
+    <div class="meta">${date} · ${totalItems} item${totalItems!==1?"s":""} · Ordered by: <strong>${escHtml(orderedBy || "—")}</strong></div>
     <table><thead><tr><th>Item</th><th style="text-align:center">Location</th><th style="text-align:center">Qty to Order</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="footer">MOE · Make Ordering Easy · Printed ${new Date().toLocaleDateString()}</div>
     <script>window.onload=()=>window.print()<\/script></body></html>`);
@@ -412,131 +164,140 @@ const printVendorPDF = ({ vendorName, items, weekNum, year, date, businessName, 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════════
-function MoeApp() {
-  const [user, setUser]         = useState(null);
+export function MoeApp({ initialUser, onLogout }) {
+  const initialDemo = DEMO_GROUPS.includes(initialUser?.group);
+  const [user, setUser]         = useState(initialUser || null);
   const [stock, setStock]       = useState({});
-  const [vendors, setVendors]   = useState(DEFAULT_VENDORS);
-  const [inventory, setInventory] = useState(DEFAULT_INVENTORY);
+  const [vendors, setVendors]   = useState(initialDemo ? DEFAULT_VENDORS : []);
+  const [inventory, setInventory] = useState(initialDemo ? DEFAULT_INVENTORY : []);
   const [history, setHistory]   = useState([]);
-  const [view, setView]         = useState("inventory");
-  const [group, setGroup]       = useState("demo");
+  const [view, setView]         = useState(initialUser?.role === "owner" ? "dashboard" : "inventory");
+  const [group]                 = useState(initialUser?.group || null);
   const [flash, setFlash]       = useState("");
-  const [loginError, setLoginError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [inventoryGroupOpen, setInventoryGroupOpen] = useState(true); // Sidebar Inventory submenu
-  const [menuGroupOpen, setMenuGroupOpen] = useState(true);           // Sidebar Menu submenu
+  const [moreOpen, setMoreOpen] = useState(false);
+  const navOpenedAt = useRef(0);
   const [usageLog, setUsageLog]     = useState({});
   const [stockSnapshots, setStockSnapshots] = useState({}); // { [weekKey]: { [itemId]: count, _ts } }
-  const [countLog, setCountLog]             = useState([]); // append-only: [{ i: itemId, q: qty, by, at }] newest first, capped
-  const countLogRef = useRef([]);            // mirror for debounced appends (avoids stale closures)
-  const countTimersRef = useRef({});         // { [itemId]: timeoutId } for per-item debounce
-  const stockSaveTimerRef = useRef(null);    // debounce timer for stock/snapshot blob writes
-  const pendingStockRef = useRef(null);      // latest stock awaiting save
-  const pendingSnapsRef = useRef(null);      // latest snapshots awaiting save
-  const [subscription, setSubscription] = useState(null); // { plan, status, trialStart, trialEnd, subscribedAt }
-  const [team, setTeam]                 = useState([]); // [{ id, email, name, role, addedAt }]
+  const [countLog, setCountLog]             = useState([]); // [{ i: itemId, q: qty, by, at }] newest first, capped
+  const stockSaveTimerRef = useRef(null);    // debounce timer for stock writes
+  const pendingStockRef = useRef({});        // { [itemId]: qty } taps not yet sent
+  const [subscription, setSubscription] = useState(null); // { plan, status, trialStart, trialEnd, subscribedAt } — written by the server only
   const [wasteLog, setWasteLog]         = useState([]);
   const [priceHistory, setPriceHistory] = useState({});
   const [recipes, setRecipes]           = useState([]); // [{ id, name, yield, ingredients:[{itemId, qty, unit}], notes }]
   const [dataLoaded, setDataLoaded]     = useState(false);
+  const [loadError, setLoadError]       = useState("");
+  const [loadTick, setLoadTick]         = useState(0);
+  const [saveError, setSaveError]       = useState("");
   const [onboarding, setOnboarding]     = useState(null); // null = not started, 1-4 = step, "done" = completed
   const [permissions, setPermissions]   = useState({
     manager: ["inventory", "waste", "orders", "history", "insights", "prices", "backend", "settings"],
     employee: ["inventory", "waste", "history"],
-  }); // { [itemId]: [{ price, date, weekKey, vendor, source }] } // [{ id, itemId, itemName, qty, unit, reason, loggedBy, date, weekKey }]
+  });
   const [autoSubmit, setAutoSubmit]     = useState(true); // auto-submit missed orders when a new week starts
   const [foodCost, setFoodCost]         = useState(false); // optional food-cost add-on (off by default)
-  const [repBroadcasts, setRepBroadcasts] = useState([]); // messages from the account's sales rep
-  const [dismissedBroadcasts, setDismissedBroadcasts] = useState(() => { try { return JSON.parse(localStorage.getItem("moe_dismissed_bc") || "[]"); } catch { return []; } });
 
-  const showFlash = (msg = "✓ Saved") => { setFlash(msg); setTimeout(() => setFlash(""), 2000); };
+  const flashTimer = useRef(null);
+  const showFlash = (msg = "✓ Saved") => { setFlash(msg); clearTimeout(flashTimer.current); flashTimer.current = setTimeout(() => setFlash(""), 2500); };
 
   // ── Persistence ──────────────────────────────────────────────────────────
   const groupRef = React.useRef(group);
   React.useEffect(() => { groupRef.current = group; }, [group]);
 
-  const save = useCallback((key, value) => {
-    const g = groupRef.current;
-    try { localStorage.setItem(`moe_${g}_${key}`, JSON.stringify(value)); } catch {}
-    sbSet(g, key, value);
+  const noteResult = useCallback((result) => {
+    if (result && result.ok === false) setSaveError(result.error || "Couldn't save. Check the connection.");
+    else setSaveError("");
+    return result;
   }, []);
 
-  const load = useCallback(async (key, fallback) => {
+  // Whole-value write. Only used after a successful load, so it never replaces
+  // the kitchen's real data with defaults or a stale copy.
+  const save = useCallback(async (key, value) => {
     const g = groupRef.current;
-    const sbVal = await sbGet(g, key);
-    if (sbVal !== null) { try { localStorage.setItem(`moe_${g}_${key}`, JSON.stringify(sbVal)); } catch {} return sbVal; }
-    try { const raw = localStorage.getItem(`moe_${g}_${key}`); if (raw) { const v = JSON.parse(raw); sbSet(g, key, v); return v; } } catch {}
-    return fallback;
-  }, []);
+    if (!g) return { ok: false, error: "No kitchen" };
+    try { localStorage.setItem(`moe_${g}_${key}`, JSON.stringify(value)); } catch {}
+    return noteResult(await sbSet(g, key, value));
+  }, [noteResult]);
 
   // ── Save inventory ────────────────────────────────────────────────────────
   const saveInventory = useCallback((newInv) => { setInventory(newInv); save("inventory", newInv); showFlash(); }, [save]);
   const saveHistory = useCallback((newHist) => { setHistory(newHist); save("history", newHist); }, [save]);
 
   // ── Load data on login ───────────────────────────────────────────────────
+  const KEYS = ["stock","vendors","history","inventory","usageLog","stockSnapshots","subscription","wasteLog","priceHistory","recipes","countLog","permissions","onboarding","autoSubmit","foodCost","lastAutoWeek"];
   useEffect(() => {
-    if (!user) return;
+    if (!user || !group) return;
+    let cancelled = false;
     const init = async () => {
-      await loadSupabase();
-      const st = await load("stock", {});
-      const vd = await load("vendors", DEFAULT_VENDORS);
-      const hi = await load("history", []);
-      const inv = await load("inventory", DEFAULT_INVENTORY);
-      const ul = await load("usageLog", {});
-      const snaps = await load("stockSnapshots", {});
-      const sub = await load("subscription", null);
-      const tm = await load("team", []);
-      const wl = await load("wasteLog", []);
-      const ph = await load("priceHistory", {});
-      const rc = await load("recipes", []);
-      const cl = await load("countLog", []);
-      const perms = await load("permissions", null);
-      const ob = await load("onboarding", null);
-      const autoSub = await load("autoSubmit", true);
-      const fc = await load("foodCost", false);
-      const lastAutoWeek = await load("lastAutoWeek", null);
-      setStock(st); setVendors(vd); setHistory(hi); setInventory(inv);
-      setUsageLog(ul); setSubscription(sub); setTeam(tm); setWasteLog(wl); setPriceHistory(ph);
-      setRecipes(Array.isArray(rc) ? rc : []);
-      const loadedLog = Array.isArray(cl) ? cl : [];
-      setCountLog(loadedLog); countLogRef.current = loadedLog;
-      setStockSnapshots(snaps || {});
-      if (perms) setPermissions(perms);
-      setOnboarding(ob);
-      setAutoSubmit(autoSub !== false);
-      setFoodCost(fc === true);
+      setDataLoaded(false);
+      const res = await sbGetMany(group, KEYS);
+      if (cancelled) return;
+      if (!res.ok) { setLoadError(res.error || "Couldn't reach MOE."); return; }
+      setLoadError("");
+      const v = res.values;
+      const isDemoGroup = DEMO_GROUPS.includes(group);
+      const has = (k) => Object.prototype.hasOwnProperty.call(v, k);
+      const st = v.stock && typeof v.stock === "object" && !Array.isArray(v.stock) ? v.stock : {};
+      const vd = Array.isArray(v.vendors) ? v.vendors : (isDemoGroup ? DEFAULT_VENDORS : []);
+      const hi = Array.isArray(v.history) ? v.history : [];
+      const inv = Array.isArray(v.inventory) ? v.inventory : (isDemoGroup ? DEFAULT_INVENTORY : []);
+      const ul = v.usageLog && typeof v.usageLog === "object" ? v.usageLog : {};
+      setStock({ ...st, ...pendingStockRef.current }); setVendors(vd); setHistory(hi); setInventory(inv);
+      setUsageLog(ul); setSubscription(v.subscription || null);
+      setWasteLog(Array.isArray(v.wasteLog) ? v.wasteLog : []);
+      setPriceHistory(v.priceHistory && typeof v.priceHistory === "object" ? v.priceHistory : {});
+      setRecipes(Array.isArray(v.recipes) ? v.recipes : []);
+      setCountLog(Array.isArray(v.countLog) ? v.countLog : []);
+      setStockSnapshots(v.stockSnapshots && typeof v.stockSnapshots === "object" ? v.stockSnapshots : {});
+      if (v.permissions) setPermissions(v.permissions);
+      setOnboarding(has("onboarding") ? v.onboarding : null);
+      setAutoSubmit(v.autoSubmit !== false);
+      setFoodCost(v.foodCost === true);
       setDataLoaded(true);
 
-      // ── Load sales-rep broadcast messages for this account ──────────────
-      if (user?.email && !DEMO_GROUPS.includes(group)) {
-        try {
-          const accts = await sbGet("__moe_accounts__", "accounts") || {};
-          const myCode = accts[user.email.toLowerCase()]?.repCode;
-          if (myCode) {
-            const bc = await sbGet("__moe_reps__", `broadcast_${myCode}`) || [];
-            if (Array.isArray(bc)) setRepBroadcasts(bc);
-          }
-        } catch {}
-      }
-
       // ── Auto-submit missed orders from completed weeks ──────────────────
-      if (autoSub !== false) {
-        runAutoSubmit({ vendors: vd, inventory: inv, stock: st, history: hi, usageLog: ul, lastAutoWeek });
+      if (v.autoSubmit !== false && vd.length > 0 && inv.length > 0) {
+        runAutoSubmit({ vendors: vd, inventory: inv, stock: st, history: hi, usageLog: ul, lastAutoWeek: v.lastAutoWeek || null });
       }
     };
     init();
-  }, [user, group]);
+    return () => { cancelled = true; };
+  }, [user, group, loadTick]);
 
-  // ── Flush pending debounced saves if the tab hides or closes ─────────────
+  // ── Send pending stock taps (merge only the changed items) ───────────────
+  const flushStock = useCallback(async () => {
+    clearTimeout(stockSaveTimerRef.current);
+    const g = groupRef.current;
+    const patch = pendingStockRef.current;
+    const ids = Object.keys(patch);
+    if (!g || ids.length === 0) return;
+    pendingStockRef.current = {};
+    const merged = await sbMerge(g, "stock", patch);
+    if (!merged.ok) {
+      pendingStockRef.current = { ...patch, ...pendingStockRef.current };
+      noteResult(merged);
+      return;
+    }
+    noteResult(merged);
+    const full = merged.value || {};
+    // Snapshot every item's latest count for this week (not just the ones tapped)
+    const wk = weekKey();
+    const snap = await sbMerge(g, "stockSnapshots", { [wk]: { ...full, _ts: new Date().toISOString() } });
+    if (snap.ok && snap.value) setStockSnapshots(snap.value);
+    const at = new Date().toISOString();
+    const entries = ids.map(id => ({ i: /^\d+$/.test(id) ? Number(id) : id, q: patch[id], by: user?.name || "", at }));
+    const logged = await sbPrepend(g, "countLog", entries, 3000);
+    if (logged.ok && Array.isArray(logged.value)) setCountLog(logged.value);
+  }, [noteResult, user]);
+
+  // ── Flush pending saves if the tab hides or closes ───────────────────────
   useEffect(() => {
-    const flush = () => {
-      if (pendingStockRef.current) { save("stock", pendingStockRef.current); pendingStockRef.current = null; }
-      if (pendingSnapsRef.current) { save("stockSnapshots", pendingSnapsRef.current); pendingSnapsRef.current = null; }
-    };
-    document.addEventListener("visibilitychange", flush);
-    window.addEventListener("pagehide", flush);
-    return () => { flush(); document.removeEventListener("visibilitychange", flush); window.removeEventListener("pagehide", flush); };
-  }, [group]);
+    const onVis = () => { if (document.visibilityState === "hidden") flushStock(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", flushStock);
+    return () => { flushStock(); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pagehide", flushStock); };
+  }, [flushStock]);
 
   // ── Real-time sync ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -546,19 +307,19 @@ function MoeApp() {
       event: "*", schema: "public", table: "moe_data", filter: `group_id=eq.${group}`
     }, (payload) => {
       try {
-        const { data_key, data_value } = payload.new;
+        const { data_key, data_value } = payload.new || {};
         const value = JSON.parse(data_value);
-        if (data_key === "stock")     setStock(value);
-        if (data_key === "vendors")   setVendors(value);
-        if (data_key === "history")   setHistory(value);
-        if (data_key === "inventory") setInventory(value);
-        if (data_key === "usageLog")     setUsageLog(value);
+        if (data_key === "stock")     setStock({ ...(value || {}), ...pendingStockRef.current });
+        if (data_key === "vendors")   setVendors(Array.isArray(value) ? value : []);
+        if (data_key === "history")   setHistory(Array.isArray(value) ? value : []);
+        if (data_key === "inventory") setInventory(Array.isArray(value) ? value : []);
+        if (data_key === "usageLog")     setUsageLog(value || {});
         if (data_key === "subscription") setSubscription(value);
-        if (data_key === "team")         setTeam(value);
-        if (data_key === "wasteLog")    setWasteLog(value);
-        if (data_key === "priceHistory") setPriceHistory(value);
+        if (data_key === "wasteLog")    setWasteLog(Array.isArray(value) ? value : []);
+        if (data_key === "priceHistory") setPriceHistory(value || {});
         if (data_key === "recipes")     setRecipes(Array.isArray(value) ? value : []);
-        if (data_key === "countLog")    { const v = Array.isArray(value) ? value : []; setCountLog(v); countLogRef.current = v; }
+        if (data_key === "countLog")    setCountLog(Array.isArray(value) ? value : []);
+        if (data_key === "stockSnapshots") setStockSnapshots(value || {});
         if (data_key === "permissions") setPermissions(value);
       } catch {}
     }).subscribe();
@@ -566,237 +327,156 @@ function MoeApp() {
   }, [group, user]);
 
   // ── Stock update ─────────────────────────────────────────────────────────
-  // UI updates instantly; Supabase writes are debounced (1.5s after the last
-  // tap) so a burst of +/+/+ taps = ONE network write instead of one per tap.
+  // UI updates instantly; changed items are sent 1.5s after the last tap as a
+  // merge, so two phones counting at once never erase each other's counts.
   const updateStock = (id, val) => {
     const n = parseInt(val);
     const finalQty = isNaN(n) ? 0 : Math.max(0, n);
-    const newStock = { ...stock, [id]: finalQty };
-    setStock(newStock);
-    pendingStockRef.current = newStock;
-    // Record a snapshot of the current week's stock count (latest count of the week wins)
-    const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2,"0")}`;
-    setStockSnapshots(prev => {
-      const next = { ...prev, [wk]: { ...(prev[wk] || {}), [id]: finalQty, _ts: new Date().toISOString() } };
-      pendingSnapsRef.current = next;
-      return next;
-    });
+    setStock(prev => ({ ...prev, [id]: finalQty }));
+    pendingStockRef.current = { ...pendingStockRef.current, [id]: finalQty };
     clearTimeout(stockSaveTimerRef.current);
-    stockSaveTimerRef.current = setTimeout(() => {
-      if (pendingStockRef.current) save("stock", pendingStockRef.current);
-      if (pendingSnapsRef.current) save("stockSnapshots", pendingSnapsRef.current);
-      pendingStockRef.current = null;
-      pendingSnapsRef.current = null;
-    }, 1500);
-    // Append-only count log — per-item debounce so a burst of +/+/+ taps logs
-    // ONE entry with the settled value. Powers "last counted" + usage history.
-    clearTimeout(countTimersRef.current[id]);
-    countTimersRef.current[id] = setTimeout(() => {
-      const entry = { i: id, q: finalQty, by: user?.name || "", at: new Date().toISOString() };
-      const newLog = [entry, ...countLogRef.current].slice(0, 3000); // cap to keep the blob lean
-      countLogRef.current = newLog;
-      setCountLog(newLog);
-      save("countLog", newLog);
-    }, 4000);
+    stockSaveTimerRef.current = setTimeout(flushStock, 1500);
   };
 
-  // ── Auto-submit missed orders for completed weeks ────────────────────────
-  // Runs on load. For each week between lastAutoWeek and the current week (exclusive),
-  // any vendor with an order day that week but no submitted order gets one auto-generated.
-  const runAutoSubmit = ({ vendors: vds, inventory: inv, stock: stk, history: hist, usageLog: ul, lastAutoWeek }) => {
-    const curWeek = getWeekNumber();
-    const curYear = new Date().getFullYear();
-    const curKey = `${curYear}-WK${String(curWeek).padStart(2,"0")}`;
-
-    // Only check the immediately previous week (keep it simple + safe)
-    const prevDate = new Date(); prevDate.setDate(prevDate.getDate() - 7);
-    const prevWeek = getWeekNumber(prevDate);
-    const prevYear = prevDate.getFullYear();
-    const prevKey = `${prevYear}-WK${String(prevWeek).padStart(2,"0")}`;
-
-    // If we already ran auto-submit for this transition, skip
-    if (lastAutoWeek === curKey) return;
-
-    const allItemsList = inv.flatMap(s => s.items.map(i => ({ ...i, section: s.section })));
-    const prevWeekOrders = (hist || []).filter(h => h.weekNumber === prevWeek && h.year === prevYear && h.type !== "quick");
-
-    let newUsageLog = { ...ul };
-    let newHistory = [...(hist || [])];
-    let autoCount = 0;
-
-    vds.forEach(v => {
-      if (!v.orderDays || v.orderDays.length === 0) return;
-      const hasOrder = prevWeekOrders.some(h => (h.vendor || "").toLowerCase() === v.name.toLowerCase());
-      if (hasOrder) return; // already submitted that week
-
-      // Estimate the order: use the average qty from history for each item, else par-based
-      const vendorItems = allItemsList.filter(i => (i.vendor || "").trim().toLowerCase() === v.name.toLowerCase());
-      const orderLines = vendorItems.map(item => {
-        // Average qty ordered in past weeks for this item
-        const pastQtys = [];
-        Object.values(ul).forEach(weekData => {
-          Object.values(weekData).forEach(items => {
-            if (items[item.id]) pastQtys.push(items[item.id].qty);
-          });
-        });
-        let qty;
-        if (pastQtys.length > 0) {
-          qty = Math.round(pastQtys.reduce((a,b)=>a+b,0) / pastQtys.length);
-        } else {
-          qty = calcOrderQty(item, stk[item.id] ?? 0);
-        }
-        return { id: item.id, name: item.name, section: item.section, order_unit: item.order_unit, vendor: item.vendor, qty, currentStock: stk[item.id] ?? 0 };
-      }).filter(l => l.qty > 0);
-
-      if (orderLines.length === 0) return;
-
-      // Log usage
-      if (!newUsageLog[prevKey]) newUsageLog[prevKey] = {};
-      if (!newUsageLog[prevKey][v.name]) newUsageLog[prevKey][v.name] = {};
-      orderLines.forEach(line => {
-        newUsageLog[prevKey][v.name][line.id] = {
-          name: line.name, qty: line.qty, order_unit: line.order_unit,
-          stockBefore: line.currentStock, maxStock: vendorItems.find(i => i.id === line.id)?.max_stock || 0,
-        };
-      });
-
-      // History entry
-      newHistory = [{
-        id: `auto_${Date.now()}_${v.name.replace(/\s/g,"")}`, vendor: v.name,
-        weekNumber: prevWeek, year: prevYear, day: "Auto-submitted",
-        date: getWeekMonday(prevWeek, prevYear).toISOString(),
-        lines: orderLines, totalItems: orderLines.length, orderedBy: "MOE (auto)",
-        type: "auto", note: "Auto-submitted — order was not manually placed",
-      }, ...newHistory];
-      autoCount++;
-    });
-
-    if (autoCount > 0) {
-      setUsageLog(newUsageLog); save("usageLog", newUsageLog);
-      setHistory(newHistory); save("history", newHistory);
-      showFlash(`✓ Auto-submitted ${autoCount} missed order${autoCount !== 1 ? "s" : ""} from last week`);
-    }
-    save("lastAutoWeek", curKey);
-  };
-
-  // ── Submit order for a vendor ────────────────────────────────────────────
-  const submitOrder = (vendorName) => {
-    const allItems = flatItems(inventory);
-    const vendorItems = allItems.filter(i => (i.vendor || "").trim().toLowerCase() === vendorName.toLowerCase());
-    const orderLines = vendorItems.map(item => ({
+  // Build order lines for one vendor from the current counts.
+  const linesFor = (vendorName, inv = inventory, stk = stock) => {
+    const target = normName(vendorName);
+    const vendorItems = flatItems(inv).filter(i => normName(i.vendor) === target);
+    const lines = vendorItems.map(item => ({
       id: item.id, name: item.name, section: item.section,
       order_unit: item.order_unit, vendor: item.vendor,
-      qty: calcOrderQty(item, stock[item.id] ?? 0),
-      currentStock: stock[item.id] ?? 0,
+      qty: calcOrderQty(item, stk[item.id] ?? 0),
+      currentStock: stk[item.id] ?? 0,
     })).filter(l => l.qty > 0);
+    return { vendorItems, lines };
+  };
 
-    if (orderLines.length === 0) return;
-
-    // 1. Log usage — record what was ordered per item for this week
-    const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2,"0")}`;
-    const newUsageLog = { ...usageLog };
-    if (!newUsageLog[wk]) newUsageLog[wk] = {};
-    if (!newUsageLog[wk][vendorName]) newUsageLog[wk][vendorName] = {};
-    orderLines.forEach(line => {
-      newUsageLog[wk][vendorName][line.id] = {
+  const usageLinesFor = (lines, vendorItems, stk = stock) => {
+    const out = {};
+    lines.forEach(line => {
+      out[line.id] = {
         name: line.name, qty: line.qty, order_unit: line.order_unit,
-        stockBefore: line.currentStock, maxStock: vendorItems.find(i => i.id === line.id)?.max_stock || 0,
+        stockBefore: line.currentStock ?? (stk[line.id] ?? 0),
+        maxStock: vendorItems.find(i => i.id === line.id)?.max_stock || 0,
       };
     });
-    setUsageLog(newUsageLog);
-    save("usageLog", newUsageLog);
+    return out;
+  };
 
-    // 2. Save to history (received:false → lives in Orders view until delivery is checked in)
-    const entry = {
-      id: `ord_${Date.now()}`,
-      vendor: vendorName,
-      weekNumber: getWeekNumber(),
-      year: new Date().getFullYear(),
-      day: DAYS[getToday()],
-      date: new Date().toISOString(),
-      lines: orderLines,
-      totalItems: orderLines.length,
-      orderedBy: user?.name || "",
-      received: false,
-    };
-    const newHistory = [entry, ...history];
-    setHistory(newHistory);
-    save("history", newHistory);
+  // Save new history entries + usage atomically on the server, then refresh local copies.
+  const recordOrders = async (entries, usageByVendor, wk) => {
+    const g = groupRef.current;
+    if (!g || entries.length === 0) return { ok: true };
+    const added = noteResult(await sbPrepend(g, "history", entries, 5000));
+    if (!added.ok) { showFlash("✗ Order not saved — check the connection"); return added; }
+    if (Array.isArray(added.value)) setHistory(added.value);
+    for (const [vendorName, lines] of Object.entries(usageByVendor)) {
+      const u = await sbMergeUsage(g, wk, vendorName, lines);
+      if (u.ok && u.value) setUsageLog(u.value);
+    }
+    return { ok: true };
+  };
 
-    // NOTE: We intentionally do NOT reset stock to 0 anymore. The counted
-    // values are real data — they stay until the next physical count.
-    // The count at submit time is preserved on each line as `currentStock`.
+  // ── Auto-submit missed orders for the previous week ──────────────────────
+  const runAutoSubmit = async ({ vendors: vds, inventory: inv, stock: stk, history: hist, lastAutoWeek }) => {
+    const curKey = weekKey();
+    if (lastAutoWeek === curKey) return;
+    const prevDate = new Date(); prevDate.setDate(prevDate.getDate() - 7);
+    const prevWeek = getWeekNumber(prevDate);
+    const prevYear = getWeekYear(prevDate);
+    const prevKey = weekKey(prevDate);
+    const prevWeekOrders = (hist || []).filter(h => h.weekNumber === prevWeek && h.year === prevYear && h.type !== "quick");
 
-    showFlash(`✓ ${vendorName} order submitted`);
+    const entries = [];
+    const usageByVendor = {};
+    vds.forEach(v => {
+      if (!v.orderDays || v.orderDays.length === 0 || !normName(v.name)) return;
+      if (prevWeekOrders.some(h => normName(h.vendor) === normName(v.name))) return;
+      const { vendorItems, lines } = linesFor(v.name, inv, stk);
+      if (lines.length === 0) return;
+      usageByVendor[v.name] = usageLinesFor(lines, vendorItems, stk);
+      entries.push({
+        id: `auto_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, vendor: v.name,
+        weekNumber: prevWeek, year: prevYear, day: "Auto-submitted",
+        date: getWeekMonday(prevWeek, prevYear).toISOString(),
+        lines, totalItems: lines.length, orderedBy: "MOE (auto)",
+        type: "auto", note: "Auto-submitted — order was not manually placed", received: true,
+      });
+    });
+    // Mark this week as handled first so two devices opening at once don't both auto-submit.
+    const marked = await save("lastAutoWeek", curKey);
+    if (!marked.ok || entries.length === 0) return;
+    const res = await recordOrders(entries, usageByVendor, prevKey);
+    if (res.ok) showFlash(`✓ Auto-submitted ${entries.length} missed order${entries.length !== 1 ? "s" : ""} from last week`);
+  };
+
+  // ── Submit orders for one or more vendors (one save for all of them) ─────
+  const submitOrder = async (vendorNames) => {
+    const names = (Array.isArray(vendorNames) ? vendorNames : [vendorNames]).filter(Boolean);
+    await flushStock();
+    const now = new Date();
+    const wk = weekKey(now);
+    const entries = [];
+    const usageByVendor = {};
+    names.forEach(vendorName => {
+      const { vendorItems, lines } = linesFor(vendorName);
+      if (lines.length === 0) return;
+      usageByVendor[vendorName] = usageLinesFor(lines, vendorItems);
+      entries.push({
+        id: `ord_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        vendor: vendorName,
+        weekNumber: getWeekNumber(now),
+        year: getWeekYear(now),
+        day: DAYS[now.getDay()],
+        date: now.toISOString(),
+        lines,
+        totalItems: lines.length,
+        orderedBy: user?.name || "",
+        received: false,
+      });
+    });
+    if (entries.length === 0) { showFlash("Nothing to order — stock is above reorder points"); return; }
+    const res = await recordOrders(entries, usageByVendor, wk);
+    if (res.ok) showFlash(entries.length === 1 ? `✓ ${entries[0].vendor} order submitted` : `✓ ${entries.length} orders submitted`);
   };
 
   // ── Log a quick/emergency order (off-schedule purchase) ──────────────
-  const logQuickOrder = (items, source, note, targetWeek) => {
+  const logQuickOrder = async (items, source, note, targetWeek) => {
     if (!items || items.length === 0) return;
-    // targetWeek = { weekNum, year } or null for current week
     const wkNum = targetWeek?.weekNum || getWeekNumber();
-    const yr = targetWeek?.year || new Date().getFullYear();
+    const yr = targetWeek?.year || getWeekYear();
     const wk = `${yr}-WK${String(wkNum).padStart(2,"0")}`;
     const sourceName = source || "Quick Order";
-    const isBackfill = targetWeek && (wkNum !== getWeekNumber() || yr !== new Date().getFullYear());
-
-    // 1. Log usage
-    const newUsageLog = { ...usageLog };
-    if (!newUsageLog[wk]) newUsageLog[wk] = {};
-    if (!newUsageLog[wk][sourceName]) newUsageLog[wk][sourceName] = {};
+    const isBackfill = !!targetWeek && (wkNum !== getWeekNumber() || yr !== getWeekYear());
+    const lines = {};
     items.forEach(line => {
-      const existing = newUsageLog[wk][sourceName][line.id];
-      newUsageLog[wk][sourceName][line.id] = {
-        name: line.name, qty: (existing?.qty || 0) + line.qty, order_unit: line.order_unit,
-        stockBefore: stock[line.id] ?? 0, maxStock: 0,
-      };
+      const existing = usageLog?.[wk]?.[sourceName]?.[line.id];
+      lines[line.id] = { name: line.name, qty: (existing?.qty || 0) + line.qty, order_unit: line.order_unit, stockBefore: stock[line.id] ?? 0, maxStock: 0 };
     });
-    setUsageLog(newUsageLog); save("usageLog", newUsageLog);
-
-    // 2. Save to history
     const entryDate = isBackfill ? getWeekMonday(wkNum, yr).toISOString() : new Date().toISOString();
     const entry = {
-      id: `qord_${Date.now()}`, vendor: sourceName,
+      id: `qord_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, vendor: sourceName,
       weekNumber: wkNum, year: yr,
       day: isBackfill ? "Backfilled" : DAYS[getToday()], date: entryDate,
       lines: items, totalItems: items.length,
-      orderedBy: user?.name || "", type: "quick", note: note || "", backfill: isBackfill,
+      orderedBy: user?.name || "", type: "quick", note: note || "", backfill: isBackfill, received: true,
     };
-    setHistory(prev => { const h = [entry, ...prev]; save("history", h); return h; });
-    showFlash(isBackfill ? `✓ Backfilled WK${wkNum} — ${items.length} item${items.length !== 1 ? "s" : ""}` : `✓ Quick order logged — ${items.length} item${items.length !== 1 ? "s" : ""}`);
+    const res = await recordOrders([entry], { [sourceName]: lines }, wk);
+    if (res.ok) showFlash(isBackfill ? `✓ Backfilled WK${wkNum} — ${items.length} item${items.length !== 1 ? "s" : ""}` : `✓ Quick order logged — ${items.length} item${items.length !== 1 ? "s" : ""}`);
   };
 
   // Submit a regular vendor order to a SPECIFIC past week (backfill missed orders)
-  const submitOrderForWeek = (vendorName, wkNum, yr) => {
-    const allItemsList = flatItems(inventory);
-    const vendorItems = allItemsList.filter(i => (i.vendor || "").trim().toLowerCase() === vendorName.toLowerCase());
-    const orderLines = vendorItems.map(item => ({
-      id: item.id, name: item.name, section: item.section,
-      order_unit: item.order_unit, vendor: item.vendor,
-      qty: calcOrderQty(item, stock[item.id] ?? 0),
-      currentStock: stock[item.id] ?? 0,
-    })).filter(l => l.qty > 0);
-    if (orderLines.length === 0) { showFlash("Nothing to order — stock is above reorder points"); return; }
-
+  const submitOrderForWeek = async (vendorName, wkNum, yr) => {
+    const { vendorItems, lines } = linesFor(vendorName);
+    if (lines.length === 0) { showFlash("Nothing to order — stock is above reorder points"); return; }
     const wk = `${yr}-WK${String(wkNum).padStart(2,"0")}`;
-    const newUsageLog = { ...usageLog };
-    if (!newUsageLog[wk]) newUsageLog[wk] = {};
-    if (!newUsageLog[wk][vendorName]) newUsageLog[wk][vendorName] = {};
-    orderLines.forEach(line => {
-      newUsageLog[wk][vendorName][line.id] = {
-        name: line.name, qty: line.qty, order_unit: line.order_unit,
-        stockBefore: line.currentStock, maxStock: vendorItems.find(i => i.id === line.id)?.max_stock || 0,
-      };
-    });
-    setUsageLog(newUsageLog); save("usageLog", newUsageLog);
-
     const entry = {
-      id: `ord_${Date.now()}`, vendor: vendorName, weekNumber: wkNum, year: yr,
+      id: `ord_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, vendor: vendorName, weekNumber: wkNum, year: yr,
       day: "Backfilled", date: getWeekMonday(wkNum, yr).toISOString(),
-      lines: orderLines, totalItems: orderLines.length, orderedBy: user?.name || "", backfill: true,
+      lines, totalItems: lines.length, orderedBy: user?.name || "", backfill: true, received: false,
     };
-    setHistory(prev => { const h = [entry, ...prev]; save("history", h); return h; });
-    showFlash(`✓ Backfilled ${vendorName} order for WK${wkNum}`);
+    const res = await recordOrders([entry], { [vendorName]: usageLinesFor(lines, vendorItems) }, wk);
+    if (res.ok) showFlash(`✓ Backfilled ${vendorName} order for WK${wkNum}`);
   };
 
   // ── Check in a delivery: record what actually arrived (does NOT touch stock) ──
@@ -817,17 +497,20 @@ function MoeApp() {
     showFlash(shortfalls > 0 ? `✓ Delivery checked in — ${shortfalls} item${shortfalls!==1?"s":""} flagged` : `✓ Delivery checked in — all received`);
   };
 
-  // ── Save vendors ─────────────────────────────────────────────────────────
-  const saveVendors = (newVendors) => { setVendors(newVendors); save("vendors", newVendors); showFlash(); };
-
-  // ── Save team ──────────────────────────────────────────────────────────
-  const saveTeam = useCallback((newTeam) => {
-    setTeam(newTeam);
-    const g = groupRef.current;
-    try { localStorage.setItem(`moe_${g}_team`, JSON.stringify(newTeam)); } catch {}
-    sbSet(g, "team", newTeam);
-    showFlash("✓ Team updated");
-  }, []);
+  // ── Save vendors (renaming a vendor also renames it on its items) ────────
+  const saveVendors = (newVendors) => {
+    let inv = inventory;
+    let changed = false;
+    (vendors || []).forEach(old => {
+      const next = newVendors.find(v => v.id === old.id);
+      if (next && old.name && next.name && normName(old.name) !== normName(next.name)) {
+        inv = inv.map(s => ({ ...s, items: (s.items || []).map(i => normName(i.vendor) === normName(old.name) ? { ...i, vendor: next.name } : i) }));
+        changed = true;
+      }
+    });
+    if (changed) { setInventory(inv); save("inventory", inv); }
+    setVendors(newVendors); save("vendors", newVendors); showFlash();
+  };
 
   // ── Save waste log ────────────────────────────────────────────────────
   const saveWasteLog = useCallback((newLog) => { setWasteLog(newLog); save("wasteLog", newLog); }, [save]);
@@ -849,11 +532,23 @@ function MoeApp() {
     showFlash("✓ Par updated");
   };
 
-  // ── Login ────────────────────────────────────────────────────────────────
-  if (!user) return <LoginScreen onLogin={u => { setUser(u); setGroup(u.group || "demo"); setView(u.role === "owner" ? "dashboard" : "inventory"); setLoginError(""); }} error={loginError} setError={setLoginError} />;
+  const signOut = async () => {
+    await flushStock();
+    setUser(null);
+    if (onLogout) onLogout();
+  };
 
-  // ── Sales reps get the rep dashboard, not the app ──────────────────────
-  if (user.role === "rep") return <RepDashboard repCode={user.repCode} repName={user.name} repCompany={user.repCompany} onLogout={() => { setUser(null); setGroup(null); }} />;
+  if (!user) return null;
+
+  if (!group) {
+    return (
+      <div style={{ minHeight:"100vh", background:"#080c14", color:"#f1f5f9", fontFamily:"'DM Sans',sans-serif", padding:24 }}>
+        <MoeIcons />
+        {isPlatformAdmin(user) ? <AdminView /> : <p>This login isn't linked to a kitchen.</p>}
+        <button type="button" onClick={signOut} style={{ marginTop:16, background:"transparent", border:"1px solid #1e2d45", borderRadius:8, color:"#94a3b8", padding:"10px 16px", cursor:"pointer" }}>Sign out</button>
+      </div>
+    );
+  }
 
   // ── Subscription gate (skip for demo accounts) ─────────────────────────
   const isDemo = DEMO_GROUPS.includes(group);
@@ -864,35 +559,31 @@ function MoeApp() {
   const isActive = subscription?.status === "active";
   const hasAccess = isDemo || isTrialing || isActive;
 
-  // Auto-start trial for new accounts (only after data loaded from Supabase)
-  if (dataLoaded && !isDemo && !subscription && user) {
-    const trialEnd = new Date(); trialEnd.setDate(trialEnd.getDate() + TRIAL_DAYS);
-    const newSub = { plan: "pro", status: "trialing", trialStart: new Date().toISOString(), trialEnd: trialEnd.toISOString() };
-    setSubscription(newSub);
-    save("subscription", newSub);
-  }
-
-  // Show pricing page if trial expired and no active subscription
-  // But ONLY after data has loaded — otherwise we'd flash the pricing page
-  if (!dataLoaded && !isDemo) {
+  if (!dataLoaded) {
     return (
       <div style={{ minHeight:"100vh", background:"#080c14", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',sans-serif" }}>
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-        <div style={{ textAlign:"center" }}>
+        <div style={{ textAlign:"center", padding:24 }}>
           <MoeLogo size="lg" />
-          <div style={{ color:"#475569", fontSize:13, fontFamily:"'DM Mono',monospace", marginTop:16 }}>Loading your data...</div>
+          {loadError ? (
+            <>
+              <div style={{ color:"#fca5a5", fontSize:14, marginTop:16 }}>Can't reach MOE: {loadError}</div>
+              <div style={{ color:"#64748b", fontSize:12, marginTop:6 }}>Nothing was changed.</div>
+              <div style={{ display:"flex", gap:8, justifyContent:"center", marginTop:16 }}>
+                <button type="button" onClick={() => { setLoadError(""); setLoadTick(t => t + 1); }} style={{ background:"#38bdf8", border:"none", borderRadius:8, color:"#04111f", padding:"10px 16px", fontWeight:700, cursor:"pointer" }}>Try again</button>
+                <button type="button" onClick={signOut} style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, color:"#94a3b8", padding:"10px 16px", cursor:"pointer" }}>Sign out</button>
+              </div>
+            </>
+          ) : (
+            <div style={{ color:"#475569", fontSize:13, fontFamily:"'DM Mono',monospace", marginTop:16 }}>Loading your data...</div>
+          )}
         </div>
       </div>
     );
   }
 
-  if (!hasAccess && !isDemo) {
-    return <PricingPage subscription={subscription} user={user} onLogout={() => setUser(null)}
-      onSelectPlan={(plan) => {
-        const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() };
-        setSubscription(newSub);
-        save("subscription", newSub);
-      }} />;
+  if (!hasAccess) {
+    return <PricingPage subscription={subscription} user={user} onLogout={signOut} />;
   }
 
   // Get current plan limits
@@ -901,13 +592,12 @@ function MoeApp() {
   // ── Onboarding for new owners ─────────────────────────────────────────
   // Skip onboarding for existing accounts that already have vendors/inventory set up
   const hasExistingData = vendors.some(v => v.name && v.name.trim()) && inventory.length > 0;
-  const needsOnboarding = dataLoaded && user.role === "owner" && onboarding !== "done" && !isDemo && !hasExistingData;
+  const needsOnboarding = user.role === "owner" && onboarding !== "done" && !isDemo && !hasExistingData;
   if (needsOnboarding) {
     return <OnboardingFlow
       user={user} step={onboarding || 1}
       vendors={vendors} saveVendors={(v) => { setVendors(v); save("vendors", v); }}
       inventory={inventory} saveInventory={(inv) => { setInventory(inv); save("inventory", inv); }}
-      team={team} saveTeam={(t) => { setTeam(t); const g = groupRef.current; try { localStorage.setItem(`moe_${g}_team`, JSON.stringify(t)); } catch {} sbSet(g, "team", t); }}
       onStep={(s) => { setOnboarding(s); save("onboarding", s); }}
       onComplete={() => { setOnboarding("done"); save("onboarding", "done"); }}
     />;
@@ -922,6 +612,14 @@ function MoeApp() {
 
   const todayVendors = vendorsOrderingToday(vendors);
   const weekNum = getWeekNumber();
+  const openNav = () => {
+    navOpenedAt.current = Date.now();
+    setSidebarOpen(true);
+  };
+  const closeNavFromOverlay = () => {
+    if (Date.now() - navOpenedAt.current < 400) return;
+    setSidebarOpen(false);
+  };
 
   // All features that can be toggled
   const ALL_FEATURES = [
@@ -980,129 +678,94 @@ function MoeApp() {
       `}</style>
 
       <MoeIcons />
-
-      {/* Sidebar overlay */}
-      {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200 }} />}
-
-      {/* Sidebar */}
-      <div style={{ position:"fixed", top:0, left:0, height:"100vh", width:260, background:"#0f1a2e", borderRight:"1px solid #1e2d45", transform:sidebarOpen?"translateX(0)":"translateX(-100%)", transition:"transform 0.25s ease", zIndex:201, display:"flex", flexDirection:"column" }}>
-        <div style={{ padding:"20px", borderBottom:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <MoeLogo size="md" />
-          <button onClick={() => setSidebarOpen(false)} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:18 }}>✕</button>
+      {(new URLSearchParams(window.location.search).get("classic") === "1" || window.location.pathname.startsWith("/classic")) && (
+        <div style={{ background:"#0c1220", color:"#94a3b8", fontSize:12, textAlign:"center", padding:"8px 12px", borderBottom:"1px solid #1e2d45" }}>
+          Classic MOE. <a href="/app" style={{ color:"#38bdf8", fontWeight:700 }}>Switch to the simpler kitchen</a>
         </div>
-        <div style={{ padding:"14px 20px", borderBottom:"1px solid #1e2d45" }}>
-          <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{user.name}</div>
-          <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · WK{weekNum} · {DAYS[getToday()]}</div>
-        </div>
-        <div style={{ flex:1, padding:"12px", overflowY:"auto" }}>
-          {(() => {
-            // Build the inventory sub-items (only those the user can access)
-            const inventoryChildren = [
-              ...(canAccess("inventory") ? [{ key:"inventory", label:"Place Order", icon:"inventory", desc:"Count stock & build order" }] : []),
-              ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} vendor${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
-              ...(canAccess("history") ? [{ key:"history", label:"History", icon:"history", desc:"Past orders by week" }] : []),
-              ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Par suggestions by usage", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-              ...(canAccess("waste") ? [{ key:"waste", label:"Waste Log", icon:"waste", desc:"Track what's going in the trash" }] : []),
-              ...(canAccess("backend") ? [{ key:"backend", label:"Backend", icon:"backend", desc:"Add & edit items" }] : []),
-            ];
-            const inventoryChildKeys = inventoryChildren.map(c => c.key);
-            const inventoryActiveChild = inventoryChildKeys.includes(view);
-            const showInventoryGroup = inventoryChildren.length > 0;
+      )}
 
-            // Build the Menu sub-items (recipes, future menu builder, food cost, P&L)
-            const menuChildren = [
-              ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes & Costs", icon:"recipes", desc:"Build recipes, see dish cost" }] : []),
-            ];
-            const menuChildKeys = menuChildren.map(c => c.key);
-            const menuActiveChild = menuChildKeys.includes(view);
-            const showMenuGroup = menuChildren.length > 0;
-
-            // Top-level items (flat). Inventory & Menu groups are rendered specially below.
-            const topLevel = [
-              ...(user.role === "owner" ? [{ key:"dashboard", label:"Dashboard", icon:"dashboard", desc:"Overview & quick actions" }] : []),
-              ...(canAccess("prices") ? [{ key:"prices", label:"Price Tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice price checker", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-              ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Vendors & team" }] : []),
-              ...(canAccess("import") ? [{ key:"import", label:"Import Items", icon:"doc", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload list or invoice photo", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
-              ...(user.role === "owner" ? [
-                { key:"subscription", label:"Subscription", icon:"subscription", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") },
-              ] : []),
-              ...(isPlatformAdmin(user) ? [
-                { key:"admin", label:"Admin", icon:"admin", desc:"Signups & accounts" },
-              ] : []),
-            ];
-
-            // Render an individual nav button (used for both top-level and child)
-            const renderNavItem = (item, isChild = false) => {
-              const isActive = view === item.key;
-              return (
-                <button key={item.key} className="moe-nav"
-                  onClick={() => { if (!item.locked) { setView(item.key); setSidebarOpen(false); } else { setView("subscription"); setSidebarOpen(false); } }}
-                  style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#0f1a2e":"transparent", border:"none", borderRadius:10,
-                    padding: isChild ? "9px 14px 9px 32px" : "11px 14px",
-                    cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #38bdf8":"3px solid transparent", opacity:item.locked?0.5:1 }}>
-                  <Icon name={item.icon} size={isChild ? 16 : 19} color={isActive ? "#38bdf8" : "#64748b"} />
-                  <div style={{ textAlign:"left", flex:1 }}>
-                    <div style={{ color:isActive?"#f1f5f9":"#94a3b8", fontSize: isChild ? 13 : 14, fontWeight:isActive?600:400, display:"flex", alignItems:"center", gap:6 }}>{item.label}{item.locked ? <Icon name="alert" size={12} color="#d97706" /> : null}</div>
-                    {!isChild && <div style={{ color:item.locked?"#d97706":"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>}
-                  </div>
-                  {item.badge > 0 && <span style={{ background:"rgba(56,189,248,0.15)", color:"#38bdf8", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
-                </button>
-              );
-            };
-
-            // Place Inventory group right after Dashboard
-            const dashboardItem = topLevel.find(t => t.key === "dashboard");
-            const afterDashboard = topLevel.filter(t => t.key !== "dashboard");
-
-            return (
-              <>
-                {dashboardItem && renderNavItem(dashboardItem)}
-                {showInventoryGroup && (
-                  <>
-                    <button onClick={() => setInventoryGroupOpen(o => !o)}
-                      style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background: inventoryActiveChild ? "#0f1a2e" : "transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft: inventoryActiveChild ? "3px solid #38bdf8" : "3px solid transparent" }}>
-                      <Icon name="inventory" size={19} color={inventoryActiveChild ? "#38bdf8" : "#64748b"} />
+      {sidebarOpen && createPortal(
+        <>
+          <div onClick={closeNavFromOverlay} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:10000 }} />
+          <div role="dialog" aria-label="Menu" style={{ position:"fixed", top:0, left:0, height:"100dvh", width:"min(260px, 88vw)", background:"#0f1a2e", borderRight:"1px solid #1e2d45", zIndex:10001, display:"flex", flexDirection:"column", boxShadow:"8px 0 24px rgba(0,0,0,0.35)" }}>
+            <div style={{ padding:"20px", borderBottom:"1px solid #1e2d45", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+              <MoeLogo size="md" />
+              <button type="button" aria-label="Close menu" onClick={() => setSidebarOpen(false)} style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:18 }}>✕</button>
+            </div>
+            <div style={{ padding:"14px 20px", borderBottom:"1px solid #1e2d45", flexShrink:0 }}>
+              <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{user.name}</div>
+              <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{user.role.toUpperCase()} · WK{weekNum} · {DAYS[getToday()]}</div>
+            </div>
+            <div style={{ flex:1, minHeight:0, padding:"12px", overflowY:"auto" }}>
+              {(() => {
+                const go = (key) => { setView(key); setSidebarOpen(false); };
+                const primary = [
+                  ...(user.role === "owner" ? [{ key:"dashboard", label:"Dashboard", icon:"dashboard", desc:"Overview" }] : []),
+                  ...(canAccess("inventory") ? [{ key:"inventory", label:"Place Order", icon:"inventory", desc:"Count stock and order" }] : []),
+                  ...(canAccess("orders") ? [{ key:"orders", label:"Orders", icon:"orders", desc:`${todayVendors.length} supplier${todayVendors.length!==1?"s":""} today`, badge: todayVendors.length }] : []),
+                  ...(canAccess("history") ? [{ key:"history", label:"Order History", icon:"history", desc:"Past supplier orders" }] : []),
+                  ...(canAccess("backend") ? [{ key:"backend", label:"Edit items", icon:"backend", desc:"Names, pars, suppliers" }] : []),
+                  ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Suppliers and team" }] : []),
+                ];
+                const more = [
+                  ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Usage suggestions", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+                  ...(canAccess("waste") ? [{ key:"waste", label:"Waste log", icon:"waste", desc:"Parked until the count is in use" }] : []),
+                  ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes", icon:"recipes", desc:"Dish cost" }] : []),
+                  ...(canAccess("prices") ? [{ key:"prices", label:"Price tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice prices", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+                  ...(canAccess("import") ? [{ key:"import", label:"Import items", icon:"doc", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload a list or invoice", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+                  ...(user.role === "owner" ? [{ key:"subscription", label:"Subscription", icon:"subscription", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") }] : []),
+                  ...(isPlatformAdmin(user) ? [{ key:"admin", label:"Admin", icon:"admin", desc:"Accounts" }] : []),
+                ];
+                const moreExpanded = moreOpen || more.some(item => item.key === view);
+                const renderNavItem = (item) => {
+                  const isActive = view === item.key;
+                  return (
+                    <button key={item.key} type="button" className="moe-nav"
+                      onClick={() => go(item.locked ? "subscription" : item.key)}
+                      style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:isActive?"#0f1a2e":"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft:isActive?"3px solid #38bdf8":"3px solid transparent", opacity:item.locked?0.5:1 }}>
+                      <Icon name={item.icon} size={19} color={isActive ? "#38bdf8" : "#64748b"} />
                       <div style={{ textAlign:"left", flex:1 }}>
-                        <div style={{ color: inventoryActiveChild ? "#f1f5f9" : "#94a3b8", fontSize:14, fontWeight: inventoryActiveChild ? 600 : 400 }}>Inventory</div>
-                        <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{inventoryChildren.length} tools</div>
+                        <div style={{ color:isActive?"#f1f5f9":"#94a3b8", fontSize:14, fontWeight:isActive?600:400, display:"flex", alignItems:"center", gap:6 }}>{item.label}{item.locked ? <Icon name="alert" size={12} color="#d97706" /> : null}</div>
+                        <div style={{ color:item.locked?"#d97706":"#475569", fontSize:11, marginTop:1 }}>{item.desc}</div>
                       </div>
-                      <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: inventoryGroupOpen ? "rotate(0deg)" : "rotate(-90deg)" }} />
+                      {item.badge > 0 && <span style={{ background:"rgba(56,189,248,0.15)", color:"#38bdf8", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
                     </button>
-                    {inventoryGroupOpen && inventoryChildren.map(child => renderNavItem(child, true))}
-                  </>
-                )}
-                {showMenuGroup && (
+                  );
+                };
+                return (
                   <>
-                    <button onClick={() => setMenuGroupOpen(o => !o)}
-                      style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background: menuActiveChild ? "#0f1a2e" : "transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginBottom:4, borderLeft: menuActiveChild ? "3px solid #38bdf8" : "3px solid transparent" }}>
-                      <Icon name="recipes" size={19} color={menuActiveChild ? "#38bdf8" : "#64748b"} />
-                      <div style={{ textAlign:"left", flex:1 }}>
-                        <div style={{ color: menuActiveChild ? "#f1f5f9" : "#94a3b8", fontSize:14, fontWeight: menuActiveChild ? 600 : 400 }}>Menu</div>
-                        <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>{menuChildren.length} tool{menuChildren.length !== 1 ? "s" : ""}</div>
-                      </div>
-                      <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: menuGroupOpen ? "rotate(0deg)" : "rotate(-90deg)" }} />
-                    </button>
-                    {menuGroupOpen && menuChildren.map(child => renderNavItem(child, true))}
+                    {primary.map(renderNavItem)}
+                    {more.length > 0 && (
+                      <>
+                        <button type="button" onClick={() => setMoreOpen(open => !open)}
+                          style={{ width:"100%", display:"flex", alignItems:"center", gap:12, background:"transparent", border:"none", borderRadius:10, padding:"11px 14px", cursor:"pointer", marginTop:8, borderLeft:"3px solid transparent" }}>
+                          <div style={{ textAlign:"left", flex:1 }}>
+                            <div style={{ color:"#64748b", fontSize:13, fontWeight:600 }}>More</div>
+                            <div style={{ color:"#475569", fontSize:11, marginTop:1 }}>Waste, prices, recipes, import</div>
+                          </div>
+                          <Icon name="chevron" size={14} color="#64748b" style={{ transition:"transform 0.2s ease", transform: moreExpanded ? "rotate(0deg)" : "rotate(-90deg)" }} />
+                        </button>
+                        {moreExpanded && more.map(renderNavItem)}
+                      </>
+                    )}
                   </>
-                )}
-                {afterDashboard.map(item => renderNavItem(item))}
-              </>
-            );
-          })()}
-        </div>
-        <div style={{ padding:"12px", borderTop:"1px solid #1e2d45" }}>
-          <button onClick={() => setUser(null)} style={{ width:"100%", background:"transparent", border:"1px solid #1e2d45", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13 }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#64748b"; }}>
-            Sign Out
-          </button>
-        </div>
-      </div>
+                );
+              })()}
+            </div>
+            <div style={{ padding:"12px", borderTop:"1px solid #1e2d45", flexShrink:0 }}>
+              <button type="button" onClick={signOut} style={{ width:"100%", background:"transparent", border:"1px solid #1e2d45", borderRadius:8, color:"#64748b", padding:"10px", cursor:"pointer", fontSize:13 }}>
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
 
       {/* Header */}
       <header style={{ background:"#0f1a2e", borderBottom:"1px solid #1e2d45", padding:"0 12px", display:"flex", alignItems:"center", justifyContent:"space-between", height:52, position:"sticky", top:0, zIndex:101, gap:8, overflow:"hidden" }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
-          <button onClick={() => setSidebarOpen(true)} style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}
+          <button type="button" aria-label="Open menu" onPointerUp={(event) => { event.preventDefault(); event.stopPropagation(); openNav(); }} style={{ background:"none", border:"none", cursor:"pointer", padding:"6px", borderRadius:8, display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}
             onMouseEnter={e => e.currentTarget.style.background="#1e2d45"} onMouseLeave={e => e.currentTarget.style.background="none"}>
             <span style={{ display:"block", width:18, height:2, background:"#94a3b8", borderRadius:2 }} />
             <span style={{ display:"block", width:18, height:2, background:"#94a3b8", borderRadius:2 }} />
@@ -1137,32 +800,11 @@ function MoeApp() {
         </div>
       )}
 
-      {/* Sales-rep broadcast banner (across whole app, dismissible) */}
-      {(() => {
-        const active = repBroadcasts.filter(b => !dismissedBroadcasts.includes(b.id) && (!b.targets || b.targets.includes(group)));
-        if (active.length === 0) return null;
-        const b = active[0]; // show most recent undismissed
-        const dismiss = () => {
-          const next = [...dismissedBroadcasts, b.id];
-          setDismissedBroadcasts(next);
-          try { localStorage.setItem("moe_dismissed_bc", JSON.stringify(next)); } catch {}
-        };
-        return (
-          <div style={{ maxWidth:1200, margin:"12px auto 0", padding:"0 16px", boxSizing:"border-box", width:"100%" }}>
-            <div style={{ background:"rgba(56,189,248,0.08)", border:"1px solid rgba(56,189,248,0.4)", borderRadius:12, padding:"14px 16px", display:"flex", alignItems:"flex-start", gap:12 }}>
-              <div style={{ flexShrink:0, marginTop:1 }}><Icon name="alert" size={18} color="#38bdf8" /></div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-                  <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:700 }}>{b.title}</span>
-                  {b.company && <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>from {b.company}</span>}
-                </div>
-                <p style={{ color:"#cbd5e1", fontSize:13, margin:"4px 0 0", lineHeight:1.5 }}>{b.body}</p>
-              </div>
-              <button onClick={dismiss} style={{ flexShrink:0, background:"transparent", border:"none", color:"#64748b", fontSize:20, cursor:"pointer", lineHeight:1, padding:"0 2px" }}>×</button>
-            </div>
-          </div>
-        );
-      })()}
+      {saveError && (
+        <div role="status" style={{ background:"#450a0a", borderBottom:"1px solid #ef4444", color:"#fecaca", padding:"8px 12px", fontSize:12, textAlign:"center" }}>
+          Not saved: {saveError}
+        </div>
+      )}
 
       {/* Main content */}
       <main key={view} className="moe-fade" style={{ maxWidth:1200, margin:"0 auto", padding:"16px", boxSizing:"border-box", width:"100%" }}>
@@ -1188,8 +830,8 @@ function MoeApp() {
         {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} foodCost={foodCost} history={history} saveHistory={saveHistory} saveInventory={(inv) => { setInventory(inv); save("inventory", inv); }} />}
         {view === "import" && canAccess("import") && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && canAccess("backend") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
-        {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} team={team} saveTeam={saveTeam} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} user={user} allFeatures={ALL_FEATURES} autoSubmit={autoSubmit} setAutoSubmit={(v) => { setAutoSubmit(v); save("autoSubmit", v); }} foodCost={foodCost} setFoodCost={(v) => { setFoodCost(v); save("foodCost", v); }} />}
-        {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} onSelectPlan={(plan) => { const newSub = { ...subscription, plan, status: "active", subscribedAt: new Date().toISOString() }; setSubscription(newSub); save("subscription", newSub); showFlash("✓ Plan updated"); }} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
+        {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} user={user} allFeatures={ALL_FEATURES} autoSubmit={autoSubmit} setAutoSubmit={(v) => { setAutoSubmit(v); save("autoSubmit", v); }} foodCost={foodCost} setFoodCost={(v) => { setFoodCost(v); save("foodCost", v); }} />}
+        {view === "subscription" && user.role === "owner" && <SubscriptionView subscription={subscription} user={user} trialDaysLeft={trialDaysLeft} isTrialing={isTrialing} isActive={isActive} />}
         {view === "admin" && isPlatformAdmin(user) && <AdminView />}
       </main>
     </div>
@@ -1273,333 +915,6 @@ function MoeLogo({ size = "md" }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// LOGIN
-// ═══════════════════════════════════════════════════════════════════════════════
-function LoginScreen({ onLogin, error, setError }) {
-  const [mode, setMode] = useState("signin"); // "signin" or "register"
-  const [show, setShow] = useState(false);
-
-  // Sign In fields — restore last email from localStorage
-  const [email, setEmail] = useState(() => { try { return localStorage.getItem("moe_last_email") || ""; } catch { return ""; } });
-  const [pass, setPass] = useState("");
-
-  // Registration fields
-  const [reg, setReg] = useState({
-    ownerFirst: "", ownerLast: "", ownerEmail: "", ownerPhone: "",
-    password: "", confirmPassword: "",
-    bizName: "", bizType: "restaurant", bizPhone: "", bizAddress: "", bizCity: "", bizState: "", bizZip: "", repCode: "",
-  });
-  const [regStep, setRegStep] = useState(1); // 1 = owner info, 2 = business info
-  const [regError, setRegError] = useState("");
-
-  const updateReg = (field, val) => setReg(prev => ({ ...prev, [field]: val }));
-
-  const handleLogin = () => {
-    const u = USERS[email.toLowerCase().trim()];
-    if (u && u.password === pass) onLogin({ ...u, email });
-    else setError("Invalid email or password.");
-  };
-
-  const handleRegister = async () => {
-    setRegError("");
-    await loadSupabase();
-    // Validate
-    if (!reg.ownerFirst.trim() || !reg.ownerLast.trim()) return setRegError("First and last name required.");
-    if (!reg.ownerEmail.trim() || !reg.ownerEmail.includes("@")) return setRegError("Valid email required.");
-    if (!reg.ownerPhone.trim()) return setRegError("Phone number required.");
-    if (!reg.password || reg.password.length < 6) return setRegError("Password must be at least 6 characters.");
-    if (reg.password !== reg.confirmPassword) return setRegError("Passwords don't match.");
-    if (!reg.bizName.trim()) return setRegError("Business name required.");
-    if (!reg.bizPhone.trim()) return setRegError("Business phone required.");
-    if (!reg.bizAddress.trim()) return setRegError("Business address required.");
-    if (!reg.bizCity.trim() || !reg.bizState.trim() || !reg.bizZip.trim()) return setRegError("Full address required.");
-
-    // Generate a group ID from business name
-    const groupId = reg.bizName.trim().toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 30);
-
-    // Check if email already exists in registered accounts
-    const existing = await sbGet("__moe_accounts__", "accounts") || {};
-    if (existing[reg.ownerEmail.toLowerCase().trim()]) return setRegError("An account with this email already exists.");
-
-    // Save account
-    const account = {
-      ownerFirst: reg.ownerFirst.trim(), ownerLast: reg.ownerLast.trim(),
-      email: reg.ownerEmail.toLowerCase().trim(), phone: reg.ownerPhone.trim(),
-      password: reg.password, role: "owner", group: groupId,
-      business: {
-        name: reg.bizName.trim(), type: reg.bizType,
-        phone: reg.bizPhone.trim(), address: reg.bizAddress.trim(),
-        city: reg.bizCity.trim(), state: reg.bizState.trim(), zip: reg.bizZip.trim(),
-      },
-      createdAt: new Date().toISOString(),
-      repCode: (reg.repCode || "").trim().toUpperCase(),
-    };
-    existing[account.email] = account;
-    await sbSet("__moe_accounts__", "accounts", existing);
-
-    // If tagged to a rep, add this account to the rep's account list
-    // and auto-seed the rep's company as a vendor so it's already in the dropdown.
-    if (account.repCode) {
-      const repAccts = await sbGet("__moe_reps__", `accounts_${account.repCode}`) || [];
-      if (!repAccts.find(a => a.email === account.email)) {
-        repAccts.push({ email: account.email, group: groupId, business: account.business.name, createdAt: account.createdAt });
-        await sbSet("__moe_reps__", `accounts_${account.repCode}`, repAccts);
-      }
-      // Look up the rep's company and pre-create it as a vendor for this account
-      const reps = await sbGet("__moe_reps__", "reps") || {};
-      const repRecord = Object.values(reps).find(r => r.code === account.repCode);
-      if (repRecord && repRecord.company) {
-        await sbSet(groupId, "vendors", [{ id: Date.now(), name: repRecord.company, orderDays: [] }]);
-      }
-    }
-
-    // Log them in
-    onLogin({ name: `${account.ownerFirst} ${account.ownerLast}`, role: "owner", group: groupId, email: account.email, business: account.business });
-  };
-
-  // Also check registered accounts and team members on login
-  const handleLoginWithAccounts = async () => {
-    await loadSupabase();
-    const emailLower = email.toLowerCase().trim();
-    const rememberEmail = () => { try { localStorage.setItem("moe_last_email", emailLower); } catch {} };
-
-    // Check hardcoded demo users first
-    const u = USERS[emailLower];
-    if (u && u.password === pass) { rememberEmail(); onLogin({ ...u, email: emailLower }); return; }
-
-    // Check registered owner accounts
-    const accounts = await sbGet("__moe_accounts__", "accounts") || {};
-    const acct = accounts[emailLower];
-    if (acct && acct.password === pass) {
-      rememberEmail();
-      onLogin({ name: `${acct.ownerFirst} ${acct.ownerLast}`, role: acct.role, group: acct.group, email: acct.email, business: acct.business });
-      return;
-    }
-
-    // Check team members across all registered accounts
-    for (const [ownerEmail, ownerAcct] of Object.entries(accounts)) {
-      const teamData = await sbGet(ownerAcct.group, "team");
-      if (Array.isArray(teamData)) {
-        const member = teamData.find(m => m.email.toLowerCase() === emailLower && m.password === pass);
-        if (member) {
-          rememberEmail();
-          onLogin({ name: member.name, role: member.role || "employee", group: ownerAcct.group, email: member.email, business: ownerAcct.business });
-          return;
-        }
-      }
-    }
-
-    // Check sales rep accounts
-    const reps = await sbGet("__moe_reps__", "reps") || {};
-    const rep = reps[emailLower];
-    if (rep && rep.password === pass) {
-      rememberEmail();
-      onLogin({ name: rep.name, role: "rep", repCode: rep.code, repCompany: rep.company || "", email: emailLower, group: null });
-      return;
-    }
-
-    setError("Invalid email or password.");
-  };
-
-  const inp = { width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box" };
-  const lbl = { display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" };
-
-  return (
-    <div style={{ minHeight:"100vh", background:"#080c14", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',sans-serif", padding:"20px 16px" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      <div style={{ width:"100%", maxWidth:400 }}>
-        <div style={{ textAlign:"center", marginBottom:24 }}>
-          <div style={{ display:"flex", justifyContent:"center", marginBottom:8 }}><MoeLogo size="lg" /></div>
-          <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", letterSpacing:"2px", marginBottom:4 }}>MAKE ORDERING EASY</div>
-        </div>
-
-        {/* ── SIGN IN ── */}
-        {mode === "signin" && (
-          <>
-            <p style={{ color:"#64748b", fontSize:14, margin:"0 0 20px", textAlign:"center" }}>Sign in to continue</p>
-            <div style={{ background:"#0f1a2e", borderRadius:16, border:"1px solid #1e2d45", padding:28 }}>
-              <div style={{ marginBottom:16 }}>
-                <label style={lbl}>Email</label>
-                <input value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key==="Enter" && handleLoginWithAccounts()} placeholder="you@business.com" type="email" style={inp} />
-              </div>
-              <div style={{ marginBottom:20 }}>
-                <label style={lbl}>Password</label>
-                <div style={{ position:"relative" }}>
-                  <input value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key==="Enter" && handleLoginWithAccounts()} type={show?"text":"password"} placeholder="••••••••"
-                    style={{ ...inp, paddingRight:40 }} />
-                  <button onClick={() => setShow(!show)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:14 }}>{show?"🙈":"👁"}</button>
-                </div>
-              </div>
-              {error && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:16 }}>{error}</div>}
-              <button onClick={handleLoginWithAccounts} style={{ width:"100%", background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:12, color:"#080c14", fontSize:15, fontWeight:700, cursor:"pointer" }}>Sign In</button>
-              <div style={{ textAlign:"center", marginTop:16 }}>
-                <span style={{ color:"#475569", fontSize:13 }}>Don't have an account? </span>
-                <button onClick={() => { setMode("register"); setError(""); setRegError(""); setRegStep(1); }}
-                  style={{ background:"none", border:"none", color:"#e2e8f0", fontSize:13, fontWeight:600, cursor:"pointer", textDecoration:"underline", padding:0 }}>
-                  Create Account
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ── CREATE ACCOUNT ── */}
-        {mode === "register" && (
-          <div style={{ background:"#0f1a2e", borderRadius:16, border:"1px solid #1e2d45", padding:28 }}>
-            {/* Back + title */}
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
-              <button onClick={() => { setMode("signin"); setRegError(""); }}
-                style={{ background:"none", border:"1px solid #1e2d45", borderRadius:6, color:"#94a3b8", cursor:"pointer", fontSize:12, padding:"4px 10px" }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#e2e8f0"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#94a3b8"; }}>
-                ← Back
-              </button>
-              <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>Create Account</span>
-            </div>
-            {/* Step indicator */}
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20 }}>
-              {[1, 2].map(step => (
-                <React.Fragment key={step}>
-                  <div onClick={() => { if (step < regStep) setRegStep(step); }}
-                    style={{ width:28, height:28, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, cursor:step<=regStep?"pointer":"default",
-                      background:regStep>=step?"#e2e8f0":"#1e2d45", color:regStep>=step?"#080c14":"#475569" }}>
-                    {step}
-                  </div>
-                  {step < 2 && <div style={{ flex:1, height:2, background:regStep>1?"#e2e8f0":"#1e2d45", borderRadius:1 }} />}
-                </React.Fragment>
-              ))}
-              <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginLeft:8 }}>
-                {regStep === 1 ? "Owner Info" : "Business Info"}
-              </span>
-            </div>
-
-            {/* Step 1: Owner Information */}
-            {regStep === 1 && (
-              <>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
-                  <div>
-                    <label style={lbl}>First Name *</label>
-                    <input value={reg.ownerFirst} onChange={e => updateReg("ownerFirst", e.target.value)} placeholder="John" style={inp} />
-                  </div>
-                  <div>
-                    <label style={lbl}>Last Name *</label>
-                    <input value={reg.ownerLast} onChange={e => updateReg("ownerLast", e.target.value)} placeholder="Doe" style={inp} />
-                  </div>
-                </div>
-                <div style={{ marginBottom:12 }}>
-                  <label style={lbl}>Email Address *</label>
-                  <input value={reg.ownerEmail} onChange={e => updateReg("ownerEmail", e.target.value)} placeholder="john@mybusiness.com" type="email" style={inp} />
-                </div>
-                <div style={{ marginBottom:12 }}>
-                  <label style={lbl}>Phone Number *</label>
-                  <input value={reg.ownerPhone} onChange={e => updateReg("ownerPhone", e.target.value)} placeholder="(555) 123-4567" type="tel" style={inp} />
-                </div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:16 }}>
-                  <div>
-                    <label style={lbl}>Password *</label>
-                    <input value={reg.password} onChange={e => updateReg("password", e.target.value)} type="password" placeholder="Min 6 chars" style={inp} />
-                  </div>
-                  <div>
-                    <label style={lbl}>Confirm Password *</label>
-                    <input value={reg.confirmPassword} onChange={e => updateReg("confirmPassword", e.target.value)} type="password" placeholder="••••••••" style={inp} />
-                  </div>
-                </div>
-                <button onClick={() => {
-                  if (!reg.ownerFirst.trim() || !reg.ownerLast.trim()) { setRegError("First and last name required."); return; }
-                  if (!reg.ownerEmail.trim() || !reg.ownerEmail.includes("@")) { setRegError("Valid email required."); return; }
-                  if (!reg.ownerPhone.trim()) { setRegError("Phone number required."); return; }
-                  if (!reg.password || reg.password.length < 6) { setRegError("Password must be at least 6 characters."); return; }
-                  if (reg.password !== reg.confirmPassword) { setRegError("Passwords don't match."); return; }
-                  setRegError(""); setRegStep(2);
-                }}
-                  style={{ width:"100%", background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:8, padding:12, color:"#080c14", fontSize:14, fontWeight:700, cursor:"pointer" }}>
-                  Next — Business Info →
-                </button>
-              </>
-            )}
-
-            {/* Step 2: Business Information */}
-            {regStep === 2 && (
-              <>
-                <div style={{ marginBottom:12 }}>
-                  <label style={lbl}>Business Name *</label>
-                  <input value={reg.bizName} onChange={e => updateReg("bizName", e.target.value)} placeholder="Tommy's Pizzeria" style={inp} />
-                </div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
-                  <div>
-                    <label style={lbl}>Business Type</label>
-                    <select value={reg.bizType} onChange={e => updateReg("bizType", e.target.value)}
-                      style={{ ...inp, cursor:"pointer" }}>
-                      <option value="restaurant">Restaurant</option>
-                      <option value="pizzeria">Pizzeria</option>
-                      <option value="bakery">Bakery</option>
-                      <option value="cafe">Café</option>
-                      <option value="bar">Bar / Lounge</option>
-                      <option value="catering">Catering</option>
-                      <option value="food_truck">Food Truck</option>
-                      <option value="deli">Deli</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={lbl}>Business Phone *</label>
-                    <input value={reg.bizPhone} onChange={e => updateReg("bizPhone", e.target.value)} placeholder="(555) 987-6543" type="tel" style={inp} />
-                  </div>
-                </div>
-                <div style={{ marginBottom:12 }}>
-                  <label style={lbl}>Street Address *</label>
-                  <input value={reg.bizAddress} onChange={e => updateReg("bizAddress", e.target.value)} placeholder="123 Main Street" style={inp} />
-                </div>
-                <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 1fr", gap:12, marginBottom:16 }}>
-                  <div>
-                    <label style={lbl}>City *</label>
-                    <input value={reg.bizCity} onChange={e => updateReg("bizCity", e.target.value)} placeholder="Brooklyn" style={inp} />
-                  </div>
-                  <div>
-                    <label style={lbl}>State *</label>
-                    <input value={reg.bizState} onChange={e => updateReg("bizState", e.target.value)} placeholder="NY" maxLength={2} style={{ ...inp, textTransform:"uppercase" }} />
-                  </div>
-                  <div>
-                    <label style={lbl}>Zip *</label>
-                    <input value={reg.bizZip} onChange={e => updateReg("bizZip", e.target.value)} placeholder="11201" style={inp} />
-                  </div>
-                </div>
-                <div style={{ marginBottom:16 }}>
-                  <label style={lbl}>Sales rep code <span style={{ color:"#475569", fontWeight:400 }}>(optional)</span></label>
-                  <input value={reg.repCode} onChange={e => updateReg("repCode", e.target.value.toUpperCase())} placeholder="e.g. JOE" style={{ ...inp, textTransform:"uppercase" }} />
-                  <div style={{ color:"#475569", fontSize:11, marginTop:4 }}>If your food rep referred you, enter their code so they can support your account.</div>
-                </div>
-                {regError && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:16 }}>{regError}</div>}
-                <div style={{ display:"flex", gap:10 }}>
-                  <button onClick={() => setRegStep(1)}
-                    style={{ flex:1, background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:12, color:"#94a3b8", fontSize:14, fontWeight:600, cursor:"pointer" }}>
-                    ← Back
-                  </button>
-                  <button onClick={handleRegister}
-                    style={{ flex:2, background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:12, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>
-                    Create Account
-                  </button>
-                </div>
-              </>
-            )}
-
-            {regStep === 1 && regError && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginTop:16 }}>{regError}</div>}
-          </div>
-        )}
-
-        {/* Demo credentials */}
-        {mode === "signin" && (
-          <div style={{ marginTop:20, background:"#0f1a2e", borderRadius:12, border:"1px solid #1e2d45", padding:"14px 18px" }}>
-            <div style={{ color:"#475569", fontSize:10, fontFamily:"'DM Mono',monospace", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px" }}>Demo Credentials</div>
-            <div style={{ color:"#94a3b8", fontSize:12, lineHeight:2 }}><span style={{ color:"#e2e8f0" }}>Owner:</span> owner@kitchen.com / owner123<br /><span style={{ color:"#22c55e" }}>Employee:</span> employee@kitchen.com / employee123</div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD VIEW — Clean overview shown when owner signs in
 // ═══════════════════════════════════════════════════════════════════════════════
 function DashboardView({ user, inventory, stock, vendors, history, stockSnapshots, recipes, priceHistory, todayVendors, weekNum, setView }) {
@@ -1613,7 +928,7 @@ function DashboardView({ user, inventory, stock, vendors, history, stockSnapshot
   const totalItems = allItems.length;
 
   // Orders this week
-  const currentYear = new Date().getFullYear();
+  const currentYear = getWeekYear();
   const ordersThisWeek = (history || []).filter(o => o.weekNumber === weekNum && o.year === currentYear);
   const ordersThisWeekCount = ordersThisWeek.length;
 
@@ -1639,11 +954,11 @@ function DashboardView({ user, inventory, stock, vendors, history, stockSnapshot
     .sort((a, b) => b - a)[0];
   const daysSinceCount = lastCountTs ? Math.floor((Date.now() - lastCountTs) / 86400000) : null;
 
-  // Items at/below their reorder point — same rule as Place Order and Orders use
+  // Items below their reorder point — same rule as Place Order (calcOrderQty orders when stock < reorder)
   const lowItems = allItems.filter(i => {
     const s = stock?.[i.id] ?? 0;
     const reorder = Number(i.reorder || 0);
-    return reorder > 0 && s <= reorder;
+    return reorder > 0 && s < reorder;
   });
 
   // Recent orders (last 5 across all weeks)
@@ -1972,7 +1287,9 @@ function RecipeEditor({ initial, allItems, latestPricePerUnit, onSave, onCancel,
   const lines = ingredients.map(ing => {
     const item = allItems.find(i => i.id === ing.itemId);
     const ppu = latestPricePerUnit(ing.itemId);
-    const cost = ppu == null ? null : (Number(ing.qty) || 0) * ppu;
+    // ppu = price of ONE individual unit. "order" = a whole case/bag (upu units).
+    const mult = ing.unit === "order" ? Math.max(1, Number(item?.upu) || 1) : 1;
+    const cost = ppu == null ? null : (Number(ing.qty) || 0) * ppu * mult;
     if (ppu == null) missing++;
     else total += cost;
     return { ing, item, ppu, cost };
@@ -2046,7 +1363,8 @@ function RecipeEditor({ initial, allItems, latestPricePerUnit, onSave, onCancel,
                     style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }} />
                   <select value={ing.unit} onChange={e => updateIngredient(idx, { unit: e.target.value })}
                     style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }}>
-                    {isCase && <option value="individual">{`per ${item.order_unit || "unit"}`}</option>}
+                    {isCase && <option value="individual">{`unit (1 of ${item.upu} per ${item.order_unit || "case"})`}</option>}
+                    {isCase && <option value="order">{`whole ${item.order_unit || "case"}`}</option>}
                     <option value="each">each</option>
                     <option value="oz">oz</option>
                     <option value="lb">lb</option>
@@ -2166,7 +1484,7 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
   const [selectedDay, setSelectedDay] = useState(getToday());
   const today = getToday();
   const weekNum = getWeekNumber();
-  const curYear = new Date().getFullYear();
+  const curYear = getWeekYear();
   const allItems = flatItems(inventory);
   const hasStockData = Object.values(stock).some(v => v > 0);
   const urgentCount = hasStockData ? allItems.filter(i => (stock[i.id] ?? 0) < i.reorder).length : 0;
@@ -2187,7 +1505,7 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
 
   // Vendors that order on the selected day
   const dayVendors = (vendors || []).filter(v => v.orderDays && v.orderDays.includes(selectedDay));
-  const dayVendorNames = new Set(dayVendors.map(v => v.name));
+  const dayVendorNames = new Set(dayVendors.map(v => normName(v.name)));
 
   // This week's submitted orders (non-quick)
   const thisWeekOrders = (history || []).filter(h => h.weekNumber === weekNum && h.year === curYear && h.type !== "quick");
@@ -2206,7 +1524,7 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
 
   // Filter inventory to ONLY items from vendors ordering on the selected day
   const filteredSections = inventory
-    .map(s => ({ ...s, items: s.items.filter(i => dayVendorNames.has(i.vendor)) }))
+    .map(s => ({ ...s, items: (s.items || []).filter(i => dayVendorNames.has(normName(i.vendor))) }))
     .filter(s => s.items.length > 0);
 
   const isToday = selectedDay === today;
@@ -2357,7 +1675,7 @@ function InventoryView({ inventory, stock, updateStock, vendors, history, submit
           if (nothingToOrder) return;
           const names = vendorsWithOrders.map(p => p.vendor.name).join(", ");
           if (!window.confirm(`Submit ${vendorsWithOrders.length} order${vendorsWithOrders.length !== 1 ? "s" : ""} (${totalLines} item${totalLines !== 1 ? "s" : ""}) to ${names}?\n\nOnce submitted, the orders move to Orders → Waiting on delivery. You can't edit them — use Quick Order if you forget something.`)) return;
-          vendorsWithOrders.forEach(p => submitOrder && submitOrder(p.vendor.name));
+          if (submitOrder) submitOrder(vendorsWithOrders.map(p => p.vendor.name));
         };
         return (
           <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:14, padding:"16px 18px", marginTop:8 }}>
@@ -2403,7 +1721,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
   const dayVendors = vendors.filter(v => v.orderDays && v.orderDays.includes(selectedDay));
   const allItems = flatItems(inventory);
   const weekNum = getWeekNumber();
-  const curYear = new Date().getFullYear();
+  const curYear = getWeekYear();
   const [submitted, setSubmitted] = useState({});
   const isPast = selectedDay !== getToday();
   const [backfillDone, setBackfillDone] = useState({});
@@ -2416,9 +1734,11 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
   vendors.forEach(v => {
     if (!v.orderDays || v.orderDays.length === 0) return;
     // order days that have already passed this week (before today)
-    const passedDays = v.orderDays.filter(d => d < today);
+    // Weeks run Monday→Sunday, so compare Monday-based positions (Sunday is the LAST day).
+    const monIdx = (d) => (d + 6) % 7;
+    const passedDays = v.orderDays.filter(d => monIdx(d) < monIdx(today));
     if (passedDays.length === 0) return;
-    const hasOrder = thisWeekOrders.some(h => (h.vendor || "").toLowerCase() === v.name.toLowerCase());
+    const hasOrder = thisWeekOrders.some(h => normName(h.vendor) === normName(v.name));
     if (!hasOrder && !backfillDone[v.name]) {
       missedOrders.push({ vendor: v.name, days: passedDays });
     }
@@ -2483,7 +1803,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
   const backfillWeeks = [];
   for (let i = 0; i < 8; i++) {
     const d = new Date(); d.setDate(d.getDate() - i * 7);
-    const wn = getWeekNumber(d); const yr = d.getFullYear();
+    const wn = getWeekNumber(d); const yr = getWeekYear(d);
     const key = `${yr}-WK${String(wn).padStart(2,"0")}`;
     if (!backfillWeeks.some(w => w.key === key)) {
       const mon = getWeekMonday(wn, yr).toLocaleDateString("en-US", { month:"short", day:"numeric" });
@@ -3012,47 +2332,7 @@ function HistoryView({ history, user }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SETTINGS VIEW — Manage vendors & their order days (owner only)
 // ═══════════════════════════════════════════════════════════════════════════════
-function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, currentPlan, isTrialing, permissions, savePermissions, userRole, user, allFeatures, autoSubmit, setAutoSubmit, foodCost, setFoodCost }) {
-  // ── Pending vendor invites from sales reps ──────────────────────────────
-  const [invites, setInvites] = useState([]);
-  useEffect(() => {
-    const loadInvites = async () => {
-      if (!user?.email) return;
-      const all = await sbGet("__moe_invites__", "invites") || {};
-      setInvites(all[user.email.toLowerCase()] || []);
-    };
-    loadInvites();
-  }, [user?.email]);
-
-  const confirmInvite = async (invite) => {
-    // 1. Add the rep's company as a vendor (if not already there)
-    const exists = (vendors || []).some(v => (v.name || "").toLowerCase() === invite.company.toLowerCase());
-    if (!exists) saveVendors([...(vendors || []), { id: Date.now(), name: invite.company, orderDays: [] }]);
-    // 2. Tag the account with the rep code + add it to the rep's account list
-    const accounts = await sbGet("__moe_accounts__", "accounts") || {};
-    if (accounts[user.email.toLowerCase()]) {
-      accounts[user.email.toLowerCase()].repCode = invite.repCode;
-      await sbSet("__moe_accounts__", "accounts", accounts);
-    }
-    const repAccts = await sbGet("__moe_reps__", `accounts_${invite.repCode}`) || [];
-    if (!repAccts.find(a => a.email === user.email.toLowerCase())) {
-      repAccts.push({ email: user.email.toLowerCase(), group: user.group, business: user.business?.name || "", createdAt: new Date().toISOString() });
-      await sbSet("__moe_reps__", `accounts_${invite.repCode}`, repAccts);
-    }
-    // 3. Remove the invite
-    const all = await sbGet("__moe_invites__", "invites") || {};
-    all[user.email.toLowerCase()] = (all[user.email.toLowerCase()] || []).filter(i => i.repCode !== invite.repCode);
-    await sbSet("__moe_invites__", "invites", all);
-    setInvites(prev => prev.filter(i => i.repCode !== invite.repCode));
-  };
-
-  const declineInvite = async (invite) => {
-    const all = await sbGet("__moe_invites__", "invites") || {};
-    all[user.email.toLowerCase()] = (all[user.email.toLowerCase()] || []).filter(i => i.repCode !== invite.repCode);
-    await sbSet("__moe_invites__", "invites", all);
-    setInvites(prev => prev.filter(i => i.repCode !== invite.repCode));
-  };
-
+function SettingsView({ vendors, saveVendors, inventory, currentPlan, isTrialing, permissions, savePermissions, userRole, user, allFeatures, autoSubmit, setAutoSubmit, foodCost, setFoodCost }) {
   const [activeTab, setActiveTab] = useState("vendors");
   const [localVendors, setLocalVendors] = useState(vendors);
   const [dirty, setDirty] = useState(false);
@@ -3093,40 +2373,6 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
     setDirty(false);
   };
 
-  // ── Employee management ────────────────────────────────────────────────
-  const [empName, setEmpName] = useState("");
-  const [empEmail, setEmpEmail] = useState("");
-  const [empPassword, setEmpPassword] = useState("");
-  const [empRole, setEmpRole] = useState("employee");
-  const [empError, setEmpError] = useState("");
-  const [showAddEmp, setShowAddEmp] = useState(false);
-  const [editingEmp, setEditingEmp] = useState(null);
-
-  const maxUsers = currentPlan?.users || 2;
-  const atLimit = !isTrialing && maxUsers !== Infinity && team.length >= maxUsers;
-
-  const addEmployee = () => {
-    setEmpError("");
-    if (!empName.trim()) return setEmpError("Name is required.");
-    if (!empEmail.trim() || !empEmail.includes("@")) return setEmpError("Valid email is required.");
-    if (!empPassword || empPassword.length < 6) return setEmpError("Password must be at least 6 characters.");
-    if (team.some(m => m.email.toLowerCase() === empEmail.toLowerCase().trim())) return setEmpError("This email is already on your team.");
-
-    const newMember = {
-      id: Date.now(), name: empName.trim(), email: empEmail.toLowerCase().trim(),
-      password: empPassword, role: empRole, addedAt: new Date().toISOString(),
-    };
-    const updatedTeam = [...(team || []), newMember];
-    saveTeam(updatedTeam);
-    setEmpName(""); setEmpEmail(""); setEmpPassword(""); setEmpRole("employee"); setShowAddEmp(false);
-  };
-
-  const removeEmployee = (id) => saveTeam(team.filter(m => m.id !== id));
-
-  const updateEmployee = (id, field, value) => {
-    saveTeam(team.map(m => m.id === id ? { ...m, [field]: value } : m));
-  };
-
   return (
     <div>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:10 }}>
@@ -3138,43 +2384,21 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
 
       {/* Tabs */}
       <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
-        {[{ key:"vendors", label:"Vendors", icon:"📦" }, { key:"team", label:"Team", icon:"👥" }, { key:"permissions", label:"Permissions", icon:"🔐" }].map(tab => (
+        {[{ key:"vendors", label:"Vendors", icon:"📦" }, { key:"team", label:"Team", icon:"👥" }].map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             style={{ background:activeTab===tab.key?"#e2e8f0":"transparent", border:`1px solid ${activeTab===tab.key?"#e2e8f0":"#1e2d45"}`, borderRadius:8, padding:"7px 16px", color:activeTab===tab.key?"#080c14":"#64748b", fontSize:13, fontWeight:activeTab===tab.key?600:400, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
             {tab.icon} {tab.label}
-            {tab.key === "team" && <span style={{ background:"#0f2040", color:"#a5b4fc", borderRadius:10, padding:"1px 7px", fontSize:10, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{team.length}</span>}
           </button>
         ))}
+        <button type="button" onClick={() => setActiveTab("permissions")}
+          style={{ background:"none", border:"none", color:activeTab==="permissions"?"#e2e8f0":"#475569", fontSize:12, cursor:"pointer", padding:"7px 8px" }}>
+          Role permissions
+        </button>
       </div>
 
       {/* ── VENDORS TAB ── */}
       {activeTab === "vendors" && (
         <>
-          {/* Pending vendor invites from sales reps */}
-          {invites.length > 0 && invites.map(invite => (
-            <div key={invite.repCode} style={{ background:"rgba(56,189,248,0.08)", border:"1px solid rgba(56,189,248,0.4)", borderRadius:12, padding:"16px 18px", marginBottom:16 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-                <Icon name="orders" size={16} color="#38bdf8" />
-                <span style={{ color:"#38bdf8", fontSize:14, fontWeight:700 }}>Vendor invite</span>
-              </div>
-              <p style={{ color:"#e2e8f0", fontSize:13.5, margin:"0 0 4px", lineHeight:1.5 }}>
-                <strong>{invite.company}</strong>{invite.repName ? ` (${invite.repName})` : ""} wants to connect as your vendor.
-              </p>
-              <p style={{ color:"#64748b", fontSize:12, margin:"0 0 14px", lineHeight:1.5 }}>
-                Confirm to add {invite.company} to your vendor list. Your rep will be able to see what you order from them — and nothing else.
-              </p>
-              <div style={{ display:"flex", gap:8 }}>
-                <button onClick={() => confirmInvite(invite)}
-                  style={{ background:"#38bdf8", border:"none", borderRadius:8, padding:"9px 18px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                  Confirm {invite.company}
-                </button>
-                <button onClick={() => declineInvite(invite)}
-                  style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 14px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>
-                  Decline
-                </button>
-              </div>
-            </div>
-          ))}
           {/* Auto-submit toggle */}
           {setAutoSubmit && (
             <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px", marginBottom:16 }}>
@@ -3273,119 +2497,11 @@ function SettingsView({ vendors, saveVendors, inventory, team, saveTeam, current
 
       {/* ── TEAM TAB ── */}
       {activeTab === "team" && (
-        <>
-          {/* Info bar */}
-          <div style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:10, padding:"12px 16px", marginBottom:20 }}>
-            <span style={{ color:"#a5b4fc", fontSize:12 }}>Add employees so they can sign in and access the inventory for your store. </span>
-            <span style={{ color:"#64748b", fontSize:12 }}>Employees see Inventory, Orders, and History — not Backend or Settings.</span>
-          </div>
-
-          {/* Usage bar */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <span style={{ color:"#94a3b8", fontSize:13 }}>Team Members</span>
-              <span style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:6, padding:"2px 8px", color:"#a5b4fc", fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>
-                {team.length} / {maxUsers === Infinity ? "∞" : maxUsers}
-              </span>
-            </div>
-            {!showAddEmp && (
-              <button onClick={() => { if (atLimit) return; setShowAddEmp(true); }}
-                style={{ background: atLimit ? "#1e2d45" : "linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:"8px 16px", color: atLimit ? "#475569" : "#fff", fontSize:13, fontWeight:600, cursor: atLimit ? "not-allowed" : "pointer" }}>
-                {atLimit ? `Limit reached — upgrade plan` : "＋ Add Employee"}
-              </button>
-            )}
-          </div>
-
-          {/* Add employee form */}
-          {showAddEmp && (
-            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:20, marginBottom:16 }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
-                <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>New Team Member</span>
-                <button onClick={() => { setShowAddEmp(false); setEmpError(""); }}
-                  style={{ background:"none", border:"none", color:"#475569", cursor:"pointer", fontSize:16 }}>✕</button>
-              </div>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
-                <div>
-                  <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Full Name *</label>
-                  <input value={empName} onChange={e => setEmpName(e.target.value)} placeholder="Roberto Garcia"
-                    style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box" }} />
-                </div>
-                <div>
-                  <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Role</label>
-                  <select value={empRole} onChange={e => setEmpRole(e.target.value)}
-                    style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box", cursor:"pointer" }}>
-                    <option value="employee">Employee</option>
-                    <option value="manager">Manager</option>
-                  </select>
-                </div>
-              </div>
-              <div style={{ marginBottom:12 }}>
-                <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Email Address *</label>
-                <input value={empEmail} onChange={e => setEmpEmail(e.target.value)} placeholder="roberto@email.com" type="email"
-                  style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box" }} />
-              </div>
-              <div style={{ marginBottom:16 }}>
-                <label style={{ display:"block", color:"#64748b", fontSize:10, fontWeight:600, marginBottom:5, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Temporary Password *</label>
-                <input value={empPassword} onChange={e => setEmpPassword(e.target.value)} placeholder="Min 6 characters"
-                  style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:7, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none", boxSizing:"border-box" }} />
-                <div style={{ color:"#475569", fontSize:11, marginTop:4 }}>Share this with your employee so they can sign in</div>
-              </div>
-              {empError && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:12 }}>{empError}</div>}
-              <div style={{ display:"flex", gap:10 }}>
-                <button onClick={addEmployee}
-                  style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:8, padding:"8px 20px", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                  Add to Team
-                </button>
-                <button onClick={() => { setShowAddEmp(false); setEmpError(""); }}
-                  style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 16px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Team list */}
-          {team.length === 0 ? (
-            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:32, textAlign:"center" }}>
-              <div style={{ fontSize:36, marginBottom:12 }}>👥</div>
-              <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No team members yet</div>
-              <div style={{ color:"#475569", fontSize:13, marginTop:6 }}>Add employees so they can sign in and count inventory</div>
-            </div>
-          ) : (
-            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              {team.map(member => (
-                <div key={member.id} style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:10, padding:"14px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
-                  <div style={{ flex:1, minWidth:200 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                      <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:600 }}>{member.name}</span>
-                      <span style={{ background: member.role === "manager" ? "#422006" : "#0f2040", border:`1px solid ${member.role === "manager" ? "#d97706" : "#1e40af"}`, borderRadius:5, padding:"1px 7px", color: member.role === "manager" ? "#fbbf24" : "#a5b4fc", fontSize:10, fontWeight:600, fontFamily:"'DM Mono',monospace", textTransform:"uppercase" }}>
-                        {member.role}
-                      </span>
-                    </div>
-                    <div style={{ color:"#475569", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{member.email}</div>
-                    <div style={{ color:"#334155", fontSize:10, fontFamily:"'DM Mono',monospace", marginTop:2 }}>Added {new Date(member.addedAt).toLocaleDateString()}</div>
-                  </div>
-                  <div style={{ display:"flex", gap:6 }}>
-                    <select value={member.role} onChange={e => updateEmployee(member.id, "role", e.target.value)}
-                      style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:6, padding:"4px 8px", color:"#f1f5f9", fontSize:11, outline:"none", cursor:"pointer" }}>
-                      <option value="employee">Employee</option>
-                      <option value="manager">Manager</option>
-                    </select>
-                    <button onClick={() => removeEmployee(member.id)}
-                      style={{ background:"transparent", border:"1px solid #1e2d45", borderRadius:6, color:"#64748b", cursor:"pointer", fontSize:11, padding:"4px 10px" }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor="#ef4444"; e.currentTarget.style.color="#ef4444"; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor="#1e2d45"; e.currentTarget.style.color="#64748b"; }}>
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
+        <div style={{ background:"#f4f1ea", color:"#1c1917", borderRadius:12, padding:16, marginBottom:16 }}>
+          <TeamPanel user={user} />
+        </div>
       )}
 
-      {/* ── PERMISSIONS TAB ── */}
       {activeTab === "permissions" && (
         <>
           <div style={{ background:"#0f2040", border:"1px solid #1e40af", borderRadius:10, padding:"12px 16px", marginBottom:20 }}>
@@ -3568,14 +2684,16 @@ function BackendView({ inventory, saveInventory, vendors, stock }) {
 
   const [showAddSection, setShowAddSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
+  const sectionExists = (name) => inventory.some(s => normName(s.section) === normName(name));
   const addSection = () => {
     if (!newSectionName.trim()) return;
+    if (sectionExists(newSectionName)) { alert("A section with that name already exists."); return; }
     saveInventory([...inventory, { section: newSectionName.trim(), items: [{ id: Date.now(), name: "New Item", order_unit: "Case", upu: 1, vendor: vendors[0]?.name || "", max_stock: 1, reorder: 1 }] }]);
     setNewSectionName(""); setShowAddSection(false);
   };
 
   const deleteSection = (sectionKey) => saveInventory(inventory.filter(s => s.section !== sectionKey));
-  const saveSectionName = (oldName, newName) => { if (!newName.trim() || newName === oldName) return; saveInventory(inventory.map(s => s.section === oldName ? { ...s, section: newName.trim() } : s)); };
+  const saveSectionName = (oldName, newName) => { if (!newName.trim() || newName === oldName) return; if (normName(newName) !== normName(oldName) && sectionExists(newName)) { alert("A section with that name already exists."); return; } saveInventory(inventory.map(s => s.section === oldName ? { ...s, section: newName.trim() } : s)); };
 
   // ── Reorder helpers ──
   const moveSection = (idx, dir) => {
@@ -4008,9 +3126,10 @@ function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockS
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRICING PAGE — Shown when trial expired, must pick a plan
 // ═══════════════════════════════════════════════════════════════════════════════
-function PricingPage({ subscription, user, onLogout, onSelectPlan }) {
+function PricingPage({ subscription, user, onLogout }) {
   const [selected, setSelected] = useState("pro");
-  const trialExpired = subscription?.status === "trialing";
+  const trialExpired = !!subscription && subscription.status !== "active";
+  const isOwner = user?.role === "owner";
 
   return (
     <div style={{ minHeight:"100vh", background:"#080c14", fontFamily:"'DM Sans',sans-serif" }}>
@@ -4035,7 +3154,7 @@ function PricingPage({ subscription, user, onLogout, onSelectPlan }) {
         {trialExpired && (
           <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:12, padding:"16px 20px", marginBottom:32, textAlign:"center" }}>
             <div style={{ color:"#fca5a5", fontSize:16, fontWeight:700, marginBottom:4 }}>Your free trial has ended</div>
-            <div style={{ color:"#f87171", fontSize:13 }}>Choose a plan below to continue using MOE</div>
+            <div style={{ color:"#f87171", fontSize:13 }}>{isOwner ? "Your data is saved. Pick a plan and we'll switch your kitchen back on." : `Ask the owner of ${user?.business?.name || "this kitchen"} to renew MOE. Your data is saved.`}</div>
           </div>
         )}
 
@@ -4091,11 +3210,13 @@ function PricingPage({ subscription, user, onLogout, onSelectPlan }) {
 
         {/* Subscribe button */}
         <div style={{ textAlign:"center" }}>
-          <button onClick={() => onSelectPlan(selected)}
-            style={{ background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:12, padding:"16px 48px", color:"#fff", fontSize:17, fontWeight:700, cursor:"pointer", letterSpacing:"0.5px" }}>
-            Subscribe to {PLANS[selected].name} — ${PLANS[selected].price}/mo
-          </button>
-          <p style={{ color:"#475569", fontSize:12, marginTop:12 }}>Stripe payment integration coming soon. Your subscription will activate immediately.</p>
+          {isOwner && (
+            <a href={subscribeHref(user, PLANS[selected].name)}
+              style={{ display:"inline-block", background:"linear-gradient(135deg,#22c55e,#16a34a)", border:"none", borderRadius:12, padding:"16px 48px", color:"#fff", fontSize:17, fontWeight:700, cursor:"pointer", letterSpacing:"0.5px", textDecoration:"none" }}>
+              Subscribe to {PLANS[selected].name} — ${PLANS[selected].price}/mo
+            </a>
+          )}
+          <p style={{ color:"#475569", fontSize:12, marginTop:12 }}>Opens an email to {SUPPORT_EMAIL}. We'll send a secure payment link and activate your kitchen the same day.</p>
         </div>
       </div>
     </div>
@@ -4114,7 +3235,7 @@ function PlanFeature({ label, included }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUBSCRIPTION VIEW — Manage plan from inside the app (owner sidebar)
 // ═══════════════════════════════════════════════════════════════════════════════
-function SubscriptionView({ subscription, onSelectPlan, trialDaysLeft, isTrialing, isActive }) {
+function SubscriptionView({ subscription, user, trialDaysLeft, isTrialing, isActive }) {
   const currentPlanKey = subscription?.plan || "pro";
   const currentPlan = PLANS[currentPlanKey];
   const trialStartDate = subscription?.trialStart ? new Date(subscription.trialStart) : null;
@@ -4215,10 +3336,10 @@ function SubscriptionView({ subscription, onSelectPlan, trialDaysLeft, isTrialin
               {isCurrent ? (
                 <div style={{ padding:"8px", textAlign:"center", color:"#475569", fontSize:12, border:"1px solid #1e2d45", borderRadius:8 }}>Current Plan</div>
               ) : (
-                <button onClick={() => onSelectPlan(key)}
-                  style={{ width:"100%", padding:"8px", borderRadius:8, border:"none", background: key === "enterprise" ? "linear-gradient(135deg,#e2e8f0,#94a3b8)" : "linear-gradient(135deg,#22c55e,#16a34a)", color: key === "enterprise" ? "#080c14" : "#fff", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-                  {isTrialing ? `Subscribe — $${plan.price}/mo` : `Switch to ${plan.name}`}
-                </button>
+                <a href={subscribeHref(user, plan.name)}
+                  style={{ display:"block", textAlign:"center", textDecoration:"none", width:"100%", padding:"8px", borderRadius:8, border:"none", background: key === "enterprise" ? "linear-gradient(135deg,#e2e8f0,#94a3b8)" : "linear-gradient(135deg,#22c55e,#16a34a)", color: key === "enterprise" ? "#080c14" : "#fff", fontSize:13, fontWeight:700, cursor:"pointer", boxSizing:"border-box" }}>
+                  {isActive ? `Switch to ${plan.name}` : `Subscribe — $${plan.price}/mo`}
+                </a>
               )}
             </div>
           );
@@ -4226,7 +3347,7 @@ function SubscriptionView({ subscription, onSelectPlan, trialDaysLeft, isTrialin
       </div>
 
       <div style={{ marginTop:24, background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:10, padding:"12px 16px" }}>
-        <span style={{ color:"#475569", fontSize:12 }}>Stripe payment integration coming soon. Plan changes take effect immediately. Need help? Contact support.</span>
+        <span style={{ color:"#475569", fontSize:12 }}>Billing questions or plan changes: <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color:"#38bdf8" }}>{SUPPORT_EMAIL}</a>. We send a secure payment link and switch your plan the same day.</span>
       </div>
     </div>
   );
@@ -4280,17 +3401,17 @@ function ImportView({ inventory, saveInventory, vendors }) {
     }
 
     return lines.slice(1).map((line, idx) => {
-      const cols = line.split(sep).map(c => c.trim().replace(/^"|"$/g, ""));
+      const cols = splitDelimited(line, sep);
       const name = cols[colMap.name] || "";
       if (!name) return null;
       return {
         id: Date.now() + idx,
         name,
         order_unit: cols[colMap.order_unit] || "Case",
-        upu: parseInt(cols[colMap.upu]) || 1,
+        upu: Math.max(1, intOr(cols[colMap.upu], 1)),
         vendor: cols[colMap.vendor] || "",
-        max_stock: parseInt(cols[colMap.max_stock]) || 10,
-        reorder: parseInt(cols[colMap.reorder]) || 2,
+        max_stock: intOr(cols[colMap.max_stock], 10),
+        reorder: intOr(cols[colMap.reorder], 2),
         _section: cols[colMap.section] || "",
       };
     }).filter(Boolean);
@@ -4332,13 +3453,10 @@ function ImportView({ inventory, saveInventory, vendors }) {
       // Convert to base64
       const base64 = await compressImage(file);
 
-      const mediaType = file.type || "image/jpeg";
+      const mediaType = "image/jpeg"; // compressImage always returns JPEG (PDFs are rendered to JPEG first)
 
       // Call Claude API to extract items from the invoice/photo
-      const response = await fetch("/api/claude", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await callClaude({
           model: "claude-sonnet-4-20250514",
           max_tokens: 4000,
           messages: [{
@@ -4357,8 +3475,7 @@ function ImportView({ inventory, saveInventory, vendors }) {
 Be thorough — extract every single item you can see. If quantities are shown, use them for max_stock. Return ONLY the JSON array.` }
             ]
           }]
-        })
-      });
+        });
 
       const data = await response.json();
       const text = (data.content || []).map(c => c.text || "").join("");
@@ -4372,8 +3489,8 @@ Be thorough — extract every single item you can see. If quantities are shown, 
           order_unit: item.order_unit || "Case",
           upu: parseInt(item.upu) || 1,
           vendor: item.vendor || "",
-          max_stock: parseInt(item.max_stock) || 10,
-          reorder: parseInt(item.reorder) || 2,
+          max_stock: intOr(item.max_stock, 10),
+          reorder: intOr(item.reorder, 2),
           _section: item.section || "",
         })));
       } else {
@@ -4397,15 +3514,17 @@ Be thorough — extract every single item you can see. If quantities are shown, 
   const handleImport = () => {
     if (parsedItems.length === 0) return;
 
-    const newInv = [...inventory];
+    // Copy sections and their item lists so the current inventory (and the
+    // demo defaults) are never mutated in place.
+    const newInv = inventory.map(sec => ({ ...sec, items: [...(sec.items || [])] }));
 
     parsedItems.forEach(item => {
       // Determine which section
       const sec = item._section || targetSection || (newSectionName.trim() || "📦  Imported Items");
       const cleanItem = {
         id: item.id, name: item.name, order_unit: item.order_unit,
-        upu: parseInt(item.upu) || 1, vendor: item.vendor || "",
-        max_stock: parseInt(item.max_stock) || 10, reorder: parseInt(item.reorder) || 2,
+        upu: Math.max(1, intOr(item.upu, 1)), vendor: item.vendor || "",
+        max_stock: intOr(item.max_stock, 10), reorder: intOr(item.reorder, 2),
       };
 
       const existing = newInv.find(s => s.section === sec);
@@ -4758,7 +3877,7 @@ function LandingPage() {
       {/* ═══ NAV ═══ */}
       <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "16px 0", background: "rgba(6,10,18,0.8)", backdropFilter: "blur(20px)", borderBottom: "1px solid var(--border)" }}>
         <div className="ctn" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <a href="#" style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, fontSize: "1.25rem", letterSpacing: "-0.02em" }}>
+          <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, fontSize: "1.25rem", letterSpacing: "-0.02em", color: "inherit", textDecoration: "none" }}>
             <svg viewBox="0 0 40 40" fill="none" width="36" height="36">
               <polygon points="20,2.5 36.5,11.25 36.5,28.75 20,37.5 3.5,28.75 3.5,11.25" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.35"/>
               <polygon points="20,8 31,14 31,26 20,32 9,26 9,14" fill="none" stroke="#38bdf8" strokeWidth="1.2" opacity="0.5"/>
@@ -5039,9 +4158,9 @@ function LandingPage() {
         <div className="ctn" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
           <div style={{ fontSize: "0.8rem", color: "var(--t3)" }}>© {new Date().getFullYear()} MOE — Make Ordering Easy. All rights reserved.</div>
           <div style={{ display: "flex", gap: 24 }}>
-            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Privacy</a>
-            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Terms</a>
-            <a href="#" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Contact</a>
+            <a href="/privacy" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Privacy</a>
+            <a href="/terms" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Terms</a>
+            <a href="/contact" style={{ fontSize: "0.8rem", color: "var(--t3)" }}>Contact</a>
           </div>
         </div>
       </footer>
@@ -5073,15 +4192,20 @@ export default function Router() {
   }, []);
 
   window.__moeNavigate = (to) => {
+    // /app is the simplified shell owned by src/App.jsx. Full load avoids
+    // rendering classic MOE for a moment on the way out of the marketing page.
+    if (typeof to === "string" && (to === "/app" || to.startsWith("/app/") || to.startsWith("/app?") || to.startsWith("/classic"))) {
+      window.location.assign(to);
+      return;
+    }
     try { window.history.pushState({}, "", to); } catch {
       window.location.hash = to;
     }
-    if (to === "/app") setRoute("app");
-    else if (to === "/quiz") setRoute("quiz");
+    if (to === "/quiz" || (typeof to === "string" && to.startsWith("/quiz"))) setRoute("quiz");
     else setRoute("landing");
   };
 
-  if (route === "app") return <MoeApp />;
+  if (route === "app") { window.location.assign("/app"); return null; }
   if (route === "quiz") return <SavingsQuiz />;
   return <LandingPage />;
 }
@@ -5101,7 +4225,7 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
   const [filterWeek, setFilterWeek] = useState("all");
 
   const allItems = flatItems(inventory);
-  const wk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2, "0")}`;
+  const wk = weekKey();
 
   // Get latest price for an item from price tracker — per INDIVIDUAL unit,
   // since waste is logged in individual units (blocks, gallons, pieces).
@@ -5109,7 +4233,14 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
     const item = allItems.find(i => i.id === itemId);
     return latestPerUnit(priceHistory, item || { id: itemId, upu: 1 });
   };
-  const getCost = (entry) => { const p = getPrice(entry.itemId); return p ? p * entry.qty : null; };
+  // Prices are per individual unit; a logged "case" is upu individual units.
+  const getCost = (entry) => {
+    const p = getPrice(entry.itemId);
+    if (!p) return null;
+    const item = allItems.find(i => i.id === entry.itemId);
+    const mult = entry.unit === "case" ? Math.max(1, Number(item?.upu) || 1) : 1;
+    return p * entry.qty * mult;
+  };
 
   const reasons = [
     { key: "expired", label: "Expired", icon: "📅" },
@@ -5436,7 +4567,7 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors, 
   const fileRef = React.useRef(null);
 
   const allItems = flatItems(inventory);
-  const currentWk = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2, "0")}`;
+  const currentWk = weekKey();
   const [selectedWeek, setSelectedWeek] = useState(currentWk);
   const wk = selectedWeek; // Use selected week for all price entries
   const vendorNames = [...new Set(allItems.map(i => (i.vendor || "").trim()).filter(Boolean))].sort();
@@ -5446,7 +4577,7 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors, 
   const weekDates = {};
   for (let i = 0; i < 13; i++) {
     const d = new Date(); d.setDate(d.getDate() - (i * 7));
-    const yr = d.getFullYear();
+    const yr = getWeekYear(d);
     const wkNum = getWeekNumber(d);
     const key = `${yr}-WK${String(wkNum).padStart(2, "0")}`;
     if (!weekOptions.some(w => w.key === key)) {
@@ -5474,7 +4605,7 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors, 
     const upu = Math.max(1, Number(item?.upu) || 1);
     const newPH = { ...priceHistory };
     if (!newPH[itemId]) newPH[itemId] = [];
-    const curWkKey = `${new Date().getFullYear()}-WK${String(getWeekNumber()).padStart(2,"0")}`;
+    const curWkKey = weekKey();
     // Typed value = price per ORDER unit (case/bag/each). perUnit = per individual unit.
     newPH[itemId] = [...newPH[itemId], { price: rounded, perUnit: Math.round((rounded / upu) * 10000) / 10000, basis: "unit", qty: upu, unit: item?.order_unit || "", date: new Date().toISOString(), weekKey: curWkKey, vendor: item?.vendor || "", source: "manual" }];
     savePriceHistory(newPH);
@@ -5487,7 +4618,7 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors, 
       const total = parseFloat(entry.total);
       if (isNaN(total) || total <= 0) return;
       const qty = Math.max(1, parseInt(entry.qty) || 1);
-      const perUnit = Math.round((total / qty) * 100) / 100;
+      const perUnit = Math.round((total / qty) * 10000) / 10000;
       const item = allItems.find(i => String(i.id) === String(id));
       if (!newPH[id]) newPH[id] = [];
       newPH[id].push({ price: perUnit, perUnit, basis: "unit", date: getSelectedDate(), weekKey: wk, vendor: item?.vendor || "", source: "manual" });
@@ -5506,9 +4637,7 @@ function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors, 
       const base64 = await compressImage(file);
       // Build a list of inventory item names so Claude can match against them
       const itemNames = allItems.map(i => i.name).join(", ");
-      const response = await fetch("/api/claude", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await callClaude({
           model: "claude-sonnet-4-20250514", max_tokens: 4000,
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
@@ -5527,8 +4656,7 @@ Return ONLY a JSON array, no markdown, no explanation. Example:
 [{"invoice_name":"MOZZ WM 5LB","matched_name":"Mozzarella","price":85.16,"unit":"Case","qty":4}]
 In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total, not $21.29.` }
           ]}]
-        })
-      });
+        });
       const data = await response.json();
       if (data.error) { setParseError(data.error.message || "API error"); setParsing(false); return; }
       const rawText = (data.content || []).map(c => c.text || "").join("");
@@ -5618,7 +4746,7 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
       if (!p.matched || isNaN(p.price)) return;
       const item = allItems.find(i => i.id === p.matched);
       const qty = Math.max(1, p.qty || 1);
-      const perUnit = Math.round((p.price / qty) * 100) / 100;
+      const perUnit = Math.round((p.price / qty) * 10000) / 10000;
       if (!newPH[p.matched]) newPH[p.matched] = [];
       newPH[p.matched].push({ price: perUnit, perUnit, basis: "unit", date: getSelectedDate(), weekKey: wk, vendor: item?.vendor || "", source });
     });
@@ -5767,24 +4895,29 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
 
   // Local editable review state: { [orderId]: { [lineIdx]: { price, status } } }
   const [reviewEdits, setReviewEdits] = useState({});
+  // Defaults come from the line itself (standing price + what check-in recorded);
+  // reviewEdits only holds what the user changed here.
   const getLineEdit = (orderId, idx, line) => {
-    const e = reviewEdits[orderId]?.[idx];
-    if (e) return e;
     const sp = standingPrice(line.id);
-    return { price: sp != null ? String(sp) : "", status: "delivered" };
+    const base = { price: sp != null ? String(sp) : "", status: line.delivered || "delivered" };
+    return { ...base, ...(reviewEdits[orderId]?.[idx] || {}) };
   };
   const setLineEdit = (orderId, idx, patch) => {
-    setReviewEdits(prev => ({ ...prev, [orderId]: { ...(prev[orderId] || {}), [idx]: { ...getLineEdit(orderId, idx, { id: null }), ...prev[orderId]?.[idx], ...patch } } }));
+    setReviewEdits(prev => ({ ...prev, [orderId]: { ...(prev[orderId] || {}), [idx]: { ...(prev[orderId]?.[idx] || {}), ...patch } } }));
+  };
+  // Quantity actually received for costing: short deliveries use the checked-in count.
+  const receivedQtyOf = (line, status) => {
+    if (status === "delivered") return Number(line.qty) || 0;
+    if (status === "short") return Number(line.receivedQty ?? 0) || 0;
+    return 0;
   };
 
   const confirmReview = (order) => {
-    const edits = reviewEdits[order.id] || {};
     let total = 0;
     const newLines = (order.lines || []).map((line, idx) => {
-      const e = edits[idx] || getLineEdit(order.id, idx, line);
+      const e = getLineEdit(order.id, idx, line);
       const price = parseFloat(e.price) || 0;
-      const delivered = e.status === "delivered";
-      const lineTotal = delivered ? price * (line.qty || 0) : 0;
+      const lineTotal = price * receivedQtyOf(line, e.status);
       total += lineTotal;
       return { ...line, unitPrice: price, delivered: e.status };
     });
@@ -5810,11 +4943,10 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
   };
 
   const reviewTotal = (order) => {
-    const edits = reviewEdits[order.id] || {};
     let total = 0;
     (order.lines || []).forEach((line, idx) => {
-      const e = edits[idx] || getLineEdit(order.id, idx, line);
-      if (e.status === "delivered") total += (parseFloat(e.price) || 0) * (line.qty || 0);
+      const e = getLineEdit(order.id, idx, line);
+      total += (parseFloat(e.price) || 0) * receivedQtyOf(line, e.status);
     });
     return total;
   };
@@ -6273,14 +5405,11 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
 // ═══════════════════════════════════════════════════════════════════════════════
 // ONBOARDING FLOW — Guide new owners through setup
 // ═══════════════════════════════════════════════════════════════════════════════
-function OnboardingFlow({ user, step, vendors, saveVendors, inventory, saveInventory, team, saveTeam, onStep, onComplete }) {
+function OnboardingFlow({ user, step, vendors, saveVendors, inventory, saveInventory, onStep, onComplete }) {
   const [currentStep, setCurrentStep] = useState(step || 1);
   const [vendorName, setVendorName] = useState("");
   const [vendorDays, setVendorDays] = useState([]);
   const [addedVendors, setAddedVendors] = useState(vendors.filter(v => v.name.trim()));
-  const [empName, setEmpName] = useState("");
-  const [empEmail, setEmpEmail] = useState("");
-  const [empPassword, setEmpPassword] = useState("");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const photoRef = React.useRef(null);
@@ -6308,23 +5437,20 @@ function OnboardingFlow({ user, step, vendors, saveVendors, inventory, saveInven
     setImporting(true); setImportResult(null);
     try {
       const base64 = await compressImage(file);
-      const response = await fetch("/api/claude", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await callClaude({
           model: "claude-sonnet-4-20250514", max_tokens: 4000,
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
             { type: "text", text: `Extract ALL inventory items from this image. Return ONLY a JSON array, no markdown. Each object: {"name":"item name","order_unit":"Case","vendor":"","max_stock":10,"reorder":2,"upu":1,"section":""}` }
           ]}]
-        })
-      });
+        });
       const data = await response.json();
       const text = (data.content || []).map(c => c.text || "").join("");
       const items = JSON.parse(text.replace(/```json|```/g, "").trim());
       if (Array.isArray(items) && items.length > 0) {
         const newSection = { section: "📦  Imported Items", items: items.map((item, idx) => ({
           id: Date.now() + idx, name: item.name || "Item", order_unit: item.order_unit || "Case",
-          upu: parseInt(item.upu) || 1, vendor: item.vendor || "", max_stock: parseInt(item.max_stock) || 10, reorder: parseInt(item.reorder) || 2,
+          upu: Math.max(1, intOr(item.upu, 1)), vendor: item.vendor || "", max_stock: intOr(item.max_stock, 10), reorder: intOr(item.reorder, 2),
         }))};
         saveInventory([...inventory, newSection]);
         setImportResult({ success: true, count: items.length });
@@ -6335,14 +5461,6 @@ function OnboardingFlow({ user, step, vendors, saveVendors, inventory, saveInven
       setImportResult({ success: false, error: err.message });
     }
     setImporting(false);
-  };
-
-  // Add employee
-  const addEmployee = () => {
-    if (!empName.trim() || !empEmail.trim() || !empPassword || empPassword.length < 6) return;
-    const newMember = { id: Date.now(), name: empName.trim(), email: empEmail.toLowerCase().trim(), password: empPassword, role: "employee", addedAt: new Date().toISOString() };
-    saveTeam([...(team || []), newMember]);
-    setEmpName(""); setEmpEmail(""); setEmpPassword("");
   };
 
   const inp = { width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:16, outline:"none", boxSizing:"border-box" };
@@ -6498,46 +5616,17 @@ function OnboardingFlow({ user, step, vendors, saveVendors, inventory, saveInven
         {currentStep === 4 && (
           <div>
             <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:"0 0 6px" }}>Invite Your Team</h2>
-            <p style={{ color:"#475569", fontSize:13, margin:"0 0 20px" }}>Add employees so they can sign in and count stock. You can always do this later in Settings.</p>
+            <p style={{ color:"#475569", fontSize:13, margin:"0 0 20px" }}>Create an invite and text it to each employee. They pick their own password. You can always do this later in Settings → Team.</p>
 
-            {/* Added team members */}
-            {team.length > 0 && (
-              <div style={{ marginBottom:16 }}>
-                {team.map(m => (
-                  <div key={m.id} style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:8, padding:"10px 14px", marginBottom:6, display:"flex", alignItems:"center", gap:10 }}>
-                    <span style={{ color:"#4ade80", fontSize:14, fontWeight:600 }}>✓ {m.name}</span>
-                    <span style={{ color:"#16a34a", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{m.email}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Add employee form */}
-            <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:20, marginBottom:16 }}>
-              <div style={{ marginBottom:12 }}>
-                <label style={lbl}>Employee Name</label>
-                <input value={empName} onChange={e => setEmpName(e.target.value)} placeholder="Full name" style={inp} />
-              </div>
-              <div style={{ marginBottom:12 }}>
-                <label style={lbl}>Email</label>
-                <input value={empEmail} onChange={e => setEmpEmail(e.target.value)} placeholder="employee@email.com" type="email" style={inp} />
-              </div>
-              <div style={{ marginBottom:14 }}>
-                <label style={lbl}>Temporary Password</label>
-                <input value={empPassword} onChange={e => setEmpPassword(e.target.value)} placeholder="Min 6 characters" style={inp} />
-                <div style={{ color:"#475569", fontSize:11, marginTop:4 }}>Share this with your employee so they can sign in</div>
-              </div>
-              <button onClick={addEmployee} disabled={!empName.trim() || !empEmail.includes("@") || empPassword.length < 6}
-                style={{ width:"100%", background:(empName.trim() && empEmail.includes("@") && empPassword.length >= 6)?"linear-gradient(135deg,#22c55e,#16a34a)":"#1e2d45", border:"none", borderRadius:8, padding:"10px", color:(empName.trim() && empEmail.includes("@") && empPassword.length >= 6)?"#fff":"#475569", fontSize:14, fontWeight:600, cursor:(empName.trim() && empEmail.includes("@") && empPassword.length >= 6)?"pointer":"default" }}>
-                + Add Employee
-              </button>
+            <div style={{ background:"#f4f1ea", color:"#1c1917", borderRadius:12, padding:16, marginBottom:16 }}>
+              <TeamPanel user={user} />
             </div>
 
             <div style={{ display:"flex", gap:10 }}>
               <button onClick={() => goTo(3)} style={{ flex:1, background:"transparent", border:"1px solid #1e2d45", borderRadius:10, padding:"12px", color:"#94a3b8", fontSize:14, cursor:"pointer" }}>Back</button>
               <button onClick={onComplete}
                 style={{ flex:2, background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:10, padding:"14px", color:"#080c14", fontSize:16, fontWeight:700, cursor:"pointer" }}>
-                {team.length > 0 ? "Finish Setup" : "Skip & Finish"}
+                Finish Setup
               </button>
             </div>
           </div>
@@ -6558,21 +5647,8 @@ function SavingsQuiz() {
 
   const update = (field, val) => setAnswers(prev => ({ ...prev, [field]: val }));
 
-  const calcSavings = () => {
-    const spend = { "$1,000-$3,000": 2000, "$3,000-$5,000": 4000, "$5,000-$10,000": 7500, "$10,000+": 12000 }[answers.weeklySpend] || 3000;
-    const overOrderPct = { "Rarely": 0.03, "Sometimes": 0.06, "Often": 0.10, "All the time": 0.15 }[answers.overOrder] || 0.06;
-    const emergencyAmt = { "Never": 0, "1-2x/month": 75, "Weekly": 150, "Multiple/week": 300 }[answers.emergencyRuns] || 75;
-    const teamHours = { "Just me": 3, "2-5": 4, "6-10": 5, "10+": 7 }[answers.teamSize] || 4;
-    const wastePct = answers.trackWaste === "No" ? 0.05 : 0.02;
-    const overOrdering = Math.round(spend * overOrderPct);
-    const emergency = emergencyAmt;
-    const labor = Math.round(teamHours * 28);
-    const waste = Math.round(spend * wastePct);
-    const weekly = overOrdering + emergency + labor + waste;
-    return { overOrdering, emergency, labor, waste, weekly, monthly: Math.round(weekly * 4.3), annual: Math.round(weekly * 52) };
-  };
-
-  const savings = calcSavings();
+  const savings = calcQuizSavings(answers);
+  const paybackDays = quizPaybackDays(savings.monthly);
 
   useEffect(() => {
     if (!showResults) return;
@@ -6693,12 +5769,13 @@ function SavingsQuiz() {
               ${animatedTotal.toLocaleString()}
             </div>
             <div style={{ color:"#fca5a5", fontSize:16, fontWeight:600, marginBottom:4 }}>per month</div>
-            <div style={{ color:"#475569", fontSize:13, marginBottom:24 }}>That's ${savings.annual.toLocaleString()} per year walking out the door</div>
+            <div style={{ color:"#475569", fontSize:13, marginBottom:8 }}>${savings.annual.toLocaleString()} per year · monthly total × 12</div>
+            <div style={{ color:"#334155", fontSize:12, marginBottom:24 }}>Each line is a month. They add up to the total above.</div>
 
             <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:14, padding:"20px", marginBottom:20, textAlign:"left" }}>
-              <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:14, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Where it's going</div>
+              <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:14, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Where it is going</div>
               {[
-                { label:"Over-ordering & spoilage", value:savings.overOrdering, icon:"📦", color:"#fca5a5" },
+                { label:"Over-ordering and spoilage", value:savings.overOrdering, icon:"📦", color:"#fca5a5" },
                 { label:"Emergency supply runs", value:savings.emergency, icon:"🚗", color:"#fbbf24" },
                 { label:"Manager time on manual ordering", value:savings.labor, icon:"⏰", color:"#a5b4fc" },
                 { label:"Untracked waste", value:savings.waste, icon:"🗑️", color:"#f87171" },
@@ -6708,12 +5785,12 @@ function SavingsQuiz() {
                     <span style={{ fontSize:16 }}>{item.icon}</span>
                     <span style={{ color:"#94a3b8", fontSize:13 }}>{item.label}</span>
                   </div>
-                  <span style={{ color:item.color, fontSize:15, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${item.value}/wk</span>
+                  <span style={{ color:item.color, fontSize:15, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>${item.value.toLocaleString()}/mo</span>
                 </div>
               ))}
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 0 0", borderTop:"2px solid #1e2d45", marginTop:6 }}>
-                <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:700 }}>Total weekly loss</span>
-                <span style={{ color:"#ef4444", fontSize:18, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>${savings.weekly}/wk</span>
+                <span style={{ color:"#f1f5f9", fontSize:14, fontWeight:700 }}>Monthly total</span>
+                <span style={{ color:"#ef4444", fontSize:18, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>${savings.monthly.toLocaleString()}/mo</span>
               </div>
             </div>
 
@@ -6721,16 +5798,16 @@ function SavingsQuiz() {
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                 <div>
                   <div style={{ color:"#4ade80", fontSize:14, fontWeight:700 }}>MOE Pro — $399/month</div>
-                  <div style={{ color:"#22c55e", fontSize:12, marginTop:2 }}>Pays for itself in {Math.max(1, Math.ceil(399 / savings.weekly * 7))} days</div>
+                  <div style={{ color:"#22c55e", fontSize:12, marginTop:2 }}>{paybackDays ? `Pays for itself in ${paybackDays} days` : "These answers do not show a monthly loss"}</div>
                 </div>
                 <div style={{ textAlign:"right" }}>
-                  <div style={{ color:"#4ade80", fontSize:20, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>{Math.round((savings.monthly / 399) * 10) / 10}x</div>
+                  <div style={{ color:"#4ade80", fontSize:20, fontWeight:800, fontFamily:"'DM Mono',monospace" }}>{quizRoiMultiple(savings.monthly)}x</div>
                   <div style={{ color:"#22c55e", fontSize:10 }}>ROI</div>
                 </div>
               </div>
             </div>
 
-            <button onClick={() => window.__moeNavigate("/app")}
+            <button onClick={() => window.__moeNavigate("/app?signup=1")}
               style={{ width:"100%", background:"linear-gradient(135deg,#e2e8f0,#94a3b8)", border:"none", borderRadius:12, padding:"16px", color:"#080c14", fontSize:17, fontWeight:700, cursor:"pointer", letterSpacing:"-0.3px", marginBottom:10 }}>
               Start Your Free 14-Day Trial
             </button>
@@ -6748,651 +5825,90 @@ function SavingsQuiz() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// REP DASHBOARD — Sales rep sees their accounts: who ordered, who didn't, view orders
-// ═══════════════════════════════════════════════════════════════════════════════
-function RepDashboard({ repCode, repName, repCompany, onLogout }) {
-  const [accounts, setAccounts] = useState(null);
-  const [ordersByGroup, setOrdersByGroup] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [openAcct, setOpenAcct] = useState(null);
-  const [viewOrder, setViewOrder] = useState(null);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteMsg, setInviteMsg] = useState("");
-  const [repView, setRepView] = useState("accounts"); // accounts | invite
-  const [acctSearch, setAcctSearch] = useState("");
-  const [acctFilter, setAcctFilter] = useState("all"); // all | ordered | not
-  const [repSidebarOpen, setRepSidebarOpen] = useState(false);
-  const [announcements, setAnnouncements] = useState([]);
-
-  const sendInvite = async () => {
-    const email = inviteEmail.toLowerCase().trim();
-    if (!email || !email.includes("@")) { setInviteMsg("Enter a valid business email."); return; }
-    const all = await sbGet("__moe_invites__", "invites") || {};
-    const list = all[email] || [];
-    if (list.find(i => i.repCode === repCode)) { setInviteMsg("You already invited this business."); return; }
-    list.push({ repCode, company: repCompany, repName, createdAt: new Date().toISOString() });
-    all[email] = list;
-    await sbSet("__moe_invites__", "invites", all);
-    setInviteEmail(""); setInviteMsg(`✓ Invite sent to ${email}. They'll see it in their Vendors section after signing up.`);
-  };
-
-  // Broadcast a message to accounts (shows as a banner in their app)
-  const [bcTitle, setBcTitle] = useState("");
-  const [bcBody, setBcBody] = useState("");
-  const [bcMsg, setBcMsg] = useState("");
-  const [bcAudience, setBcAudience] = useState("all"); // all | unpaid | no_order
-  const [unpaidList, setUnpaidList] = useState([]); // group ids the rep marked unpaid
-
-  const toggleUnpaid = async (group) => {
-    const next = unpaidList.includes(group) ? unpaidList.filter(g => g !== group) : [...unpaidList, group];
-    setUnpaidList(next);
-    if (repCode !== "DEMO") await sbSet("__moe_reps__", `unpaid_${repCode}`, next);
-  };
-
-  const audienceTargets = (aud) => {
-    const all = accounts || [];
-    if (aud === "unpaid") return all.filter(a => unpaidList.includes(a.group));
-    if (aud === "no_order") return all.filter(a => !orderedThisWeek(a.group));
-    return all;
-  };
-
-  const sendBroadcast = async () => {
-    if (!bcTitle.trim() || !bcBody.trim()) { setBcMsg("Add a title and message."); return; }
-    const targets = audienceTargets(bcAudience);
-    if (targets.length === 0) { setBcMsg("No accounts match that audience."); return; }
-    const entry = { id:`bc_${Date.now()}`, title:bcTitle.trim(), body:bcBody.trim(), company:repCompany, repName, date:new Date().toISOString(), audience:bcAudience, targets: targets.map(t => t.group) };
-    if (repCode === "DEMO") {
-      setAnnouncements(prev => [entry, ...prev]);
-      setBcTitle(""); setBcBody(""); setBcMsg(`✓ Sent to ${targets.length} account${targets.length!==1?"s":""} (demo).`);
-      return;
-    }
-    const cur = await sbGet("__moe_reps__", `broadcast_${repCode}`) || [];
-    const updated = [entry, ...(Array.isArray(cur) ? cur : [])];
-    await sbSet("__moe_reps__", `broadcast_${repCode}`, updated);
-    setAnnouncements(updated);
-    setBcTitle(""); setBcBody(""); setBcMsg(`✓ Sent to ${targets.length} account${targets.length!==1?"s":""}.`);
-  };
-  const deleteBroadcast = async (id) => {
-    const updated = announcements.filter(a => a.id !== id);
-    setAnnouncements(updated);
-    if (repCode !== "DEMO") await sbSet("__moe_reps__", `broadcast_${repCode}`, updated);
-  };
-
-  const weekNum = getWeekNumber();
-  const curYear = new Date().getFullYear();
-
-  // Match an order's vendor to the rep's company (forgiving: normalized contains-match)
-  const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  const companyKey = norm(repCompany);
-  const isMyVendor = (vendor) => {
-    if (!companyKey) return true; // no company set → show all (legacy fallback)
-    const v = norm(vendor);
-    return v === companyKey || v.includes(companyKey) || companyKey.includes(v);
-  };
-  // Only the orders that belong to this rep's company
-  const myOrders = (group) => (ordersByGroup[group] || []).filter(o => isMyVendor(o.vendor));
-
-  useEffect(() => {
-    const fetchAll = async () => {
-      // Demo rep — show sample data so the dashboard isn't empty
-      if (repCode === "DEMO") {
-        const today = new Date();
-        const thisWeek = getWeekNumber(); const yr = today.getFullYear();
-        const d = (daysAgo) => { const x = new Date(); x.setDate(x.getDate() - daysAgo); return x.toISOString(); };
-        const sampleAccts = [
-          { email:"tonys@demo.com", group:"demo_tonys", business:"Tony's Pizzeria" },
-          { email:"villa@demo.com", group:"demo_villa", business:"Villa Roma Restaurant" },
-          { email:"slice@demo.com", group:"demo_slice", business:"Joe's Slice Shop" },
-          { email:"napoli@demo.com", group:"demo_napoli", business:"Napoli Brick Oven" },
-          { email:"corner@demo.com", group:"demo_corner", business:"Corner Italian Kitchen" },
-        ];
-        const sampleOrders = {
-          demo_tonys: [{ id:"d1", vendor:"Anacapri", weekNumber:thisWeek, year:yr, day:"Wednesday", date:d(1), totalItems:4, lines:[{name:"Mozzarella (5lb)",qty:6,order_unit:"case"},{name:"Pizza Flour (50lb)",qty:8,order_unit:"bag"},{name:"Crushed Tomatoes (#10)",qty:4,order_unit:"case"},{name:"Pepperoni (10lb)",qty:2,order_unit:"case"}] }],
-          demo_villa: [{ id:"d2", vendor:"Anacapri", weekNumber:thisWeek, year:yr, day:"Tuesday", date:d(2), totalItems:3, lines:[{name:"Penne (case)",qty:3,order_unit:"case"},{name:"Olive Oil (gal)",qty:4,order_unit:"jug"},{name:"Parmesan (wheel)",qty:1,order_unit:"each"}] }],
-          demo_slice: [{ id:"d3", vendor:"Anacapri", weekNumber:thisWeek, year:yr, day:"Monday", date:d(3), totalItems:2, lines:[{name:"Mozzarella (5lb)",qty:10,order_unit:"case"},{name:"Pizza Boxes (18in)",qty:5,order_unit:"bundle"}] }],
-          demo_napoli: [{ id:"d4", vendor:"Anacapri", weekNumber:thisWeek-1, year:yr, day:"Wednesday", date:d(9), totalItems:3, lines:[{name:"00 Flour (55lb)",qty:6,order_unit:"bag"},{name:"San Marzano (#10)",qty:5,order_unit:"case"},{name:"Fresh Mozzarella (3lb)",qty:4,order_unit:"case"}] }],
-          demo_corner: [],
-        };
-        setAccounts(sampleAccts);
-        setOrdersByGroup(sampleOrders);
-        setUnpaidList(["demo_napoli", "demo_slice"]);
-        setAnnouncements([
-          { id:"a1", title:"Holiday delivery — running one day behind", body:"Heads up: because of the holiday, all deliveries this week are pushed back one day. Place your orders early so you don't run short.", date:new Date(Date.now()-1*864e5).toISOString() },
-          { id:"a2", title:"New: San Marzano DOP now available", body:"Just got authentic San Marzano DOP tomatoes in. Let me know if you want to add them to your next order.", date:new Date(Date.now()-6*864e5).toISOString() },
-        ]);
-        setLoading(false);
-        return;
-      }
-      await loadSupabase();
-      const list = await sbGet("__moe_reps__", `accounts_${repCode}`) || [];
-      // Pull each account's order history
-      const orders = {};
-      await Promise.all(list.map(async (a) => {
-        const hist = await sbGet(a.group, "history");
-        orders[a.group] = Array.isArray(hist) ? hist : [];
-      }));
-      setAccounts(list);
-      setOrdersByGroup(orders);
-      const ann = await sbGet("__moe_reps__", `broadcast_${repCode}`) || [];
-      setAnnouncements(Array.isArray(ann) ? ann : []);
-      const up = await sbGet("__moe_reps__", `unpaid_${repCode}`) || [];
-      setUnpaidList(Array.isArray(up) ? up : []);
-      setLoading(false);
-    };
-    fetchAll();
-  }, [repCode]);
-
-  const inp = { width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 12px", color:"#f1f5f9", fontSize:15, outline:"none", boxSizing:"border-box" };
-
-  if (loading) return (
-    <div style={{ minHeight:"100vh", background:"#080c14", display:"flex", alignItems:"center", justifyContent:"center" }}>
-      <div style={{ color:"#475569", fontSize:14, fontFamily:"'DM Mono',monospace" }}>Loading your accounts…</div>
-    </div>
-  );
-
-  // Did this account order from MY company in the current week?
-  const orderedThisWeek = (group) => myOrders(group).some(o => o.weekNumber === weekNum && o.year === curYear);
-  const lastOrder = (group) => {
-    const os = myOrders(group).slice().sort((a,b) => new Date(b.date) - new Date(a.date));
-    return os[0] || null;
-  };
-
-  const ordered = (accounts || []).filter(a => orderedThisWeek(a.group));
-  const notOrdered = (accounts || []).filter(a => !orderedThisWeek(a.group));
-
-  // Filtered + searched account list
-  const filteredAccounts = (accounts || [])
-    .filter(a => {
-      if (acctFilter === "ordered") return orderedThisWeek(a.group);
-      if (acctFilter === "not") return !orderedThisWeek(a.group);
-      return true;
-    })
-    .filter(a => !acctSearch || (a.business || "").toLowerCase().includes(acctSearch.toLowerCase()))
-    .sort((a, b) => {
-      // not-ordered first (action items), then by name
-      const ao = orderedThisWeek(a.group) ? 1 : 0, bo = orderedThisWeek(b.group) ? 1 : 0;
-      if (ao !== bo) return ao - bo;
-      return (a.business || "").localeCompare(b.business || "");
-    });
-
-  const navItems = [
-    { key: "accounts", label: "Accounts", icon: "orders", badge: notOrdered.length },
-    { key: "invite", label: "Invite Account", icon: "plus" },
-    { key: "announcements", label: "Announcements", icon: "alert", badge: announcements.length, badgeCyan: true },
-  ];
-
-  const Sidebar = () => (
-    <>
-      <div style={{ padding:"20px 16px", borderBottom:"1px solid #1e2d45" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <MoeLogo size="sm" />
-        </div>
-        <div style={{ marginTop:14 }}>
-          <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:700 }}>{repCompany || "Rep"}</div>
-          <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>{repName} · Rep portal</div>
-        </div>
-      </div>
-      <div style={{ padding:"12px 10px", flex:1 }}>
-        {navItems.map(item => {
-          const active = repView === item.key;
-          return (
-            <button key={item.key} className="moe-nav" onClick={() => { setRepView(item.key); setRepSidebarOpen(false); }}
-              style={{ width:"100%", display:"flex", alignItems:"center", gap:11, background:active?"#0f1a2e":"transparent", border:"none", borderRadius:10, padding:"11px 13px", cursor:"pointer", marginBottom:4, borderLeft:active?"3px solid #38bdf8":"3px solid transparent" }}>
-              <Icon name={item.icon} size={18} color={active?"#38bdf8":"#64748b"} />
-              <span style={{ flex:1, textAlign:"left", color:active?"#f1f5f9":"#94a3b8", fontSize:14, fontWeight:active?600:400 }}>{item.label}</span>
-              {item.badge > 0 && <span style={{ background:item.badgeCyan?"rgba(56,189,248,0.15)":"rgba(251,191,36,0.15)", color:item.badgeCyan?"#38bdf8":"#fbbf24", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{item.badge}</span>}
-            </button>
-          );
-        })}
-      </div>
-      <div style={{ padding:"12px 14px", borderTop:"1px solid #1e2d45" }}>
-        <button onClick={onLogout} style={{ width:"100%", background:"transparent", border:"1px solid #1e2d45", borderRadius:8, padding:"9px", color:"#94a3b8", fontSize:13, cursor:"pointer" }}>Sign out</button>
-      </div>
-    </>
-  );
-
-  return (
-    <div style={{ minHeight:"100vh", background:"radial-gradient(1200px 600px at 50% -10%, #0d1626 0%, #080c14 55%)", fontFamily:"'DM Sans',sans-serif", display:"flex" }}>
-      <MoeIcons />
-
-      {/* Desktop sidebar */}
-      <aside className="rep-sidebar-desktop" style={{ width:240, flexShrink:0, background:"#0a0f1a", borderRight:"1px solid #1e2d45", minHeight:"100vh", display:"flex", flexDirection:"column", position:"sticky", top:0, height:"100vh" }}>
-        <Sidebar />
-      </aside>
-
-      {/* Mobile drawer */}
-      {repSidebarOpen && (
-        <div onClick={() => setRepSidebarOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:900 }}>
-          <aside onClick={e => e.stopPropagation()} style={{ width:240, background:"#0a0f1a", borderRight:"1px solid #1e2d45", height:"100vh", display:"flex", flexDirection:"column" }}>
-            <Sidebar />
-          </aside>
-        </div>
-      )}
-
-      <style>{`
-        .rep-sidebar-desktop { display: flex; }
-        .rep-mobile-bar { display: none; }
-        @media (max-width: 768px) {
-          .rep-sidebar-desktop { display: none; }
-          .rep-mobile-bar { display: flex !important; }
-        }
-      `}</style>
-
-      {/* Main */}
-      <main className="moe-fade" key={repView} style={{ flex:1, minWidth:0, padding:"0 0 40px" }}>
-        {/* Mobile top bar */}
-        <div className="rep-mobile-bar" style={{ display:"none", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", borderBottom:"1px solid #1e2d45", position:"sticky", top:0, background:"#080c14", zIndex:10 }}>
-          <button onClick={() => setRepSidebarOpen(true)} style={{ background:"none", border:"none", color:"#f1f5f9", fontSize:22, cursor:"pointer", lineHeight:1 }}>☰</button>
-          <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{repView === "accounts" ? "Accounts" : "Invite Account"}</span>
-          <MoeLogo size="sm" />
-        </div>
-
-        <div style={{ maxWidth:900, margin:"0 auto", padding:"24px 20px" }}>
-          {/* ── ACCOUNTS VIEW ── */}
-          {repView === "accounts" && (
-            <>
-              <div style={{ marginBottom:20 }}>
-                <h2 style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, margin:0 }}>Accounts</h2>
-                <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>{fmtWeekLabel(weekNum)} · who's ordered from {repCompany} this week</p>
-              </div>
-
-              {/* Stats */}
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:24 }}>
-                <div className="moe-lift" style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, padding:"16px 18px" }}>
-                  <div style={{ color:"#f1f5f9", fontSize:28, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{accounts.length}</div>
-                  <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Total accounts</div>
-                </div>
-                <div className="moe-lift" style={{ background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.3)", borderRadius:14, padding:"16px 18px" }}>
-                  <div style={{ color:"#34d399", fontSize:28, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{ordered.length}</div>
-                  <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Ordered this week</div>
-                </div>
-                <div className="moe-lift" style={{ background:"rgba(251,191,36,0.08)", border:"1px solid rgba(251,191,36,0.3)", borderRadius:14, padding:"16px 18px" }}>
-                  <div style={{ color:"#fbbf24", fontSize:28, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{notOrdered.length}</div>
-                  <div style={{ color:"#64748b", fontSize:11, marginTop:2 }}>Need follow-up</div>
-                </div>
-              </div>
-
-              {accounts.length === 0 ? (
-                <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:16, padding:40, textAlign:"center" }}>
-                  <Icon name="orders" size={32} color="#38bdf8" style={{ marginBottom:10 }} />
-                  <div style={{ color:"#94a3b8", fontSize:16, fontWeight:600 }}>No accounts yet</div>
-                  <div style={{ color:"#475569", fontSize:13, marginTop:6, lineHeight:1.6, maxWidth:420, margin:"6px auto 0" }}>
-                    Invite a business from the <strong style={{ color:"#38bdf8" }}>Invite Account</strong> tab. Once they confirm, they'll show up here.
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {/* Search + filter */}
-                  <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
-                    <input value={acctSearch} onChange={e => setAcctSearch(e.target.value)} placeholder="Search accounts…"
-                      style={{ flex:"1 1 200px", background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:9, padding:"9px 14px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
-                    <div style={{ display:"flex", gap:4, background:"#0c1220", border:"1px solid #1e2d45", borderRadius:9, padding:3 }}>
-                      {[{k:"all",l:"All"},{k:"not",l:"Need follow-up"},{k:"ordered",l:"Ordered"}].map(f => (
-                        <button key={f.k} onClick={() => setAcctFilter(f.k)}
-                          style={{ background: acctFilter===f.k ? "#1e3a5f" : "transparent", border:"none", borderRadius:7, padding:"6px 12px", color: acctFilter===f.k ? "#38bdf8" : "#64748b", fontSize:12, fontWeight: acctFilter===f.k?600:400, cursor:"pointer" }}>
-                          {f.l}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Account list */}
-                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                    {filteredAccounts.map(a => {
-                      const did = orderedThisWeek(a.group);
-                      const last = lastOrder(a.group);
-                      const weekOrders = myOrders(a.group).filter(o => o.weekNumber === weekNum && o.year === curYear).sort((x,y) => new Date(y.date) - new Date(x.date));
-                      const isOpen = openAcct === a.group;
-                      return (
-                        <div key={a.group} className="moe-lift" style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden" }}>
-                          <button onClick={() => did && setOpenAcct(isOpen ? null : a.group)}
-                            style={{ width:"100%", background:"none", border:"none", padding:"14px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, cursor: did ? "pointer" : "default", textAlign:"left", flexWrap:"wrap" }}>
-                            <div style={{ display:"flex", alignItems:"center", gap:12, minWidth:0 }}>
-                              <div style={{ width:38, height:38, borderRadius:9, background: did ? "rgba(52,211,153,0.12)" : "rgba(251,191,36,0.12)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                                <Icon name={did ? "check" : "alert"} size={18} color={did ? "#34d399" : "#fbbf24"} />
-                              </div>
-                              <div style={{ minWidth:0 }}>
-                                <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.business}</div>
-                                <div style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace", marginTop:2 }}>
-                                  {did ? `${weekOrders.length} order${weekOrders.length!==1?"s":""} this week · tap to view` : (last ? `Last order: ${fmtDate(last.date)}` : "No orders yet")}
-                                </div>
-                              </div>
-                            </div>
-                            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-                              <span onClick={(e) => { e.stopPropagation(); toggleUnpaid(a.group); }} title={unpaidList.includes(a.group) ? "Marked unpaid — tap to clear" : "Mark unpaid"}
-                                style={{ background: unpaidList.includes(a.group) ? "rgba(248,113,113,0.12)" : "transparent", border:`1px solid ${unpaidList.includes(a.group) ? "rgba(248,113,113,0.35)" : "#1e2d45"}`, borderRadius:6, padding:"3px 9px", color: unpaidList.includes(a.group) ? "#fca5a5" : "#475569", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", cursor:"pointer" }}>
-                                $ {unpaidList.includes(a.group) ? "UNPAID" : ""}
-                              </span>
-                              <span style={{ background: did ? "rgba(52,211,153,0.12)" : "rgba(251,191,36,0.12)", border:`1px solid ${did ? "rgba(52,211,153,0.3)" : "rgba(251,191,36,0.3)"}`, borderRadius:6, padding:"3px 10px", color: did ? "#34d399" : "#fbbf24", fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{did ? "ORDERED" : "NO ORDER"}</span>
-                            </div>
-                          </button>
-                          {isOpen && did && (
-                            <div style={{ padding:"0 16px 14px", background:"#080c14" }}>
-                              {weekOrders.map(o => (
-                                <div key={o.id} style={{ borderTop:"1px solid #1e2d45", paddingTop:10, marginTop:10 }}>
-                                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginBottom:6 }}>
-                                    <span style={{ color:"#94a3b8", fontSize:12, fontWeight:600 }}>{o.vendor}{o.type === "quick" ? " (quick)" : ""}</span>
-                                    <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{fmtDate(o.date)} · {o.totalItems} items</span>
-                                  </div>
-                                  <table style={{ width:"100%", borderCollapse:"collapse" }}>
-                                    <tbody>
-                                      {(o.lines || []).map((l, li) => (
-                                        <tr key={li}>
-                                          <td style={{ padding:"3px 0", color:"#e2e8f0", fontSize:12 }}>{l.name}</td>
-                                          <td style={{ padding:"3px 0", textAlign:"right", color:"#38bdf8", fontSize:12, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{l.qty} {l.order_unit}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {filteredAccounts.length === 0 && (
-                      <div style={{ color:"#64748b", fontSize:13, textAlign:"center", padding:24 }}>No accounts match.</div>
-                    )}
-                  </div>
-                </>
-              )}
-            </>
-          )}
-
-          {/* ── INVITE ACCOUNT VIEW ── */}
-          {repView === "invite" && (
-            <>
-              <div style={{ marginBottom:20 }}>
-                <h2 style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, margin:0 }}>Invite Account</h2>
-                <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Send a business an invite to connect with {repCompany}</p>
-              </div>
-              <div style={{ maxWidth:520, background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, padding:"22px 22px" }}>
-                <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:600, marginBottom:8 }}>Restaurant email</label>
-                <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="business@email.com" type="email"
-                  style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"11px 14px", color:"#f1f5f9", fontSize:15, outline:"none", boxSizing:"border-box", marginBottom:14 }} />
-                <button onClick={sendInvite}
-                  style={{ width:"100%", background:"#38bdf8", border:"none", borderRadius:9, padding:"12px", color:"#060a12", fontSize:15, fontWeight:700, cursor:"pointer" }}>
-                  Send invite
-                </button>
-                {inviteMsg && <div style={{ color: inviteMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:13, marginTop:14, lineHeight:1.5 }}>{inviteMsg}</div>}
-                <div style={{ marginTop:18, paddingTop:18, borderTop:"1px solid #1e2d45" }}>
-                  <div style={{ color:"#64748b", fontSize:12, fontWeight:600, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>How it works</div>
-                  {["Enter the restaurant's email and send the invite",`After they sign up for MOE, they'll see a ${repCompany} invite in their Vendors section`,"They tap Confirm — and they show up here in your Accounts"].map((s, i) => (
-                    <div key={i} style={{ display:"flex", gap:10, marginBottom:10 }}>
-                      <span style={{ flexShrink:0, width:20, height:20, borderRadius:"50%", background:"#1e3a5f", color:"#38bdf8", fontSize:11, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Mono',monospace" }}>{i+1}</span>
-                      <span style={{ color:"#94a3b8", fontSize:13, lineHeight:1.5 }}>{s}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* ── ANNOUNCEMENTS (broadcast to accounts) ── */}
-          {repView === "announcements" && (
-            <>
-              <div style={{ marginBottom:20 }}>
-                <h2 style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, margin:0 }}>Announcements</h2>
-                <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Message your accounts</p>
-              </div>
-
-              {/* Compose */}
-              <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, padding:"20px", marginBottom:24, maxWidth:620 }}>
-                <input value={bcTitle} onChange={e => setBcTitle(e.target.value)} placeholder="Title"
-                  style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"11px 14px", color:"#f1f5f9", fontSize:15, outline:"none", boxSizing:"border-box", marginBottom:10 }} />
-                <textarea value={bcBody} onChange={e => setBcBody(e.target.value)} rows={3} placeholder="Message to your accounts…"
-                  style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"11px 14px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box", resize:"vertical", fontFamily:"inherit", marginBottom:14, lineHeight:1.5 }} />
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
-                  <select value={bcAudience} onChange={e => setBcAudience(e.target.value)}
-                    style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:9, padding:"10px 12px", color:"#f1f5f9", fontSize:13, outline:"none", cursor:"pointer" }}>
-                    <option value="all">All accounts ({(accounts||[]).length})</option>
-                    <option value="unpaid">Unpaid accounts ({audienceTargets("unpaid").length})</option>
-                    <option value="no_order">Order not received ({audienceTargets("no_order").length})</option>
-                  </select>
-                  <button onClick={sendBroadcast}
-                    style={{ background:"#38bdf8", border:"none", borderRadius:9, padding:"11px 22px", color:"#060a12", fontSize:14, fontWeight:700, cursor:"pointer" }}>
-                    Send
-                  </button>
-                </div>
-                {bcMsg && <div style={{ color: bcMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:13, marginTop:12 }}>{bcMsg}</div>}
-              </div>
-
-              {/* Sent messages */}
-              <div style={{ color:"#64748b", fontSize:13, fontWeight:700, marginBottom:10 }}>Sent messages</div>
-              {announcements.length === 0 ? (
-                <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:14, padding:32, textAlign:"center", color:"#64748b", fontSize:13 }}>
-                  No messages sent yet. Your first broadcast will show here.
-                </div>
-              ) : (
-                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                  {announcements.slice().sort((a,b) => new Date(b.date)-new Date(a.date)).map(an => (
-                    <div key={an.id} className="moe-lift" style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px" }}>
-                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:6, flexWrap:"wrap" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
-                          <span style={{ color:"#f1f5f9", fontSize:15, fontWeight:700 }}>{an.title}</span>
-                          {an.audience && an.audience !== "all" && (
-                            <span style={{ background: an.audience === "unpaid" ? "rgba(248,113,113,0.12)" : "rgba(251,191,36,0.12)", border:`1px solid ${an.audience === "unpaid" ? "rgba(248,113,113,0.3)" : "rgba(251,191,36,0.3)"}`, borderRadius:4, padding:"1px 7px", color: an.audience === "unpaid" ? "#fca5a5" : "#fbbf24", fontSize:9, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>
-                              {an.audience === "unpaid" ? "UNPAID" : "NO ORDER"}
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                          <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{an.targets ? `${an.targets.length} acct${an.targets.length!==1?"s":""} · ` : ""}{fmtDate(an.date)}</span>
-                          <button onClick={() => deleteBroadcast(an.id)} style={{ background:"transparent", border:"none", color:"#fca5a5", fontSize:12, cursor:"pointer" }}>Delete</button>
-                        </div>
-                      </div>
-                      <p style={{ color:"#94a3b8", fontSize:13.5, margin:0, lineHeight:1.6 }}>{an.body}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </main>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ADMIN VIEW — See all signups and accounts
+// PLATFORM ADMIN — every restaurant account, its trial/plan, and a switch to
+// activate it after payment. Server-checked: only moe_platform_admins can call it.
 // ═══════════════════════════════════════════════════════════════════════════════
 function AdminView() {
-  const [accounts, setAccounts] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [reps, setReps] = useState({});
-  const [newRep, setNewRep] = useState({ name:"", email:"", password:"", code:"", company:"" });
-  const [repMsg, setRepMsg] = useState("");
-  const [anns, setAnns] = useState([]);
-  const [newAnn, setNewAnn] = useState({ title:"", body:"", pinned:false });
-  const [annMsg, setAnnMsg] = useState("");
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  const [q, setQ] = useState("");
 
-  useEffect(() => {
-    const fetchAccounts = async () => {
-      await loadSupabase();
-      try {
-        const data = await sbGet("__moe_accounts__", "accounts");
-        setAccounts(data || {});
-        const r = await sbGet("__moe_reps__", "reps");
-        setReps(r || {});
-        const a = await sbGet("__moe_announcements__", "list");
-        setAnns(Array.isArray(a) ? a : []);
-      } catch (err) {
-        console.error("Failed to load accounts:", err);
-        setAccounts({});
-      }
-      setLoading(false);
-    };
-    fetchAccounts();
+  const load = useCallback(async () => {
+    const res = await sbRpc("moe_admin_kitchens");
+    if (!res.ok) { setError(res.error); setRows([]); return; }
+    setError(""); setRows(Array.isArray(res.value) ? res.value : []);
   }, []);
+  useEffect(() => { load(); }, [load]);
 
-  const addRep = async () => {
-    const name = newRep.name.trim(), email = newRep.email.toLowerCase().trim(), code = newRep.code.trim().toUpperCase(), password = newRep.password, company = newRep.company.trim();
-    if (!name || !email || !code || !password || !company) { setRepMsg("All fields required."); return; }
-    const r = await sbGet("__moe_reps__", "reps") || {};
-    if (r[email]) { setRepMsg("A rep with this email already exists."); return; }
-    r[email] = { name, email, code, password, company, createdAt: new Date().toISOString() };
-    await sbSet("__moe_reps__", "reps", r);
-    setReps(r);
-    setNewRep({ name:"", email:"", password:"", code:"", company:"" });
-    setRepMsg(`✓ Rep added. They log in with their email/password and see only ${company} orders.`);
+  const setSub = async (k, patch) => {
+    setBusy(k.id);
+    const next = { ...(k.subscription || {}), ...patch, updatedBy: "admin", updatedAt: new Date().toISOString() };
+    const res = await sbRpc("moe_admin_set_subscription", { p_kitchen: k.id, p_sub: next });
+    setBusy("");
+    if (!res.ok) { setError(res.error); return; }
+    load();
+  };
+  const extendTrial = (k, days) => {
+    const base = k.subscription?.trialEnd && new Date(k.subscription.trialEnd) > new Date() ? new Date(k.subscription.trialEnd) : new Date();
+    base.setDate(base.getDate() + days);
+    setSub(k, { status: "trialing", trialEnd: base.toISOString() });
   };
 
-  const postAnn = async () => {
-    if (!newAnn.title.trim() || !newAnn.body.trim()) { setAnnMsg("Title and message required."); return; }
-    const a = await sbGet("__moe_announcements__", "list") || [];
-    const entry = { id:`ann_${Date.now()}`, title:newAnn.title.trim(), body:newAnn.body.trim(), pinned:newAnn.pinned, date:new Date().toISOString() };
-    const updated = [entry, ...(Array.isArray(a) ? a : [])];
-    await sbSet("__moe_announcements__", "list", updated);
-    setAnns(updated);
-    setNewAnn({ title:"", body:"", pinned:false });
-    setAnnMsg("✓ Posted. All reps will see it on their Announcements tab.");
+  const statusOf = (sub) => {
+    if (!sub) return { label: "NO PLAN", color: "#94a3b8" };
+    if (sub.status === "active") return { label: `ACTIVE · ${(PLANS[sub.plan]?.name || sub.plan || "").toUpperCase()}`, color: "#22c55e" };
+    const end = sub.trialEnd ? new Date(sub.trialEnd) : null;
+    if (sub.status === "trialing" && end && end > new Date()) return { label: `TRIAL · ${Math.ceil((end - new Date()) / 86400000)}d left`, color: "#fbbf24" };
+    return { label: sub.status === "canceled" ? "CANCELED" : "EXPIRED", color: "#ef4444" };
   };
 
-  const deleteAnn = async (id) => {
-    const a = await sbGet("__moe_announcements__", "list") || [];
-    const updated = (Array.isArray(a) ? a : []).filter(x => x.id !== id);
-    await sbSet("__moe_announcements__", "list", updated);
-    setAnns(updated);
-  };
-
-  if (loading) return (
-    <div style={{ textAlign: "center", padding: 40 }}>
-      <div style={{ color: "#475569", fontSize: 14, fontFamily: "'DM Mono',monospace" }}>Loading accounts...</div>
-    </div>
-  );
-
-  const acctList = Object.entries(accounts || {}).map(([email, data]) => ({ email, ...data }));
-  const sorted = acctList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  const list = (rows || []).filter(k => !q || `${k.name} ${k.id} ${k.owner_email}`.toLowerCase().includes(q.toLowerCase()));
+  const counts = (rows || []).reduce((acc, k) => { const l = statusOf(k.subscription).label.split(" ")[0]; acc[l] = (acc[l] || 0) + 1; return acc; }, {});
+  const mrr = (rows || []).filter(k => k.subscription?.status === "active" && k.id !== "demo").reduce((sum, k) => sum + (PLANS[k.subscription.plan]?.price || 0), 0);
+  const btn = { background:"transparent", border:"1px solid #1e2d45", borderRadius:7, color:"#cbd5e1", padding:"6px 10px", fontSize:12, cursor:"pointer" };
 
   return (
     <div>
-      <h2 style={{ color: "#f1f5f9", fontSize: 18, fontWeight: 700, margin: "0 0 4px" }}>👑 Admin — Accounts</h2>
-      <p style={{ color: "#475569", fontSize: 13, margin: "0 0 20px" }}>All registered accounts on MOE</p>
-
-      {/* Stats */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-        <div style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 10, padding: "14px 20px", flex: "1 1 120px" }}>
-          <div style={{ color: "#38bdf8", fontSize: 28, fontWeight: 700, fontFamily: "'Space Mono',monospace" }}>{acctList.length}</div>
-          <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'DM Mono',monospace" }}>Total Signups</div>
-        </div>
-        <div style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 10, padding: "14px 20px", flex: "1 1 120px" }}>
-          <div style={{ color: "#34d399", fontSize: 28, fontWeight: 700, fontFamily: "'Space Mono',monospace" }}>
-            {acctList.filter(a => { const d = new Date(a.createdAt || 0); const now = new Date(); return (now - d) < 7 * 24 * 60 * 60 * 1000; }).length}
-          </div>
-          <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'DM Mono',monospace" }}>This Week</div>
-        </div>
-        <div style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 10, padding: "14px 20px", flex: "1 1 120px" }}>
-          <div style={{ color: "#fbbf24", fontSize: 28, fontWeight: 700, fontFamily: "'Space Mono',monospace" }}>
-            {acctList.filter(a => { const d = new Date(a.createdAt || 0); const now = new Date(); return (now - d) < 30 * 24 * 60 * 60 * 1000; }).length}
-          </div>
-          <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: "'DM Mono',monospace" }}>This Month</div>
-        </div>
-      </div>
-
-      {/* Sales Reps */}
-      <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px", marginBottom:20 }}>
-        <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:700, marginBottom:4 }}>Sales reps</div>
-        <div style={{ color:"#64748b", fontSize:12, marginBottom:14 }}>Create a rep login. Accounts that sign up with the rep's code show on their dashboard.</div>
-        {Object.values(reps).length > 0 && (
-          <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:14 }}>
-            {Object.values(reps).map(r => {
-              const tagged = Object.values(accounts || {}).filter(a => (a.repCode || "") === r.code).length;
-              return (
-                <div key={r.email} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", flexWrap:"wrap" }}>
-                  <div>
-                    <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{r.name}</span>
-                    {r.company && <span style={{ color:"#94a3b8", fontSize:12, marginLeft:8 }}>· {r.company}</span>}
-                    <span style={{ background:"rgba(56,189,248,0.12)", border:"1px solid rgba(56,189,248,0.3)", borderRadius:4, padding:"1px 6px", color:"#38bdf8", fontSize:10, fontWeight:700, marginLeft:8, fontFamily:"'DM Mono',monospace" }}>{r.code}</span>
-                  </div>
-                  <span style={{ color:"#64748b", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{r.email} · {tagged} account{tagged!==1?"s":""}</span>
+      <h2 style={{ color:"#f1f5f9", fontSize:18, fontWeight:700, margin:"0 0 4px" }}>Admin — Restaurants</h2>
+      <p style={{ color:"#64748b", fontSize:13, margin:"0 0 16px" }}>
+        {rows ? `${rows.length} accounts · ${counts.ACTIVE || 0} active · ${counts.TRIAL || 0} trialing · ${counts.EXPIRED || 0} expired · $${mrr.toLocaleString()}/mo` : "Loading…"}
+      </p>
+      {error && <div style={{ background:"#450a0a", border:"1px solid #7f1d1d", borderRadius:8, padding:"10px 14px", color:"#fca5a5", fontSize:13, marginBottom:12 }}>{error}</div>}
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search restaurant, id, or owner email"
+        style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"10px 12px", color:"#f1f5f9", marginBottom:12, boxSizing:"border-box" }} />
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        {list.map(k => {
+          const st = statusOf(k.subscription);
+          return (
+            <div key={k.id} style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:14 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:8, flexWrap:"wrap" }}>
+                <div>
+                  <div style={{ color:"#f1f5f9", fontWeight:700 }}>{k.name}</div>
+                  <div style={{ color:"#64748b", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{k.id} · {k.owner_email || "no owner"} · {k.members} user{k.members !== 1 ? "s" : ""}{k.business?.phone ? ` · ${k.business.phone}` : ""}</div>
+                  <div style={{ color:"#475569", fontSize:11, marginTop:2 }}>Signed up {new Date(k.created_at).toLocaleDateString()} · last activity {k.last_activity ? new Date(k.last_activity).toLocaleDateString() : "—"}</div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:8, marginBottom:10 }}>
-          <input value={newRep.name} onChange={e => setNewRep({...newRep, name:e.target.value})} placeholder="Rep name" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
-          <input value={newRep.company} onChange={e => setNewRep({...newRep, company:e.target.value})} placeholder="Company (e.g. Anacapri)" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
-          <input value={newRep.email} onChange={e => setNewRep({...newRep, email:e.target.value})} placeholder="Email" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
-          <input value={newRep.code} onChange={e => setNewRep({...newRep, code:e.target.value.toUpperCase()})} placeholder="Code (e.g. JOE)" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none", textTransform:"uppercase" }} />
-          <input value={newRep.password} onChange={e => setNewRep({...newRep, password:e.target.value})} placeholder="Password" style={{ background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none" }} />
-        </div>
-        {repMsg && <div style={{ color: repMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:12, marginBottom:10 }}>{repMsg}</div>}
-        <button onClick={addRep} style={{ background:"#38bdf8", border:"none", borderRadius:8, padding:"9px 18px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>Add rep</button>
-      </div>
-
-      {/* Announcements */}
-      <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, padding:"16px 18px", marginBottom:20 }}>
-        <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:700, marginBottom:4 }}>Announcements</div>
-        <div style={{ color:"#64748b", fontSize:12, marginBottom:14 }}>Post updates that show on every rep's Announcements tab.</div>
-        <input value={newAnn.title} onChange={e => setNewAnn({...newAnn, title:e.target.value})} placeholder="Title (e.g. New product in stock)"
-          style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box", marginBottom:8 }} />
-        <textarea value={newAnn.body} onChange={e => setNewAnn({...newAnn, body:e.target.value})} placeholder="Message…" rows={3}
-          style={{ width:"100%", background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"9px 12px", color:"#f1f5f9", fontSize:14, outline:"none", boxSizing:"border-box", resize:"vertical", fontFamily:"inherit", marginBottom:10 }} />
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
-          <label style={{ display:"flex", alignItems:"center", gap:8, color:"#94a3b8", fontSize:13, cursor:"pointer" }}>
-            <input type="checkbox" checked={newAnn.pinned} onChange={e => setNewAnn({...newAnn, pinned:e.target.checked})} style={{ width:16, height:16, accentColor:"#38bdf8" }} />
-            Pin to top
-          </label>
-          <button onClick={postAnn} style={{ background:"#38bdf8", border:"none", borderRadius:8, padding:"9px 18px", color:"#060a12", fontSize:13, fontWeight:700, cursor:"pointer" }}>Post announcement</button>
-        </div>
-        {annMsg && <div style={{ color: annMsg.startsWith("✓") ? "#34d399" : "#fca5a5", fontSize:12, marginTop:10 }}>{annMsg}</div>}
-        {anns.length > 0 && (
-          <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:14 }}>
-            {anns.map(an => (
-              <div key={an.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, background:"#080c14", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px" }}>
-                <div style={{ minWidth:0 }}>
-                  <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{an.pinned ? "📌 " : ""}{an.title}</span>
-                  <span style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", marginLeft:8 }}>{fmtDate(an.date)}</span>
-                </div>
-                <button onClick={() => deleteAnn(an.id)} style={{ background:"transparent", border:"none", color:"#fca5a5", fontSize:12, cursor:"pointer" }}>Delete</button>
+                <span style={{ color:st.color, fontSize:11, fontWeight:700, fontFamily:"'DM Mono',monospace", alignSelf:"flex-start" }}>{st.label}</span>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Accounts list */}
-      {sorted.length === 0 ? (
-        <div style={{ background: "#0f1a2e", border: "1px solid #1e2d45", borderRadius: 12, padding: 32, textAlign: "center" }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>📭</div>
-          <div style={{ color: "#94a3b8", fontSize: 14, fontWeight: 600 }}>No signups yet</div>
-          <div style={{ color: "#475569", fontSize: 12, marginTop: 4 }}>New accounts will appear here when people register</div>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {sorted.map((acct, idx) => {
-            const created = acct.createdAt ? new Date(acct.createdAt) : null;
-            const daysAgo = created ? Math.floor((new Date() - created) / (24 * 60 * 60 * 1000)) : null;
-            return (
-              <div key={acct.email} style={{ background: idx % 2 === 0 ? "#0f1a2e" : "#0a1220", border: "1px solid #1e2d45", borderRadius: 10, padding: "14px 18px" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div style={{ color: "#f1f5f9", fontSize: 14, fontWeight: 600 }}>
-                      {acct.ownerFirst} {acct.ownerLast}
-                      {daysAgo !== null && daysAgo <= 1 && <span style={{ background: "#052e16", border: "1px solid #16a34a", borderRadius: 4, padding: "1px 6px", color: "#4ade80", fontSize: 9, fontWeight: 700, marginLeft: 8, fontFamily: "'DM Mono',monospace" }}>NEW</span>}
-                    </div>
-                    <div style={{ color: "#64748b", fontSize: 12, fontFamily: "'DM Mono',monospace", marginTop: 2 }}>{acct.email}</div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    {acct.business && <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 600 }}>{acct.business.name}</div>}
-                    {acct.business?.type && <div style={{ color: "#475569", fontSize: 10, fontFamily: "'DM Mono',monospace", textTransform: "uppercase" }}>{acct.business.type}</div>}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
-                  {acct.phone && <span style={{ color: "#475569", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>📱 {acct.phone}</span>}
-                  {acct.business?.phone && <span style={{ color: "#475569", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>☎ {acct.business.phone}</span>}
-                  {acct.business?.city && <span style={{ color: "#475569", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>📍 {acct.business.city}, {acct.business.state}</span>}
-                  {created && <span style={{ color: "#475569", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>🗓 {created.toLocaleDateString()}{daysAgo !== null ? ` (${daysAgo === 0 ? "today" : daysAgo === 1 ? "yesterday" : daysAgo + "d ago"})` : ""}</span>}
-                  {acct.repCode && <span style={{ color: "#38bdf8", fontSize: 11, fontFamily: "'DM Mono',monospace" }}>🤝 Rep {acct.repCode}</span>}
-                </div>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:10 }}>
+                {Object.entries(PLANS).map(([key, plan]) => (
+                  <button key={key} type="button" disabled={busy === k.id} style={btn}
+                    onClick={() => setSub(k, { status: "active", plan: key, subscribedAt: k.subscription?.subscribedAt || new Date().toISOString() })}>
+                    Activate {plan.name} ${plan.price}
+                  </button>
+                ))}
+                <button type="button" disabled={busy === k.id} style={btn} onClick={() => extendTrial(k, 7)}>+7 day trial</button>
+                {k.subscription?.status === "active" && (
+                  <button type="button" disabled={busy === k.id} style={{ ...btn, color:"#fca5a5", borderColor:"#7f1d1d" }}
+                    onClick={() => { if (window.confirm(`Cancel ${k.name}? They will be locked out until reactivated.`)) setSub(k, { status: "canceled", canceledAt: new Date().toISOString() }); }}>
+                    Cancel
+                  </button>
+                )}
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
