@@ -17,7 +17,7 @@ export function linesForVendor(inventory, stock, vendorName) {
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
-export function buildHistoryEntry({ vendorName, lines, user }) {
+export function buildHistoryEntry({ vendorName, lines, user, counts }) {
   const orderLines = lines
     .filter((line) => Number(line.qty) > 0)
     .map((item) => ({
@@ -28,6 +28,7 @@ export function buildHistoryEntry({ vendorName, lines, user }) {
       vendor: vendorName,
       qty: Number(item.qty),
       currentStock: item.onHand ?? 0,
+      ...(item.overPar > 0 ? { overPar: item.overPar } : {}),
     }));
   const now = new Date();
   return {
@@ -41,6 +42,8 @@ export function buildHistoryEntry({ vendorName, lines, user }) {
     totalItems: orderLines.length,
     orderedBy: user?.name || "",
     received: false,
+    // Every counted item from this supplier at order time — feeds usage tracking.
+    ...(counts && Object.keys(counts).length ? { counts } : {}),
   };
 }
 

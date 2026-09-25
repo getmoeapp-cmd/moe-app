@@ -4,6 +4,7 @@ import { SUPPORT_EMAIL } from "./lib/config";
 import { DEFAULT_INVENTORY, DEFAULT_VENDORS } from "./lib/defaults";
 import { getSB, sbGetMany, sbSet as sbSetResult, sbMerge, sbPrepend, sbMergeUsage, sbRpc } from "./lib/supabaseClient";
 import TeamPanel from "./simple/TeamPanel";
+import UsageScreen from "./simple/UsageScreen";
 import { calcQuizSavings, quizPaybackDays, quizRoiMultiple } from "./lib/quizMath";
 import {
   DAYS, DAYS_SHORT, getWeekNumber, getWeekYear, weekKey, getToday, fmtDate, getWeekMonday, fmtWeekLabel,
@@ -287,7 +288,7 @@ export function MoeApp({ initialUser, onLogout }) {
     if (snap.ok && snap.value) setStockSnapshots(snap.value);
     const at = new Date().toISOString();
     const entries = ids.map(id => ({ i: /^\d+$/.test(id) ? Number(id) : id, q: patch[id], by: user?.name || "", at }));
-    const logged = await sbPrepend(g, "countLog", entries, 3000);
+    const logged = await sbPrepend(g, "countLog", entries, 10000);
     if (logged.ok && Array.isArray(logged.value)) setCountLog(logged.value);
   }, [noteResult, user]);
 
@@ -433,6 +434,7 @@ export function MoeApp({ initialUser, onLogout }) {
         totalItems: lines.length,
         orderedBy: user?.name || "",
         received: false,
+        counts: Object.fromEntries(vendorItems.filter(i => Object.prototype.hasOwnProperty.call(stock, i.id)).map(i => [i.id, stock[i.id]])),
       });
     });
     if (entries.length === 0) { showFlash("Nothing to order — stock is above reorder points"); return; }
@@ -521,16 +523,6 @@ export function MoeApp({ initialUser, onLogout }) {
 
   // ── Save permissions ──────────────────────────────────────────────────
   const savePermissions = useCallback((newPerms) => { setPermissions(newPerms); save("permissions", newPerms); showFlash("✓ Permissions updated"); }, [save]);
-
-  // ── Apply par suggestion — update an item's max_stock in inventory ──────
-  const applyParSuggestion = (itemId, newMaxStock) => {
-    const newInv = inventory.map(s => ({
-      ...s, items: s.items.map(i => i.id === itemId ? { ...i, max_stock: newMaxStock } : i),
-    }));
-    setInventory(newInv);
-    save("inventory", newInv);
-    showFlash("✓ Par updated");
-  };
 
   const signOut = async () => {
     await flushStock();
@@ -708,7 +700,7 @@ export function MoeApp({ initialUser, onLogout }) {
                   ...(canAccess("settings") ? [{ key:"settings", label:"Settings", icon:"settings", desc:"Suppliers and team" }] : []),
                 ];
                 const more = [
-                  ...(canAccess("insights") ? [{ key:"insights", label:"Insights", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Usage suggestions", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
+                  ...(canAccess("insights") ? [{ key:"insights", label:"Usage & pars", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "What you use, par suggestions", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
                   ...(canAccess("waste") ? [{ key:"waste", label:"Waste log", icon:"waste", desc:"Parked until the count is in use" }] : []),
                   ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes", icon:"recipes", desc:"Dish cost" }] : []),
                   ...(canAccess("prices") ? [{ key:"prices", label:"Price tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice prices", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
@@ -825,7 +817,11 @@ export function MoeApp({ initialUser, onLogout }) {
         {view === "waste" && canAccess("waste") && <WasteLogView inventory={inventory} wasteLog={wasteLog} saveWasteLog={saveWasteLog} userName={user.name} priceHistory={priceHistory} />}
         {view === "orders" && canAccess("orders") && <OrdersView inventory={inventory} stock={stock} vendors={vendors} submitOrder={submitOrder} logQuickOrder={logQuickOrder} submitOrderForWeek={submitOrderForWeek} checkInDelivery={checkInDelivery} history={history} user={user} />}
         {view === "history" && canAccess("history") && <HistoryView history={history} user={user} />}
-        {view === "insights" && canAccess("insights") && <InsightsView inventory={inventory} usageLog={usageLog} vendors={vendors} applyParSuggestion={applyParSuggestion} stockSnapshots={stockSnapshots} history={history} />}
+        {view === "insights" && canAccess("insights") && (
+          <div style={{ background:"#f4f1ea", color:"#1c1917", borderRadius:12, padding:16 }}>
+            <UsageScreen user={user} inventory={inventory} vendors={vendors} history={history} countLog={countLog} saveInventory={(inv) => { setInventory(inv); return save("inventory", inv); }} />
+          </div>
+        )}
         {view === "recipes" && canAccess("recipes") && <RecipesView inventory={inventory} priceHistory={priceHistory} recipes={recipes} saveRecipes={saveRecipes} />}
         {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} foodCost={foodCost} history={history} saveHistory={saveHistory} saveInventory={(inv) => { setInventory(inv); save("inventory", inv); }} />}
         {view === "import" && canAccess("import") && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
@@ -2901,223 +2897,6 @@ function BackendSection({ section, stock, vendors, saveItemField, addItem, remov
             </tr>
           </tfoot>
         </table>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// INSIGHTS VIEW — Analyzes ordering patterns, suggests new par levels after 3 weeks
-// ═══════════════════════════════════════════════════════════════════════════════
-function InsightsView({ inventory, usageLog, vendors, applyParSuggestion, stockSnapshots = {}, history = [] }) {
-  const [dismissed, setDismissed] = useState({});
-  const [search, setSearch] = useState("");
-
-  const allItems = flatItems(inventory);
-  const snapWeeks = Object.keys(stockSnapshots).sort();
-
-  const receivedUnits = (itemId, weekKey) => {
-    let units = 0;
-    const item = allItems.find(i => i.id === Number(itemId));
-    const upu = item?.upu || 1;
-    const weekData = usageLog[weekKey] || {};
-    Object.values(weekData).forEach(items => {
-      if (items[itemId]) units += (items[itemId].qty || 0) * upu;
-    });
-    return units;
-  };
-
-  // Globally: the column headers are the last 4 usage weeks across the whole inventory.
-  // Usage is attributed to the END week of a (wkA → wkB) transition, so usage weeks = snapWeeks.slice(1).
-  const allUsageWeeks = snapWeeks.slice(1);
-  const recentWeeks = allUsageWeeks.slice(-4); // up to 4 most recent
-  // Pad on the left so we always render 4 columns
-  const colWeeks = [...Array(4 - recentWeeks.length).fill(null), ...recentWeeks];
-
-  const weekLabel = (wk) => wk ? `W${wk.split("-WK")[1] || ""}` : "—";
-
-  // Build per-item rows — EVERY item, even with no data
-  // All numbers display in ORDER UNITS (cases / each / etc) — the unit you actually order in.
-  // Snapshots are stored in individual units, so we divide by upu to convert.
-  const itemRows = allItems.map(item => {
-    const id = item.id;
-    const upu = item.upu || 1;
-    const orderUnit = (item.order_unit || "unit").toLowerCase();
-    const isCase = upu > 1;
-    // A week "counted" an item if that week's snapshot is real. Every item is
-    // counted every week, so a missing item in an otherwise-populated week means
-    // it was 0 (empty → order to par), NOT "skip". We only skip a week entirely
-    // when its snapshot is missing or too sparse to be a real count (e.g. an
-    // interrupted count that never finished), which would otherwise invent a
-    // giant fake usage spike for every item that didn't save.
-    const REAL_COUNT_MIN = 10; // a real weekly count has at least this many items
-    const weekItemCount = (wk) => {
-      const snap = stockSnapshots[wk];
-      if (!snap) return 0;
-      return Object.keys(snap).filter(k => k !== "_ts").length;
-    };
-    // Per-week usage in INDIVIDUALS first, then convert
-    const usageByWeek = {};
-    for (let i = 0; i < snapWeeks.length - 1; i++) {
-      const wkA = snapWeeks[i], wkB = snapWeeks[i + 1];
-      const aReal = weekItemCount(wkA) >= REAL_COUNT_MIN;
-      const bReal = weekItemCount(wkB) >= REAL_COUNT_MIN;
-      if (!aReal || !bReal) continue; // one of the weeks wasn't a real full count — can't trust the delta
-      // Within a real count week, a missing item == counted 0 (empty).
-      const startCount = stockSnapshots[wkA]?.[id] ?? 0;
-      const endCount = stockSnapshots[wkB]?.[id] ?? 0;
-      const received = receivedUnits(id, wkA);
-      const usageIndividuals = startCount + received - endCount;
-      if (usageIndividuals >= 0) {
-        // Convert to order units, round to 1 decimal
-        usageByWeek[wkB] = Math.round((usageIndividuals / upu) * 10) / 10;
-      }
-    }
-    const cells = colWeeks.map(wk => (wk && usageByWeek[wk] !== undefined) ? usageByWeek[wk] : null);
-    const values = cells.filter(v => v !== null);
-    const weeks = values.length;
-    const avg = weeks > 0 ? Math.round((values.reduce((a, b) => a + b, 0) / weeks) * 10) / 10 : null;
-    const peak = weeks > 0 ? Math.max(...values) : null;
-    // Recommended par in ORDER UNITS (cases) — peak + 20% buffer, rounded up to whole cases
-    const recommendedPar = weeks >= 2 ? Math.ceil(peak * 1.2) : null;
-    // Current par converted to ORDER UNITS so the whole grid speaks one language.
-    // max_stock is stored in INDIVIDUAL units (see calcOrderQty), so divide by upu.
-    const parOrderUnits = Math.round(((item.max_stock || 0) / upu) * 10) / 10;
-    const overStock = recommendedPar !== null ? parOrderUnits - recommendedPar : null;
-    return {
-      id, name: item.name, section: item.section || "Other",
-      max_stock: item.max_stock || 0, parOrderUnits,
-      orderUnit, upu, isCase,
-      cells, weeks, avg, peak, recommendedPar, overStock,
-    };
-  });
-
-  const filtered = itemRows
-    .filter(r => !dismissed[r.id])
-    .filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()));
-
-  // Group by section
-  const sections = {};
-  filtered.forEach(r => { if (!sections[r.section]) sections[r.section] = []; sections[r.section].push(r); });
-  const sectionNames = Object.keys(sections).sort();
-  sectionNames.forEach(sec => {
-    sections[sec].sort((a, b) => {
-      if (a.overStock !== null && b.overStock !== null) return b.overStock - a.overStock;
-      if (a.overStock !== null) return -1;
-      if (b.overStock !== null) return 1;
-      return a.name.localeCompare(b.name);
-    });
-  });
-
-  const overCount = filtered.filter(r => r.overStock !== null && r.overStock >= 1).length;
-  const totalTracked = filtered.filter(r => r.weeks > 0).length;
-  const hdr = { color:"#475569", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace", textAlign:"right" };
-
-  return (
-    <div>
-      <style>{`
-        .ins-r { display:grid; grid-template-columns: minmax(110px,1fr) 42px 42px 42px 42px 52px 44px 64px; gap:3px; align-items:center; }
-        @media (max-width: 560px) {
-          .ins-r { grid-template-columns: minmax(95px,1fr) 38px 38px 50px 42px 56px; gap:3px; }
-          .ins-w1, .ins-w2 { display:none !important; }
-        }
-      `}</style>
-
-      {/* Header + search */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
-        <div>
-          <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:0 }}>Insights</h2>
-          <p style={{ color:"#64748b", fontSize:12, margin:"4px 0 0" }}>
-            {snapWeeks.length < 2
-              ? (snapWeeks.length === 0 ? "Count inventory to start tracking usage" : "1 count done — usage appears after count #2")
-              : overCount > 0
-                ? <><span style={{ color:"#fbbf24" }}>{overCount} over-ordered</span> · {totalTracked} items tracked</>
-                : `${totalTracked} items tracked`}
-          </p>
-        </div>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items…"
-          style={{ width:190, background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:13, outline:"none" }} />
-      </div>
-
-      {/* Spreadsheet */}
-      <div style={{ background:"#0c1220", border:"1px solid #1e2d45", borderRadius:12, overflow:"hidden" }}>
-        {/* Column headers */}
-        <div className="ins-r" style={{ padding:"9px 14px", background:"#0a0f1a", borderBottom:"1px solid #1e2d45" }}>
-          <span style={{ ...hdr, textAlign:"left" }}>Item</span>
-          <span className="ins-w1" style={hdr}>{weekLabel(colWeeks[0], 0)}</span>
-          <span className="ins-w2" style={hdr}>{weekLabel(colWeeks[1], 1)}</span>
-          <span style={hdr}>{weekLabel(colWeeks[2], 2)}</span>
-          <span style={hdr}>{weekLabel(colWeeks[3], 3)}</span>
-          <span style={{ ...hdr, color:"#94a3b8" }}>Avg</span>
-          <span style={hdr}>Par</span>
-          <span style={hdr}>Should be</span>
-        </div>
-
-        {sectionNames.map(sec => (
-          <div key={sec}>
-            <div style={{ padding:"7px 14px", background:"#0d1424", borderBottom:"1px solid #131c2e", borderTop:"1px solid #131c2e" }}>
-              <span style={{ color:"#64748b", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.5px" }}>{sec}</span>
-              <span style={{ color:"#3b4a63", fontSize:11, marginLeft:8 }}>{sections[sec].length}</span>
-            </div>
-
-            {sections[sec].map((s, idx) => {
-              const hasData = s.weeks > 0;
-              const ready = s.weeks >= 2; // average + recommendation ready
-              const canCut = ready && s.overStock >= 1;
-              const isShort = ready && s.max_stock > 0 && s.overStock < 0;
-              const even = idx % 2 === 0;
-              const cellStyle = { color:"#cbd5e1", fontSize:13, fontFamily:"'DM Mono',monospace", textAlign:"right" };
-              const emptyCell = { color:"#2a3444", fontSize:13, fontFamily:"'DM Mono',monospace", textAlign:"right" };
-              return (
-                <div key={s.id} className="ins-r"
-                  style={{ padding:"9px 14px", background: canCut ? "rgba(251,191,36,0.05)" : isShort ? "rgba(56,189,248,0.04)" : even ? "transparent" : "rgba(255,255,255,0.015)", borderBottom:"1px solid #0f1520" }}>
-                  <div style={{ minWidth:0 }}>
-                    <div style={{ color: hasData ? "#e2e8f0" : "#475569", fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.name}</div>
-                    <div style={{ color:"#3b4a63", fontSize:10, marginTop:1, fontFamily:"'DM Mono',monospace" }}>
-                      {s.isCase ? `case of ${s.upu}` : s.orderUnit}
-                    </div>
-                  </div>
-                  <span className="ins-w1" style={s.cells[0] !== null ? cellStyle : emptyCell}>{s.cells[0] ?? "—"}</span>
-                  <span className="ins-w2" style={s.cells[1] !== null ? cellStyle : emptyCell}>{s.cells[1] ?? "—"}</span>
-                  <span style={s.cells[2] !== null ? cellStyle : emptyCell}>{s.cells[2] ?? "—"}</span>
-                  <span style={s.cells[3] !== null ? cellStyle : emptyCell}>{s.cells[3] ?? "—"}</span>
-                  <span style={{ color: ready ? "#f1f5f9" : "#2a3444", fontSize:14, fontWeight:700, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>
-                    {ready ? s.avg : "—"}
-                  </span>
-                  <span style={{ color:"#94a3b8", fontSize:13, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{s.parOrderUnits || "—"}</span>
-                  <div style={{ textAlign:"right" }}>
-                    {canCut && applyParSuggestion ? (
-                      <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar * (s.upu || 1)); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
-                        style={{ background:"none", border:"none", color:"#fbbf24", fontSize:12, fontWeight:700, cursor:"pointer", padding:0, fontFamily:"'DM Mono',monospace" }}>
-                        {s.recommendedPar} ▸
-                      </button>
-                    ) : isShort && applyParSuggestion ? (
-                      <button onClick={() => { applyParSuggestion(s.id, s.recommendedPar * (s.upu || 1)); setDismissed(prev => ({ ...prev, [s.id]: true })); }}
-                        style={{ background:"none", border:"none", color:"#38bdf8", fontSize:12, fontWeight:700, cursor:"pointer", padding:0, fontFamily:"'DM Mono',monospace" }}>
-                        {s.recommendedPar} ▸
-                      </button>
-                    ) : ready ? (
-                      <span style={{ color:"#34d399", fontSize:12, fontFamily:"'DM Mono',monospace" }}>✓</span>
-                    ) : (
-                      <span style={{ color:"#2a3444", fontSize:13, fontFamily:"'DM Mono',monospace" }}>—</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-
-        {filtered.length === 0 && (
-          <div style={{ padding:"24px 14px", textAlign:"center", color:"#475569", fontSize:13 }}>
-            {search ? "No items match." : "No items in inventory yet."}
-          </div>
-        )}
-      </div>
-
-      {/* Legend */}
-      <div style={{ color:"#475569", fontSize:11, marginTop:12, lineHeight:1.6 }}>
-        All numbers shown in <strong style={{ color:"#64748b" }}>order units</strong> (cases or each — see label under item name). <strong style={{ color:"#94a3b8" }}>Avg</strong> builds up over time (2-wk → 3-wk → 4-wk rolling). <strong style={{ color:"#fbbf24" }}>Should be</strong> = peak + 20% buffer, rounded up to whole cases. Tap the number to apply.
       </div>
     </div>
   );

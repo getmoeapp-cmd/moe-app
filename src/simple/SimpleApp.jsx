@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { canManage, createKitchenForMe, joinKitchenAsMe } from "../lib/auth";
 import { DEMO_GROUPS } from "../lib/config";
-import { lowItems } from "../lib/stockMath";
-import LowStockScreen from "./LowStockScreen";
-import OrderScreen from "./OrderScreen";
+import CountScreen from "./CountScreen";
+import OrdersScreen from "./OrdersScreen";
 import SettingsScreen from "./SettingsScreen";
 import StockScreen from "./StockScreen";
 import TrialGate from "./TrialGate";
+import UsageScreen from "./UsageScreen";
 import { useKitchenData } from "./useKitchenData";
+import { useOrderFlow } from "./useOrderFlow";
 import "./simple.css";
 
 const SAVE_LABEL = { saving: "Saving…", saved: "Saved", local: "On this device" };
@@ -28,12 +29,11 @@ function accessFor(group, subscription) {
 
 function Kitchen({ user, onLogout }) {
   const data = useKitchenData(user);
-  const [tab, setTab] = useState("stock");
+  const flow = useOrderFlow(user, data);
+  const [tab, setTab] = useState("count");
   const [query, setQuery] = useState("");
-  const [preferredVendor, setPreferredVendor] = useState("");
   const manager = canManage(user);
   const access = accessFor(user.group, data.subscription);
-  const low = useMemo(() => lowItems(data.inventory, data.stock), [data.inventory, data.stock]);
 
   useEffect(() => {
     const meta = document.querySelector('meta[name="theme-color"]');
@@ -78,9 +78,10 @@ function Kitchen({ user, onLogout }) {
   }
 
   const tabs = [
+    ["count", "Count"],
+    ...(manager ? [["orders", "Orders"]] : []),
     ["stock", "Stock"],
-    ["low", "Low"],
-    ["order", "Order"],
+    ...(manager ? [["usage", "Usage"]] : []),
     ["settings", "Settings"],
   ];
 
@@ -103,26 +104,16 @@ function Kitchen({ user, onLogout }) {
         {tab === "stock" && (
           <StockScreen inventory={data.inventory} stock={data.stock} updateStock={data.updateStock} query={query} onQuery={setQuery} />
         )}
-        {tab === "low" && (
-          <LowStockScreen
+        {tab === "count" && <CountScreen user={user} kitchen={data} flow={flow} />}
+        {tab === "orders" && manager && <OrdersScreen user={user} kitchen={data} flow={flow} />}
+        {tab === "usage" && manager && (
+          <UsageScreen
+            user={user}
             inventory={data.inventory}
-            stock={data.stock}
-            canOrder={manager}
-            onCount={(name) => { setQuery(name); setTab("stock"); }}
-            onOrder={(vendor) => { setPreferredVendor(vendor); setTab("order"); }}
-          />
-        )}
-        {tab === "order" && (
-          <OrderScreen
-            inventory={data.inventory}
-            stock={data.stock}
             vendors={data.vendors}
             history={data.history}
-            user={user}
-            canOrder={manager}
-            placeOrder={data.placeOrder}
-            preferredVendor={preferredVendor}
-            onOpenSettings={() => setTab("settings")}
+            countLog={data.countLog}
+            saveInventory={data.saveInventory}
           />
         )}
         <div hidden={tab !== "settings"}>
@@ -144,7 +135,7 @@ function Kitchen({ user, onLogout }) {
         {tabs.map(([key, label]) => (
           <button key={key} type="button" aria-current={tab === key ? "page" : undefined} onClick={() => setTab(key)}>
             {label}
-            {key === "low" && low.length > 0 ? <span className="badge">{low.length}</span> : null}
+            {key === "orders" && flow.drafts.length > 0 ? <span className="badge">{flow.drafts.length}</span> : null}
           </button>
         ))}
       </nav>

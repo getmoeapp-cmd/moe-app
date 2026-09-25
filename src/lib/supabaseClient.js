@@ -110,3 +110,31 @@ export const sbMergeUsage = (group, week, vendor, lines) =>
   rpc("moe_merge_usage", { p_group: group, p_week: week, p_vendor: vendor, p_lines: lines });
 
 export const sbRpc = rpc;
+
+// All keys for one kitchen in [fromKey, toKey) — e.g. the last two weeks of count sheets.
+export async function sbGetRange(group, fromKey, toKey) {
+  const sb = getSB();
+  if (!sb) return { ok: false, values: {}, error: "Supabase is not configured" };
+  try {
+    const { data, error } = await sb
+      .from("moe_data")
+      .select("data_key, data_value")
+      .eq("group_id", group)
+      .gte("data_key", fromKey)
+      .lt("data_key", toKey);
+    if (error) return { ok: false, values: {}, error: error.message };
+    const values = {};
+    (data || []).forEach((row) => {
+      try { values[row.data_key] = JSON.parse(row.data_value); } catch { /* skip bad row */ }
+    });
+    return { ok: true, values };
+  } catch (error) {
+    return { ok: false, values: {}, error: error.message || "Load failed" };
+  }
+}
+
+// Array-of-objects blobs keyed by element id (order drafts, history).
+export const sbArrayAddOnce = (group, key, item, cap = 500) => rpc("moe_array_add_once", { p_group: group, p_key: key, p_item: item, p_cap: cap });
+export const sbArrayUpsert = (group, key, item, cap = 500) => rpc("moe_array_upsert", { p_group: group, p_key: key, p_item: item, p_cap: cap });
+export const sbArrayRemove = (group, key, id) => rpc("moe_array_remove", { p_group: group, p_key: key, p_id: String(id) });
+export const sbArrayPatch = (group, key, id, patch) => rpc("moe_array_patch", { p_group: group, p_key: key, p_id: String(id), p_patch: patch });

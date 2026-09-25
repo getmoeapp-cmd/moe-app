@@ -46,6 +46,25 @@ The quiz reports one monthly total. The four lines are monthly and add up to it.
 
 Database changes live in `supabase/migrations/` (010 tables + functions, 020 moves old logins into Supabase Auth, 030 locks the table down — run 030 only after the new build is live).
 
+## Order day flow
+
+1. **Count** tab: on each supplier's order day (Settings → Suppliers → order days) a fresh count sheet opens. Every item starts at 0; staff enter what's on the shelf. Counts also update Stock and the count log.
+2. Tap **Done — send to review**, or leave it: any sheet still open after its day is closed automatically the next time anyone opens MOE. Items nobody counted are treated as 0 and flagged "not counted".
+3. **Orders** tab (owner/manager): the draft shows on hand, par, and the quantity needed to get back to par. Edit quantities (managers can't go over par), add a note, save, or approve.
+4. **Approve & make PDF** saves the order and creates a purchase-order PDF. On a phone it opens the share sheet (text, WhatsApp, email); on a computer it downloads. Email/Text rep buttons use the rep contact saved on the supplier.
+5. **Mark received** when it arrives (or check in line by line in the full app).
+
+Storage: `sheet_<date>_<vendorId>` (per-item merge), `drafts` (array; `moe_array_*` functions in migration 040).
+
+## Pars and usage
+
+- The owner sets a **par** (how many to have on hand after a delivery) and a **reorder point** per item (Settings → Items).
+- Ordering fills each item back up to par. Managers can't order past par — only the owner can, and it's flagged on the order.
+- Every count and order is logged. For each item, MOE computes `used = on hand at last count + delivered since − on hand now`.
+- After 3 count-to-count gaps (about 3 weeks), the **Usage** tab shows weekly use and recommends a new par
+  (use between deliveries × 1.25) when the current par is 15%+ off. The owner taps once to apply.
+- Engine: `src/lib/usage.js` (tests in `usage.test.js`). Auto-submitted orders are ignored as deliveries; short/out-of-stock check-ins count only what arrived.
+
 ## Environment
 
 | Name | Where | Purpose |

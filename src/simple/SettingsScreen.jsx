@@ -45,11 +45,23 @@ function SupplierEditor({ vendors, inventory, saveVendors, saveInventory }) {
           <label className="field">Supplier
             <input value={vendor.name} onChange={(event) => update(vendor.id, { name: event.target.value })} placeholder="Anacapri" />
           </label>
+          <p className="note" style={{ margin: "6px 0 4px" }}>Order days — a count opens for this supplier on these days</p>
           <div className="days" role="group" aria-label={`Order days for ${vendor.name || "supplier"}`}>
             {DAYS_SHORT.map((label, day) => (
               <button key={label} type="button" aria-pressed={(vendor.orderDays || []).includes(day)} onClick={() => toggleDay(vendor.id, day)}>{label}</button>
             ))}
           </div>
+          <div className="grid">
+            <label className="field">Sales rep
+              <input value={vendor.repName || ""} onChange={(event) => update(vendor.id, { repName: event.target.value })} placeholder="Name" />
+            </label>
+            <label className="field">Rep phone
+              <input type="tel" value={vendor.repPhone || ""} onChange={(event) => update(vendor.id, { repPhone: event.target.value })} />
+            </label>
+          </div>
+          <label className="field">Rep email
+            <input type="email" value={vendor.repEmail || ""} onChange={(event) => update(vendor.id, { repEmail: event.target.value })} />
+          </label>
           <button type="button" className="btn quiet danger" onClick={() => { setDraft((prev) => prev.filter((entry) => entry.id !== vendor.id)); setDirty(true); }}>Remove</button>
         </article>
       ))}

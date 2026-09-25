@@ -22,7 +22,7 @@ export function writeLocal(group, key, value) {
   }
 }
 
-const KITCHEN_KEYS = ["stock", "vendors", "inventory", "history", "subscription"];
+const KITCHEN_KEYS = ["stock", "vendors", "inventory", "history", "subscription", "countLog"];
 
 // ok:true  → data is the server's copy (missing keys really are empty)
 // ok:false → server unreachable; data is this device's last copy, for display only

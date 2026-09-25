@@ -3,7 +3,7 @@ import { DEMO_GROUPS } from "../lib/config";
 import { DEFAULT_INVENTORY, DEFAULT_VENDORS } from "../lib/defaults";
 import { appendUsage, weekKeyOf } from "../lib/orders";
 import { loadKitchen, saveKey, writeLocal } from "../lib/storage";
-import { getSB, sbMerge, sbMergeUsage, sbPrepend } from "../lib/supabaseClient";
+import { getSB, sbArrayPatch, sbMerge, sbMergeUsage, sbPrepend } from "../lib/supabaseClient";
 
 function fallbackInventory(group, value) {
   if (Array.isArray(value)) return value;
@@ -25,6 +25,7 @@ export function useKitchenData(user) {
   const [vendors, setVendors] = useState([]);
   const [history, setHistory] = useState([]);
   const [subscription, setSubscription] = useState(null);
+  const [countLog, setCountLog] = useState([]);
   const [saveState, setSaveState] = useState("saved");
   const [saveError, setSaveError] = useState("");
   const pendingStock = useRef({});         // { itemId: qty } not yet sent
@@ -74,7 +75,8 @@ export function useKitchenData(user) {
     writeLocal(group, "stock", result.value);
     const at = new Date().toISOString();
     const entries = ids.map((id) => ({ i: /^\d+$/.test(id) ? Number(id) : id, q: patch[id], by: userRef.current?.name || "", at }));
-    const logged = await sbPrepend(group, "countLog", entries, 3000);
+    const logged = await sbPrepend(group, "countLog", entries, 10000);
+    if (logged.ok && Array.isArray(logged.value)) setCountLog(logged.value);
     markSave(logged.ok ? result : logged);
   }, [group, markSave]);
 
@@ -96,6 +98,7 @@ export function useKitchenData(user) {
     setStock({ ...remoteStock, ...pendingStock.current });
     setHistory(Array.isArray(data.history) ? data.history : []);
     setSubscription(data.subscription ?? null);
+    setCountLog(Array.isArray(data.countLog) ? data.countLog : []);
     setLoadError(ok ? "" : error);
     if (ok) { setSaveState("saved"); setSaveError(""); } else { setSaveState("local"); setSaveError(error); }
     setStatus(ok ? "ready" : "offline");
@@ -140,6 +143,7 @@ export function useKitchenData(user) {
           if (key === "vendors") setVendors(Array.isArray(value) ? value : []);
           if (key === "history") setHistory(Array.isArray(value) ? value : []);
           if (key === "subscription" && value) setSubscription(value);
+          if (key === "countLog") setCountLog(Array.isArray(value) ? value : []);
         } catch {
           // Ignore malformed realtime payloads.
         }
@@ -173,14 +177,25 @@ export function useKitchenData(user) {
     return { ok: true };
   }, [group, inventory, markSave]);
 
+  // Update fields on one saved order (sent to rep, received…).
+  const patchOrder = useCallback(async (id, patch) => {
+    const res = await sbArrayPatch(group, "history", id, patch);
+    if (res.ok && Array.isArray(res.value)) setHistory(res.value);
+    markSave(res);
+    return res;
+  }, [group, markSave]);
+
   return {
     status,
+    group,
+    patchOrder,
     loadError,
     reload,
     inventory,
     stock,
     vendors,
     history,
+    countLog,
     subscription,
     saveState,
     saveError,
