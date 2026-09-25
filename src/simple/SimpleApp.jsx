@@ -6,7 +6,7 @@ import OrdersScreen from "./OrdersScreen";
 import SettingsScreen from "./SettingsScreen";
 import StockScreen from "./StockScreen";
 import TrialGate from "./TrialGate";
-import UsageScreen from "./UsageScreen";
+import CostsScreen from "./CostsScreen";
 import { useKitchenData } from "./useKitchenData";
 import { useOrderFlow } from "./useOrderFlow";
 import "./simple.css";
@@ -81,7 +81,7 @@ function Kitchen({ user, onLogout }) {
     ["count", "Count"],
     ...(manager ? [["orders", "Orders"]] : []),
     ["stock", "Stock"],
-    ...(manager ? [["usage", "Usage"]] : []),
+    ...(manager ? [["costs", "Costs"]] : []),
     ["settings", "Settings"],
   ];
 
@@ -106,21 +106,15 @@ function Kitchen({ user, onLogout }) {
         )}
         {tab === "count" && <CountScreen user={user} kitchen={data} flow={flow} />}
         {tab === "orders" && manager && <OrdersScreen user={user} kitchen={data} flow={flow} />}
-        {tab === "usage" && manager && (
-          <UsageScreen
-            user={user}
-            inventory={data.inventory}
-            vendors={data.vendors}
-            history={data.history}
-            countLog={data.countLog}
-            saveInventory={data.saveInventory}
-          />
-        )}
+        {tab === "costs" && manager && <CostsScreen user={user} kitchen={data} />}
         <div hidden={tab !== "settings"}>
           <SettingsScreen
             user={user}
             inventory={data.inventory}
             vendors={data.vendors}
+            priceHistory={data.priceHistory}
+            savePrice={data.savePrice}
+            savePrices={data.savePrices}
             subscription={data.subscription}
             trialDays={access.days}
             isTrialing={access.trialing && !access.isDemo}

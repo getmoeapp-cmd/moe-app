@@ -3,7 +3,7 @@ import { DEMO_GROUPS } from "../lib/config";
 import { DEFAULT_INVENTORY, DEFAULT_VENDORS } from "../lib/defaults";
 import { appendUsage, weekKeyOf } from "../lib/orders";
 import { loadKitchen, saveKey, writeLocal } from "../lib/storage";
-import { getSB, sbArrayPatch, sbMerge, sbMergeUsage, sbPrepend } from "../lib/supabaseClient";
+import { getSB, sbArrayPatch, sbArrayRemove, sbArrayUpsert, sbMerge, sbMergeUsage, sbPrepend } from "../lib/supabaseClient";
 
 function fallbackInventory(group, value) {
   if (Array.isArray(value)) return value;
@@ -26,6 +26,8 @@ export function useKitchenData(user) {
   const [history, setHistory] = useState([]);
   const [subscription, setSubscription] = useState(null);
   const [countLog, setCountLog] = useState([]);
+  const [priceHistory, setPriceHistory] = useState({});
+  const [recipes, setRecipes] = useState([]);
   const [saveState, setSaveState] = useState("saved");
   const [saveError, setSaveError] = useState("");
   const pendingStock = useRef({});         // { itemId: qty } not yet sent
@@ -81,8 +83,8 @@ export function useKitchenData(user) {
   }, [group, markSave]);
 
   const updateStock = useCallback((id, raw) => {
-    const parsed = parseInt(raw, 10);
-    const qty = Number.isNaN(parsed) ? 0 : Math.max(0, parsed);
+    const parsed = parseFloat(raw);
+    const qty = Number.isNaN(parsed) ? 0 : Math.max(0, Math.round(parsed * 100) / 100);
     setStock((prev) => ({ ...prev, [id]: qty }));
     pendingStock.current = { ...pendingStock.current, [id]: qty };
     setSaveState("saving");
@@ -99,6 +101,8 @@ export function useKitchenData(user) {
     setHistory(Array.isArray(data.history) ? data.history : []);
     setSubscription(data.subscription ?? null);
     setCountLog(Array.isArray(data.countLog) ? data.countLog : []);
+    setPriceHistory(data.priceHistory && typeof data.priceHistory === "object" ? data.priceHistory : {});
+    setRecipes(Array.isArray(data.recipes) ? data.recipes : []);
     setLoadError(ok ? "" : error);
     if (ok) { setSaveState("saved"); setSaveError(""); } else { setSaveState("local"); setSaveError(error); }
     setStatus(ok ? "ready" : "offline");
@@ -144,6 +148,8 @@ export function useKitchenData(user) {
           if (key === "history") setHistory(Array.isArray(value) ? value : []);
           if (key === "subscription" && value) setSubscription(value);
           if (key === "countLog") setCountLog(Array.isArray(value) ? value : []);
+          if (key === "priceHistory" && value && typeof value === "object") setPriceHistory(value);
+          if (key === "recipes") setRecipes(Array.isArray(value) ? value : []);
         } catch {
           // Ignore malformed realtime payloads.
         }
@@ -177,6 +183,39 @@ export function useKitchenData(user) {
     return { ok: true };
   }, [group, inventory, markSave]);
 
+  // Record a case price for one item (adds to that item's price history only).
+  const savePrice = useCallback(async (itemId, entry) => {
+    const list = [...(priceHistory[itemId] || priceHistory[String(itemId)] || []), entry];
+    const res = await sbMerge(group, "priceHistory", { [itemId]: list });
+    if (res.ok && res.value) setPriceHistory(res.value);
+    markSave(res);
+    return res;
+  }, [group, priceHistory, markSave]);
+
+  // Many items at once (product import): { [itemId]: entry }
+  const savePrices = useCallback(async (entries) => {
+    const patch = {};
+    Object.entries(entries).forEach(([id, entry]) => { patch[id] = [...(priceHistory[id] || []), entry]; });
+    const res = await sbMerge(group, "priceHistory", patch);
+    if (res.ok && res.value) setPriceHistory(res.value);
+    markSave(res);
+    return res;
+  }, [group, priceHistory, markSave]);
+
+  const saveRecipe = useCallback(async (recipe) => {
+    const res = await sbArrayUpsert(group, "recipes", recipe, 1000);
+    if (res.ok && Array.isArray(res.value)) setRecipes(res.value);
+    markSave(res);
+    return res;
+  }, [group, markSave]);
+
+  const deleteRecipe = useCallback(async (id) => {
+    const res = await sbArrayRemove(group, "recipes", id);
+    if (res.ok && Array.isArray(res.value)) setRecipes(res.value);
+    markSave(res);
+    return res;
+  }, [group, markSave]);
+
   // Update fields on one saved order (sent to rep, received…).
   const patchOrder = useCallback(async (id, patch) => {
     const res = await sbArrayPatch(group, "history", id, patch);
@@ -196,6 +235,12 @@ export function useKitchenData(user) {
     vendors,
     history,
     countLog,
+    priceHistory,
+    recipes,
+    savePrice,
+    savePrices,
+    saveRecipe,
+    deleteRecipe,
     subscription,
     saveState,
     saveError,

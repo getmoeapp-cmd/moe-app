@@ -7,7 +7,8 @@
 //   3. Owner/manager reviews the draft in Orders, edits if needed, approves.
 //   4. Approving saves the order and makes a PDF to send to the supplier's rep.
 
-import { calcOrderQty, flatItems, getWeekNumber, getWeekYear, DAYS } from "./stockMath";
+import { calcOrderSplit, flatItems, getWeekNumber, getWeekYear, orderAmount, orderCapUnits, DAYS } from "./stockMath";
+import { caseWords, countUnit, orderPhrase, packDescription, pieceWords } from "./costing";
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -83,20 +84,35 @@ export function buildDraft({ id, vendor, date, counts, inventory, closedBy = "",
     const c = counts[String(item.id)];
     const counted = !!c;
     const onHand = counted ? Number(c.q) || 0 : 0;   // not counted → treated as 0, flagged
-    const suggested = calcOrderQty(item, onHand);
+    const sug = calcOrderSplit(item, onHand);
+    const upu = Math.max(1, Number(item.upu) || 1);
+    const split = !!item.sells_split;
+    const pw = pieceWords(item);
+    const cw = caseWords(item);
     return {
       id: item.id,
       name: item.name,
       section: item.section || "",
       order_unit: item.order_unit || "",
       upu: Math.max(1, Number(item.upu) || 1),
+      vendor_sku: item.vendor_sku || "",
+      pack: packDescription(item),
+      countFactor: countUnit(item).factor,
+      countLabel: countUnit(item).label,
       par: Number(item.max_stock) || 0,
+      orderQty: orderAmount(item),
+      split,
+      pieceOne: pw.one, pieceMany: pw.many, caseOne: cw.one, caseMany: cw.many,
+      // Most a manager may order, in single units. Not counted → only the set amount (or top-up level).
+      capUnits: counted ? orderCapUnits(item, onHand) : split ? Math.max(0, Number(item.max_stock) || 0) : (orderAmount(item) ?? 0) * upu,
       reorder: Number(item.reorder) || 0,
       onHand,
       counted,
       countedBy: c?.by || "",
-      suggested,
-      qty: suggested,
+      suggested: sug.cases,
+      suggestedEach: sug.each,
+      qty: sug.cases,
+      each: sug.each,
     };
   });
   return {
@@ -118,10 +134,13 @@ export function buildDraft({ id, vendor, date, counts, inventory, closedBy = "",
 export function draftToOrder(draft, user) {
   const now = new Date();
   const lines = draft.lines
-    .filter((l) => Number(l.qty) > 0)
+    .filter((l) => Number(l.qty) > 0 || Number(l.each) > 0)
     .map((l) => ({
-      id: l.id, name: l.name, section: l.section, order_unit: l.order_unit,
-      vendor: draft.vendor, qty: Number(l.qty), currentStock: l.onHand,
+      id: l.id, name: l.name, section: l.section, order_unit: l.order_unit, upu: l.upu,
+      ...(l.vendor_sku ? { vendor_sku: l.vendor_sku } : {}), ...(l.pack ? { pack: l.pack } : {}),
+      pieceOne: l.pieceOne, pieceMany: l.pieceMany, caseOne: l.caseOne, caseMany: l.caseMany,
+      vendor: draft.vendor, qty: Number(l.qty) || 0, ...(Number(l.each) > 0 ? { each_qty: Number(l.each) } : {}),
+      currentStock: l.onHand,
       ...(l.counted ? {} : { notCounted: true }),
       ...(l.overPar > 0 ? { overPar: l.overPar } : {}),
     }));
@@ -147,18 +166,32 @@ export function draftToOrder(draft, user) {
   };
 }
 
-// Most an order line may bring an item up to (par), in order units.
+// How many single units a draft line is over what a manager may order (0 = fine).
+export function overLimitUnits(line) {
+  const upu = Math.max(1, Number(line.upu) || 1);
+  const total = (Number(line.qty) || 0) * upu + (Number(line.each) || 0);
+  const cap = line.capUnits != null ? Number(line.capUnits) || 0 : capToPar(line) * upu;
+  return Math.max(0, total - cap);
+}
+
+// Most a manager may order on this line (owner can go over), in order units.
 export function capToPar(line) {
+  if (line.capUnits != null) return Math.floor((Number(line.capUnits) || 0) / Math.max(1, Number(line.upu) || 1));
+  if (line.cap != null) return Number(line.cap) || 0;
   return Math.max(0, Math.ceil(((Number(line.par) || 0) - (Number(line.onHand) || 0)) / Math.max(1, Number(line.upu) || 1)));
 }
 
 // Plain-text version of an order for email/text bodies.
 export function orderText({ order, business, vendor }) {
-  const rows = (order.lines || []).map((l) => `- ${l.qty} ${l.order_unit || ""}  ${l.name}`.replace(/\s+/g, " "));
+  const rows = (order.lines || []).map((l) => {
+    const ph = orderPhrase(l, l.qty, l.each_qty);
+    return `- ${ph.main} — ${l.name}${l.vendor_sku ? ` (#${l.vendor_sku})` : ""}${ph.detail ? ` [${ph.detail}]` : ""}`;
+  });
   return [
     `Order from ${business?.name || "our restaurant"}`,
     vendor?.repName ? `Attn: ${vendor.repName}` : "",
     `Date: ${new Date(order.date).toLocaleDateString("en-US")}`,
+    "CASE = full case as packed · EACH = single pieces · \"split case\" = break a case",
     "",
     ...rows,
     "",

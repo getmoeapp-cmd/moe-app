@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { flatItems, onHandValue, sectionLabel, stockLevel } from "../lib/stockMath";
+import { countUnit, fromCount, toCount } from "../lib/costing";
+import NumInput from "./NumInput";
 
 const LEVELS = {
   uncounted: "Not counted",
@@ -69,23 +71,21 @@ export default function StockScreen({ inventory, stock, updateStock, query, onQu
           <h2 className="section-h">{section.label}</h2>
           {section.items.map((item) => {
             const level = stockLevel(item, stock);
-            const onHand = onHandValue(stock, item.id);
+            const raw = onHandValue(stock, item.id);
+            const onHand = raw === null ? null : toCount(item, raw);
+            const cu = countUnit(item);
+            const step = cu.by === "case" ? 0.5 : 1;
+            const put = (v) => updateStock(item.id, fromCount(item, Math.max(0, v)));
             return (
               <div className="item" key={item.id}>
                 <div>
                   <h2>{item.name}</h2>
-                  <p><span className={`pill ${level}`}>{LEVELS[level]}</span></p>
+                  <p><span className={`pill ${level}`}>{LEVELS[level]}</span> <span className="muted">{cu.label}</span></p>
                 </div>
                 <div className="stepper">
-                  <button type="button" aria-label={`Decrease ${item.name}`} onClick={() => updateStock(item.id, (onHand ?? 0) - 1)}>−</button>
-                  <input
-                    inputMode="numeric"
-                    aria-label={`${item.name} on hand`}
-                    value={onHand === null ? "" : onHand}
-                    placeholder="–"
-                    onChange={(event) => updateStock(item.id, event.target.value === "" ? 0 : event.target.value)}
-                  />
-                  <button type="button" aria-label={`Increase ${item.name}`} onClick={() => updateStock(item.id, (onHand ?? 0) + 1)}>+</button>
+                  <button type="button" aria-label={`Decrease ${item.name}`} onClick={() => put((onHand ?? 0) - step)}>−</button>
+                  <NumInput aria-label={`${item.name} on hand`} value={onHand} onValue={put} placeholder="–" />
+                  <button type="button" aria-label={`Increase ${item.name}`} onClick={() => put((onHand ?? 0) + step)}>+</button>
                 </div>
               </div>
             );

@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import { orderText } from "./orderFlow";
+import { orderPhrase } from "./costing";
 
 const safe = (s) => String(s || "").replace(/[^\w-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
 
@@ -40,25 +41,43 @@ export function makeOrderPdf({ order, business, vendor }) {
   }
   doc.text(`Ordered by: ${order.approvedBy || order.orderedBy || "—"}`, M, y); y += 22;
 
-  // Table
-  const colQty = W - M - 150, colUnit = W - M - 80;
+  // How to read it — so a rep never enters pieces as cases.
+  doc.setFillColor(255, 247, 214); doc.rect(M, y - 12, W - 2 * M, 30, "F");
+  doc.setFontSize(9); doc.setFont("helvetica", "bold");
+  doc.text("HOW TO READ THIS ORDER", M + 8, y);
+  doc.setFont("helvetica", "normal");
+  doc.text("CASE / BAG = one full one, packed as shown under the item.  EACH = single pieces.  \"split case\" = break a case.", M + 8, y + 12);
+  y += 36;
+
+  const lines = order.lines || [];
+  const hasSku = lines.some((l) => l.vendor_sku);
+  const colSku = M + 8;
+  const colName = hasSku ? M + 84 : M + 8;
+  const colOrder = W - M - 190;
   const header = () => {
     doc.setFillColor(28, 25, 23); doc.rect(M, y - 13, W - 2 * M, 20, "F");
     doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(10);
-    doc.text("Item", M + 8, y); doc.text("Qty", colQty, y, { align: "right" }); doc.text("Unit", colUnit, y);
-    doc.setTextColor(0); doc.setFont("helvetica", "normal"); y += 20;
+    if (hasSku) doc.text("Item #", colSku, y);
+    doc.text("Item / pack size", colName, y); doc.text("ORDER", colOrder, y);
+    doc.setTextColor(0); doc.setFont("helvetica", "normal"); y += 22;
   };
   header();
-  const lines = order.lines || [];
   lines.forEach((l, n) => {
-    if (y > H - M - 60) { doc.addPage(); y = M + 13; header(); }
-    if (n % 2 === 1) { doc.setFillColor(245, 243, 238); doc.rect(M, y - 13, W - 2 * M, 20, "F"); }
+    if (y > H - M - 70) { doc.addPage(); y = M + 13; header(); }
+    const ph = orderPhrase(l, l.qty, l.each_qty);
+    if (n % 2 === 1) { doc.setFillColor(245, 243, 238); doc.rect(M, y - 13, W - 2 * M, 32, "F"); }
+    if (hasSku) { doc.setFontSize(9); doc.text(String(l.vendor_sku || ""), colSku, y); }
     doc.setFontSize(11);
-    const name = doc.splitTextToSize(String(l.name || ""), colQty - M - 60)[0];
-    doc.text(name, M + 8, y);
-    doc.setFont("helvetica", "bold"); doc.text(String(l.qty), colQty, y, { align: "right" }); doc.setFont("helvetica", "normal");
-    doc.text(String(l.order_unit || ""), colUnit, y);
-    y += 20;
+    doc.text(doc.splitTextToSize(String(l.name || ""), colOrder - colName - 12)[0], colName, y);
+    doc.setFontSize(8.5); doc.setTextColor(90);
+    doc.text(doc.splitTextToSize(String(l.pack || l.order_unit || ""), colOrder - colName - 12)[0], colName, y + 12);
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(12);
+    doc.text(ph.main, colOrder, y);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(90);
+    if (ph.detail) doc.text(doc.splitTextToSize(ph.detail, W - M - colOrder - 4)[0], colOrder, y + 12);
+    doc.setTextColor(0);
+    y += 32;
   });
   y += 6;
   doc.setDrawColor(200); doc.setLineWidth(0.5); doc.line(M, y, W - M, y); y += 18;

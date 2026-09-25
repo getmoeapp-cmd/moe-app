@@ -36,11 +36,56 @@ export const fmtWeekLabel = (weekNum, year) => {
   return `WK${weekNum} · Mon ${mon.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 };
 
-// Order quantity is in order units (cases, bags). On-hand counts are individual units.
+// The ordering rule for an item:
+//   count on hand (single units) → if it's BELOW the reorder point → order.
+//   How much: the item's fixed order amount (e.g. "1 case"), or more cases if one
+//   case still wouldn't get it back above the reorder point.
+//   Older items with no order amount fill back up to par instead.
+// Counts are single units (pieces, lbs); the answer is in ORDER units (cases, bags).
+export const orderAmount = (item) => {
+  const q = Number(item.order_qty);
+  return Number.isFinite(q) && q > 0 ? q : null;
+};
+
 export const calcOrderQty = (item, stock) => {
-  const s = stock ?? 0;
-  if (s >= item.reorder) return 0;
-  return Math.ceil(Math.max(0, item.max_stock - s) / Math.max(1, item.upu));
+  const s = Number(stock ?? 0) || 0;
+  const reorder = Number(item.reorder) || 0;
+  if (s >= reorder) return 0;
+  const upu = Math.max(1, Number(item.upu) || 1);
+  const fixed = orderAmount(item);
+  if (fixed != null) return Math.max(fixed, Math.ceil((reorder - s) / upu));
+  return Math.ceil(Math.max(0, (Number(item.max_stock) || 0) - s) / upu);
+};
+
+// Split-case items (the vendor will break a case): top back up to the owner's
+// "bring back up to" level with whole cases first, then single pieces for the rest.
+// Full-case items: { cases: calcOrderQty, each: 0 }.
+export const calcOrderSplit = (item, stock) => {
+  if (!item.sells_split) return { cases: calcOrderQty(item, stock), each: 0 };
+  const s = Number(stock ?? 0) || 0;
+  if (s >= (Number(item.reorder) || 0)) return { cases: 0, each: 0 };
+  const upu = Math.max(1, Number(item.upu) || 1);
+  const need = Math.max(0, (Number(item.max_stock) || 0) - s);
+  let cases = Math.floor(need / upu);
+  let each = Math.max(0, Math.ceil(need - cases * upu - 1e-9)) || 0;
+  if (each >= upu) { cases += 1; each = 0; }
+  return { cases, each };
+};
+
+// Most a manager may order, in SINGLE units (owner can go over).
+export const orderCapUnits = (item, stock) => {
+  const upu = Math.max(1, Number(item.upu) || 1);
+  if (item.sells_split) return Math.max(0, (Number(item.max_stock) || 0) - (Number(stock ?? 0) || 0));
+  return orderCap(item, stock) * upu;
+};
+
+// Most a manager may order of an item (the owner can go over).
+export const orderCap = (item, stock) => {
+  const s = Number(stock ?? 0) || 0;
+  const upu = Math.max(1, Number(item.upu) || 1);
+  const fixed = orderAmount(item);
+  if (fixed != null) return Math.max(fixed, Math.ceil(((Number(item.reorder) || 0) - s) / upu));
+  return Math.max(0, Math.ceil(((Number(item.max_stock) || 0) - s) / upu));
 };
 
 export const getStatus = (item, stock) => {

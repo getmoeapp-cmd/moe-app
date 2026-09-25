@@ -254,3 +254,5 @@ body:has(.shell) {
 .progress { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 6px 0; }
 .progress i { display: block; height: 100%; background: var(--accent); }
 .shell select { width: 100%; font: inherit; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.rep-sees { margin: 4px 0 0; font-size: 13px; background: var(--ok-bg); color: var(--ok); padding: 4px 8px; border-radius: 8px; display: inline-block; }
+.rule-box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 8px 0; font-size: 14px; }

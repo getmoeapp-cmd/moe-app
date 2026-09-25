@@ -5,6 +5,8 @@ import { DEFAULT_INVENTORY, DEFAULT_VENDORS } from "./lib/defaults";
 import { getSB, sbGetMany, sbSet as sbSetResult, sbMerge, sbPrepend, sbMergeUsage, sbRpc } from "./lib/supabaseClient";
 import TeamPanel from "./simple/TeamPanel";
 import UsageScreen from "./simple/UsageScreen";
+import { ItemCosts, Recipes as CostRecipes } from "./simple/CostsScreen";
+import { sbArrayUpsert, sbArrayRemove } from "./lib/supabaseClient";
 import { calcQuizSavings, quizPaybackDays, quizRoiMultiple } from "./lib/quizMath";
 import {
   DAYS, DAYS_SHORT, getWeekNumber, getWeekYear, weekKey, getToday, fmtDate, getWeekMonday, fmtWeekLabel,
@@ -21,6 +23,8 @@ import {
 const loadSupabase = () => Promise.resolve();
 const sbSet = (grp, key, value) => sbSetResult(grp, key, value);
 const normName = (v) => String(v || "").trim().toLowerCase();
+// "2 Case + 3 each" — orders from the main app can include single pieces from a split case.
+const qtyText = (l) => `${l.qty || 0} ${l.order_unit || ""}${(l.qty || 0) !== 1 && l.order_unit ? "s" : ""}${l.each_qty ? ` + ${l.each_qty} each` : ""}`;
 // Whole number from user/AI input; keeps an explicit 0 instead of turning it into the default.
 const intOr = (v, d) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 ? n : d; };
 // Split one CSV/TSV line, respecting "quoted, fields".
@@ -146,8 +150,8 @@ const escHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;"
 const printVendorPDF = ({ vendorName, items, weekNum, year, date, businessName, orderedBy }) => {
   const win = window.open("", "_blank");
   if (!win) { alert("Allow pop-ups for this site to print the order."); return; }
-  const rows = items.filter(i => i.qty > 0).map(item =>
-    `<tr><td>${escHtml(item.name)}</td><td style="text-align:center">${escHtml((item.section || "").replace(/[^\w\s\-&]/g,"").trim())}</td><td style="text-align:center;font-weight:700">${escHtml(item.qty)} ${escHtml(item.order_unit)}</td></tr>`
+  const rows = items.filter(i => i.qty > 0 || i.each_qty > 0).map(item =>
+    `<tr><td>${escHtml(item.name)}</td><td style="text-align:center">${escHtml((item.section || "").replace(/[^\w\s\-&]/g,"").trim())}</td><td style="text-align:center;font-weight:700">${escHtml(item.qty)} ${escHtml(item.order_unit)}${item.each_qty ? ` + ${escHtml(item.each_qty)} EACH (split case)` : ""}</td></tr>`
   ).join("");
   const totalItems = items.filter(i => i.qty > 0).length;
   win.document.write(`<html><head><title>${escHtml(vendorName)} — WK${weekNum}</title>
@@ -702,7 +706,7 @@ export function MoeApp({ initialUser, onLogout }) {
                 const more = [
                   ...(canAccess("insights") ? [{ key:"insights", label:"Usage & pars", icon:"insights", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "What you use, par suggestions", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
                   ...(canAccess("waste") ? [{ key:"waste", label:"Waste log", icon:"waste", desc:"Parked until the count is in use" }] : []),
-                  ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes", icon:"recipes", desc:"Dish cost" }] : []),
+                  ...(canAccess("recipes") ? [{ key:"recipes", label:"Recipes & costs", icon:"recipes", desc:"Cost per oz, plate cost, food %" }] : []),
                   ...(canAccess("prices") ? [{ key:"prices", label:"Price tracker", icon:"prices", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Invoice prices", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
                   ...(canAccess("import") ? [{ key:"import", label:"Import items", icon:"doc", desc: currentPlan === PLANS.starter && !isTrialing ? "Pro plan required" : "Upload a list or invoice", locked: currentPlan === PLANS.starter && !isTrialing }] : []),
                   ...(user.role === "owner" ? [{ key:"subscription", label:"Subscription", icon:"subscription", desc: isTrialing ? `Trial — ${trialDaysLeft}d left` : (isActive ? currentPlan.name : "Choose plan") }] : []),
@@ -822,7 +826,12 @@ export function MoeApp({ initialUser, onLogout }) {
             <UsageScreen user={user} inventory={inventory} vendors={vendors} history={history} countLog={countLog} saveInventory={(inv) => { setInventory(inv); return save("inventory", inv); }} />
           </div>
         )}
-        {view === "recipes" && canAccess("recipes") && <RecipesView inventory={inventory} priceHistory={priceHistory} recipes={recipes} saveRecipes={saveRecipes} />}
+        {view === "recipes" && canAccess("recipes") && (
+          <div style={{ background:"#f4f1ea", color:"#1c1917", borderRadius:12, padding:16 }}>
+            <ClassicCosts inventory={inventory} priceHistory={priceHistory} recipes={recipes} group={group}
+              setRecipes={setRecipes} setPriceHistory={setPriceHistory} saveInventory={(inv) => { setInventory(inv); return save("inventory", inv); }} />
+          </div>
+        )}
         {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} foodCost={foodCost} history={history} saveHistory={saveHistory} saveInventory={(inv) => { setInventory(inv); save("inventory", inv); }} />}
         {view === "import" && canAccess("import") && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && canAccess("backend") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
@@ -1905,7 +1914,7 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
                   <div key={line.id} style={{ padding:"12px 18px", borderBottom: idx < checkInOrder.lines.length-1 ? "1px solid #0f1a2e" : "none" }}>
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:8 }}>
                       <span style={{ color:"#e2e8f0", fontSize:14, fontWeight:600 }}>{line.name}</span>
-                      <span style={{ color:"#475569", fontSize:12, fontFamily:"'DM Mono',monospace" }}>ordered {line.qty} {line.order_unit}{line.qty!==1?"s":""}</span>
+                      <span style={{ color:"#475569", fontSize:12, fontFamily:"'DM Mono',monospace" }}>ordered {qtyText(line)}</span>
                     </div>
                     <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                       {opts.map(o => {
@@ -2300,7 +2309,7 @@ function HistoryView({ history, user }) {
                                           <tr key={li} style={{ borderBottom: li < entry.lines.length-1 ? "1px solid #0f1a2e" : "none" }}>
                                             <td style={{ padding:"6px 0", color:"#e2e8f0", fontSize:13 }}>{line.name}</td>
                                             <td style={{ padding:"6px 0", color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace", textAlign:"left", width:90 }}>{line.section || ""}</td>
-                                            <td style={{ padding:"6px 0", textAlign:"right", color:"#38bdf8", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace", width:70 }}>{line.qty} <span style={{ color:"#475569", fontSize:10 }}>{line.order_unit}</span></td>
+                                            <td style={{ padding:"6px 0", textAlign:"right", color:"#38bdf8", fontSize:13, fontWeight:700, fontFamily:"'DM Mono',monospace", width:110 }}>{line.qty} <span style={{ color:"#475569", fontSize:10 }}>{line.order_unit}{line.each_qty ? ` + ${line.each_qty} each` : ""}</span></td>
                                           </tr>
                                         ))}
                                       </tbody>
@@ -4774,7 +4783,7 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
               <div key={idx} style={{ padding:"10px 16px", borderBottom: idx < order.lines.length-1 ? "1px solid #0f1a2e" : "none", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", opacity: notDelivered ? 0.55 : 1 }}>
                 <div style={{ flex:"1 1 140px", minWidth:0 }}>
                   <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{line.name}</div>
-                  <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{line.qty} {line.order_unit}{line.qty!==1?"s":""}</div>
+                  <div style={{ color:"#475569", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{qtyText(line)}</div>
                 </div>
                 <div style={{ textAlign:"right", minWidth:60 }}>
                   <div style={{ color:"#475569", fontSize:9, fontFamily:"'DM Mono',monospace" }}>LAST</div>
@@ -5599,6 +5608,32 @@ function SavingsQuiz() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Classic wrapper around the shared item-cost + recipe costing screens.
+function ClassicCosts({ inventory, priceHistory, recipes, group, setRecipes, setPriceHistory, saveInventory }) {
+  const [panel, setPanel] = useState("recipes");
+  const kitchen = {
+    inventory, priceHistory: priceHistory || {}, recipes: Array.isArray(recipes) ? recipes.filter(r => r && r.type) : [],
+    saveInventory,
+    savePrice: async (itemId, entry) => {
+      const list = [...((priceHistory || {})[itemId] || []), entry];
+      const res = await sbMerge(group, "priceHistory", { [itemId]: list });
+      if (res.ok && res.value) setPriceHistory(res.value);
+      return res;
+    },
+    saveRecipe: async (r) => { const res = await sbArrayUpsert(group, "recipes", r, 1000); if (res.ok) setRecipes(res.value); return res; },
+    deleteRecipe: async (id) => { const res = await sbArrayRemove(group, "recipes", id); if (res.ok) setRecipes(res.value); return res; },
+  };
+  return (
+    <div>
+      <div className="seg" role="group" style={{ marginBottom: 10 }}>
+        <button type="button" aria-pressed={panel === "recipes"} onClick={() => setPanel("recipes")}>Recipes</button>
+        <button type="button" aria-pressed={panel === "items"} onClick={() => setPanel("items")}>Item costs</button>
+      </div>
+      {panel === "recipes" ? <CostRecipes kitchen={kitchen} /> : <ItemCosts kitchen={kitchen} />}
     </div>
   );
 }

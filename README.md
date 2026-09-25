@@ -46,6 +46,27 @@ The quiz reports one monthly total. The four lines are monthly and add up to it.
 
 Database changes live in `supabase/migrations/` (010 tables + functions, 020 moves old logins into Supabase Auth, 030 locks the table down — run 030 only after the new build is live).
 
+## Item setup (product list) and costing
+
+Settings → Items is the product list, with the same columns as a kitchen costing sheet:
+Usage Section · Item Description · Vendor · Vendor Item # · Purchase Price · # Per Case · Size (lb / oz / gal / qt / L / each / pack of N / bottle of N oz) · → cost per unit · cost per oz or piece.
+Plus how the item is **counted** (single units, or whole cases with halves) and its **order rule**: "reorder when below X (in the count unit) → order Y cases". If Y cases still wouldn't get back above X, MOE orders enough cases to. Items set up before this keep the old fill-to-par behavior until edited.
+
+- Stock is always stored in single units; "count by case" just converts (2.5 cases × 6 gal = 15 gal).
+- Vendor item # and the pack size ("Case (6 gallons)") print on the order PDF.
+- **Import from costing sheet**: Google Sheets → File → Download → CSV of the product list tab. Rows match existing items by name.
+- Costs tab: Item costs (price per oz / piece), Recipes (prep batches → cost per serving and per oz; menu items → plate cost, food cost %), Usage.
+- Engine: `src/lib/costing.js` (tests in `costing.test.js`).
+
+### Counting vs. what the vendor ships
+
+Per item: **Count it by** (single pieces, or cases) · **Vendor sells it as** (full case only, or case + singles) · the rule.
+- Full case only: "below X → order Y cases".
+- Split case: "below X → bring back up to Y" — MOE orders whole cases first, singles for the rest. Optional single-piece price.
+- Optional piece name (loaf, bottle, wheel) so every screen and the PDF use the right word.
+- The review screen shows **"Rep sees: 2 CASES — 6 loaves each · 12 loaves total"** on every line, and the PDF prints the same
+  ORDER column plus a "how to read this order" legend, so pieces can never be entered as cases.
+
 ## Order day flow
 
 1. **Count** tab: on each supplier's order day (Settings → Suppliers → order days) a fresh count sheet opens. Every item starts at 0; staff enter what's on the shelf. Counts also update Stock and the count log.

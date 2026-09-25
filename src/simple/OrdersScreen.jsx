@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { capToPar, fmtDay } from "../lib/orderFlow";
+import { fmtDay, overLimitUnits } from "../lib/orderFlow";
+import { itemCost, money, orderPhrase } from "../lib/costing";
 import { emailHref, sendOrderPdf, textHref } from "../lib/orderPdf";
 import { fmtDate } from "../lib/stockMath";
 
 const norm = (v) => String(v || "").trim().toLowerCase();
+const fmtQty = (v) => String(Math.round(Number(v) * 100) / 100);
 
-function DraftEditor({ draft, user, vendor, flow, onClose, onApproved }) {
+function DraftEditor({ draft, user, vendor, flow, kitchen, onClose, onApproved }) {
   const [lines, setLines] = useState(draft.lines);
   const [note, setNote] = useState(draft.note || "");
   const [showAll, setShowAll] = useState(false);
@@ -14,20 +16,37 @@ function DraftEditor({ draft, user, vendor, flow, onClose, onApproved }) {
   const [dirty, setDirty] = useState(false);
   const isOwner = user.role === "owner";
 
-  function setQty(line, raw) {
+  // field: "qty" (cases) or "each" (single pieces, split-case items only)
+  function setQty(line, raw, field = "qty") {
     const want = Math.max(0, parseInt(raw, 10) || 0);
-    const cap = capToPar(line);
-    let q = want;
+    const next = { ...line, [field]: want };
     let warn = "";
-    if (!isOwner && want > cap) { q = cap; warn = `Par is ${line.par}. Max ${cap} — only the owner can order more.`; }
-    setLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, qty: q, warn, overPar: q > cap ? q - cap : 0 } : l)));
+    if (!isOwner && overLimitUnits(next) > 0) {
+      // Pull the edited field back down to the most allowed.
+      const upu = Math.max(1, Number(line.upu) || 1);
+      const other = field === "qty" ? (Number(line.each) || 0) : (Number(line.qty) || 0) * upu;
+      const room = Math.max(0, (Number(line.capUnits) || 0) - other);
+      next[field] = field === "qty" ? Math.floor(room / upu) : room;
+      warn = "That's more than the order rule allows — only the owner can order more.";
+    }
+    const over = overLimitUnits(next);
+    setLines((prev) => prev.map((l) => (l.id === line.id ? { ...next, warn, overPar: over } : l)));
     setDirty(true);
   }
+  const hasQty = (l) => Number(l.qty) > 0 || Number(l.each) > 0;
 
-  const ordering = lines.filter((l) => Number(l.qty) > 0);
+  const ordering = lines.filter(hasQty);
   const notCounted = lines.filter((l) => !l.counted);
   const over = ordering.filter((l) => l.overPar > 0);
-  const visible = showAll ? lines : lines.filter((l) => Number(l.qty) > 0 || l.suggested > 0 || !l.counted);
+  const itemsById = Object.fromEntries((kitchen.inventory || []).flatMap((s) => s.items || []).map((i) => [String(i.id), i]));
+  let estTotal = 0; let unpriced = 0;
+  ordering.forEach((l) => {
+    const it = itemsById[String(l.id)];
+    const cp = it ? itemCost(it, kitchen.priceHistory).casePrice : null;
+    const eachPrice = it && Number(it.each_price) > 0 ? Number(it.each_price) : cp != null ? cp / Math.max(1, Number(l.upu) || 1) : null;
+    if (cp == null) unpriced++; else estTotal += cp * (Number(l.qty) || 0) + (eachPrice || 0) * (Number(l.each) || 0);
+  });
+  const visible = showAll ? lines : lines.filter((l) => hasQty(l) || l.suggested > 0 || l.suggestedEach > 0 || !l.counted);
 
   async function save() {
     setBusy(true);
@@ -38,7 +57,7 @@ function DraftEditor({ draft, user, vendor, flow, onClose, onApproved }) {
   }
 
   async function approve() {
-    if (over.length && !window.confirm(`${over.length} item${over.length === 1 ? " is" : "s are"} over par. Approve anyway?`)) return;
+    if (over.length && !window.confirm(`${over.length} item${over.length === 1 ? " is" : "s are"} over the order limit. Approve anyway?`)) return;
     setBusy(true);
     const res = await flow.approveDraft({ ...draft, lines, note });
     setBusy(false);
@@ -63,7 +82,8 @@ function DraftEditor({ draft, user, vendor, flow, onClose, onApproved }) {
       <div className="summary" style={{ marginBottom: 10 }}>
         <span>{ordering.length} to order</span>
         {notCounted.length > 0 && <span className="low">{notCounted.length} not counted</span>}
-        {over.length > 0 && <span className="low">{over.length} over par</span>}
+        {over.length > 0 && <span className="low">{over.length} over limit</span>}
+        <span>≈ {money(estTotal)}{unpriced ? ` (+${unpriced} unpriced)` : ""}</span>
       </div>
       {notCounted.length > 0 && (
         <div className="banner" role="status">Items marked <strong>not counted</strong> were left at 0, so MOE assumed they're empty. Check those before approving.</div>
@@ -73,12 +93,15 @@ function DraftEditor({ draft, user, vendor, flow, onClose, onApproved }) {
           <div>
             <h2>{line.name}</h2>
             <p>
-              {line.counted ? `${line.onHand} on hand` : <span className="pill warn">not counted</span>}
-              {` · par ${line.par}`}
-              {line.suggested > 0 ? ` · suggested ${line.suggested}` : ""}
+              {line.counted ? `${fmtQty(line.onHand / (line.countFactor || 1))} ${line.countLabel || ""} on hand` : <span className="pill warn">not counted</span>}
+              {` · reorder below ${fmtQty(line.reorder / (line.countFactor || 1))}`}{line.vendor_sku ? ` · #${line.vendor_sku}` : ""}
+              {(line.suggested > 0 || line.suggestedEach > 0) ? ` · suggested ${orderPhrase(line, line.suggested, line.suggestedEach).main.toLowerCase()}` : ""}
             </p>
+            {hasQty(line) && (() => { const ph = orderPhrase(line, line.qty, line.each); return (
+              <p className="rep-sees">Rep sees: <strong>{ph.main}</strong>{ph.detail ? ` — ${ph.detail}` : ""}</p>
+            ); })()}
             {line.warn ? <p className="alert" role="status">{line.warn}</p> : null}
-            {line.overPar > 0 ? <p className="warn-text">Over par by {line.overPar}</p> : null}
+            {line.overPar > 0 ? <p className="warn-text">{line.overPar} {line.pieceMany || "units"} over the order limit</p> : null}
           </div>
           <div>
             <div className="stepper">
@@ -86,7 +109,17 @@ function DraftEditor({ draft, user, vendor, flow, onClose, onApproved }) {
               <input inputMode="numeric" aria-label={`${line.name} order quantity`} value={line.qty || ""} placeholder="0" onChange={(e) => setQty(line, e.target.value)} />
               <button type="button" aria-label={`Increase ${line.name}`} onClick={() => setQty(line, Number(line.qty) + 1)}>+</button>
             </div>
-            <p style={{ textAlign: "right" }}>{line.order_unit || "units"}</p>
+            <p style={{ textAlign: "right" }}>{(line.caseMany || "cases").replace(/^./, (c) => c.toUpperCase())}</p>
+            {line.split && (
+              <>
+                <div className="stepper">
+                  <button type="button" aria-label={`Decrease ${line.name} singles`} onClick={() => setQty(line, Number(line.each || 0) - 1, "each")}>−</button>
+                  <input inputMode="numeric" aria-label={`${line.name} single pieces`} value={line.each || ""} placeholder="0" onChange={(e) => setQty(line, e.target.value, "each")} />
+                  <button type="button" aria-label={`Increase ${line.name} singles`} onClick={() => setQty(line, Number(line.each || 0) + 1, "each")}>+</button>
+                </div>
+                <p style={{ textAlign: "right" }}>Each (single)</p>
+              </>
+            )}
           </div>
         </div>
       ))}
@@ -149,7 +182,7 @@ export default function OrdersScreen({ user, kitchen, flow }) {
     return (
       <DraftEditor
         key={draft.id}
-        draft={draft} user={user} vendor={vendorByName(draft.vendor)} flow={flow}
+        draft={draft} user={user} vendor={vendorByName(draft.vendor)} flow={flow} kitchen={kitchen}
         onClose={() => setOpenDraft(null)}
         onApproved={(order) => { setOpenDraft(null); setApproved(order); }}
       />

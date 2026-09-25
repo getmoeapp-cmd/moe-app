@@ -100,8 +100,8 @@ export function useOrderFlow(user, kitchen) {
 
   // Enter an on-hand count on a sheet (also updates live stock + the count log).
   const countItem = useCallback((key, vendor, item, raw) => {
-    const n = parseInt(raw, 10);
-    const q = Number.isNaN(n) ? 0 : Math.max(0, n);
+    const n = parseFloat(raw);
+    const q = Number.isNaN(n) ? 0 : Math.max(0, Math.round(n * 100) / 100);
     const entry = { q, by: userRef.current?.name || "", at: new Date().toISOString() };
     const id = String(item.id);
     setSheets((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [id]: entry } }));

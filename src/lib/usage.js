@@ -28,10 +28,11 @@ const key = (id) => String(id);
 export function receivedUnits(line, item) {
   const upu = Math.max(1, Number(item?.upu) || 1);
   const status = line.delivered;
+  const each = Number(line.each_qty) || 0;          // single pieces from a split case
   let qty = Number(line.qty) || 0;
-  if (status === "short") qty = Number(line.receivedQty ?? 0) || 0;
-  else if (status === "out_of_stock" || status === "damaged") qty = 0;
-  return qty * upu;
+  if (status === "short") return (Number(line.receivedQty ?? 0) || 0) * upu;
+  if (status === "out_of_stock" || status === "damaged") return 0;
+  return qty * upu + each;
 }
 
 // Latest count per item per day, oldest day first: { [id]: [{ day, at, q }] }
@@ -126,27 +127,47 @@ export function analyzeUsage({ inventory, countLog, history, vendors }) {
     // Average left on the shelf at count time — a high number means over-ordering.
     const avgLeft = intervals.length ? intervals.reduce((s, x) => s + x.end, 0) / intervals.length : null;
 
-    let recPar = null;
+    // The rule MOE suggests: "reorder when below R single units → order Q cases".
+    //   R = what you use until the next delivery, +10%
+    //   Q = enough cases to cover that usage
+    const fixed = Number(item.order_qty) > 0 ? Number(item.order_qty) : null;
+    const curOrder = fixed ?? Math.max(0, Math.ceil((par - reorder) / upu));
     let recReorder = null;
+    let recOrder = null;
     let status = "learning";
     if (ready) {
       if (weekly === 0) {
-        recPar = Math.min(par, upu);
         recReorder = 0;
-        status = par > recPar ? "idle" : "ok";
+        recOrder = 1;
+        status = reorder > 0 ? "idle" : "ok";
       } else {
-        recPar = Math.max(1, Math.ceil(cycleUse * CUSHION));
-        recReorder = Math.min(recPar, Math.max(1, Math.ceil(cycleUse * 1.1)));
-        const threshold = Math.max(1, Math.ceil(par * 0.15));
-        if (recPar - par >= threshold) status = "raise";
-        else if (par - recPar >= threshold) status = "lower";
+        recReorder = Math.max(1, Math.ceil(cycleUse * 1.1));
+        recOrder = Math.max(1, Math.ceil(cycleUse / upu));
+        const tol = Math.max(1, Math.ceil(reorder * 0.15));
+        // The order amount decides the direction (that's the money); the reorder point breaks ties.
+        if (recOrder > curOrder) status = "raise";
+        else if (recOrder < curOrder) status = "lower";
+        else if (recReorder - reorder >= tol) status = "raise";
+        else if (reorder - recReorder >= tol) status = "lower";
         else status = "ok";
       }
     }
+    let recPar = recReorder == null ? null : recReorder + recOrder * upu;
+    // Split-case items: "below R → bring back up to F single units".
+    const split = !!item.sells_split;
+    if (split && ready && weekly > 0) {
+      recPar = recReorder + Math.ceil(cycleUse);
+      const tolF = Math.max(1, Math.ceil(par * 0.15));
+      if (recPar - par >= tolF) status = "raise";
+      else if (par - recPar >= tolF) status = "lower";
+      else if (recReorder - reorder >= Math.max(1, Math.ceil(reorder * 0.15))) status = "raise";
+      else if (reorder - recReorder >= Math.max(1, Math.ceil(reorder * 0.15))) status = "lower";
+      else status = "ok";
+    }
     return {
       item, intervals, weekly, totalDays, ready, status,
-      par, reorder, upu, perWeek, cycleUse, avgLeft,
-      recPar, recReorder,
+      par, reorder, upu, perWeek, cycleUse, avgLeft, fixed, curOrder, split,
+      recPar, recReorder, recOrder,
       progress: Math.min(intervals.length, BASELINE_INTERVALS),
     };
   });
@@ -162,6 +183,7 @@ export function sortForReview(rows) {
 
 // Most an order line may bring the item up to (par), in ORDER units.
 export function maxToPar(item, onHand) {
+  if (onHand != null && Number(item.order_qty) > 0) return Math.max(Number(item.order_qty), Math.ceil(((Number(item.reorder) || 0) - onHand) / Math.max(1, Number(item.upu) || 1)));
   const par = Number(item.max_stock) || 0;
   const upu = Math.max(1, Number(item.upu) || 1);
   if (onHand == null) return 0;

@@ -1,4 +1,5 @@
 import { analyzeUsage, intervalsFor, maxToPar, receivedUnits } from "./usage";
+import { calcOrderQty } from "./stockMath";
 
 const DAY = 86400000;
 const at = (d) => new Date(2026, 8, d, 21, 0).toISOString(); // Sept d, 9pm
@@ -36,8 +37,9 @@ test("learns weekly usage and recommends lowering an over-set par", () => {
   const [mozz] = analyzeUsage({ inventory, countLog, history, vendors });
   expect(mozz.ready).toBe(true);
   expect(Math.round(mozz.weekly)).toBe(12);
-  expect(mozz.recPar).toBe(15);           // 12 per weekly delivery × 1.25
-  expect(mozz.status).toBe("lower");      // par 30 is double what's needed
+  expect(mozz.recReorder).toBe(14);       // reorder below 12 used/week + 10%
+  expect(mozz.recOrder).toBe(2);          // 2 cases of 6 covers a week
+  expect(mozz.status).toBe("lower");      // it was filling to par 30 (3 cases)
 });
 
 test("not enough history → still learning", () => {
@@ -52,6 +54,15 @@ test("auto-submitted orders are ignored as deliveries", () => {
   const history = [{ type: "auto", date: at(3), lines: [{ id: 2, qty: 50 }] }];
   const rows = analyzeUsage({ inventory, countLog, history, vendors });
   expect(rows[1].intervals[0].used).toBe(4);
+});
+
+test("reorder point + fixed case amount (heavy cream: 12 per case, below 7 → 1 case)", () => {
+  const cream = { id: 7, upu: 12, reorder: 7, order_qty: 1, max_stock: 19 };
+  expect(calcOrderQty(cream, 6)).toBe(1);
+  expect(calcOrderQty(cream, 7)).toBe(0);
+  expect(calcOrderQty(cream, 0)).toBe(1);
+  expect(calcOrderQty({ ...cream, reorder: 30 }, 0)).toBe(3); // one case wouldn't get back above 30
+  expect(maxToPar(cream, 6)).toBe(1);
 });
 
 test("order cap brings an item to par, never past it", () => {

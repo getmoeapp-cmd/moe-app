@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { dayStr, fmtDay, itemsForVendor, missedCounts, sheetCounts, sheetKey, sheetProgress, vendorsDueOn } from "../lib/orderFlow";
 import { sectionLabel } from "../lib/stockMath";
+import { countUnit, fromCount, toCount } from "../lib/costing";
+import NumInput from "./NumInput";
 
 function Sheet({ sheetId, vendor, date, sheet, inventory, flow, onBack }) {
   const [query, setQuery] = useState("");
@@ -49,25 +51,20 @@ function Sheet({ sheetId, vendor, date, sheet, inventory, flow, onBack }) {
           <h2 className="section-h">{section.label}</h2>
           {section.items.map((item) => {
             const c = counts[String(item.id)];
-            const val = c ? c.q : 0;
-            const upu = Math.max(1, Number(item.upu) || 1);
+            const cu = countUnit(item);
+            const val = c ? toCount(item, c.q) : 0;
+            const step = cu.by === "case" ? 0.5 : 1;
+            const setVal = (v) => flow.countItem(sheetId, vendor, item, fromCount(item, Math.max(0, v)));
             return (
               <div className="item" key={item.id} data-counted={c ? "yes" : "no"}>
                 <div>
                   <h2>{item.name}</h2>
-                  <p>{upu > 1 ? `Count single units (${upu} per ${String(item.order_unit || "case").toLowerCase()})` : `Count in ${String(item.order_unit || "units").toLowerCase()}`}{c ? ` · ✓ ${c.by || "counted"}` : ""}</p>
+                  <p>Count in <strong>{cu.label}</strong>{cu.hint ? ` · ${cu.hint}` : ""}{c ? ` · ✓ ${c.by || "counted"}` : ""}</p>
                 </div>
                 <div className="stepper">
-                  <button type="button" aria-label={`Decrease ${item.name}`} onClick={() => flow.countItem(sheetId, vendor, item, val - 1)}>−</button>
-                  <input
-                    inputMode="numeric"
-                    aria-label={`${item.name} on hand`}
-                    value={c ? String(val) : ""}
-                    placeholder="0"
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => flow.countItem(sheetId, vendor, item, e.target.value === "" ? 0 : e.target.value)}
-                  />
-                  <button type="button" aria-label={`Increase ${item.name}`} onClick={() => flow.countItem(sheetId, vendor, item, val + 1)}>+</button>
+                  <button type="button" aria-label={`Decrease ${item.name}`} onClick={() => setVal(val - step)}>−</button>
+                  <NumInput aria-label={`${item.name} on hand`} value={c ? val : null} onValue={setVal} />
+                  <button type="button" aria-label={`Increase ${item.name}`} onClick={() => setVal(val + step)}>+</button>
                 </div>
               </div>
             );
