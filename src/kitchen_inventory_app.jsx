@@ -5616,7 +5616,7 @@ function SavingsQuiz() {
 function ClassicCosts({ inventory, priceHistory, recipes, group, setRecipes, setPriceHistory, saveInventory }) {
   const [panel, setPanel] = useState("recipes");
   const kitchen = {
-    inventory, priceHistory: priceHistory || {}, recipes: Array.isArray(recipes) ? recipes.filter(r => r && r.type) : [],
+    group, inventory, priceHistory: priceHistory || {}, recipes: Array.isArray(recipes) ? recipes.filter(r => r && r.type) : [],
     saveInventory,
     savePrice: async (itemId, entry) => {
       const list = [...((priceHistory || {})[itemId] || []), entry];

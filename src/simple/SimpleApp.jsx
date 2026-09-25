@@ -7,6 +7,7 @@ import SettingsScreen from "./SettingsScreen";
 import StockScreen from "./StockScreen";
 import TrialGate from "./TrialGate";
 import CostsScreen from "./CostsScreen";
+import RecipesScreen from "./RecipesScreen";
 import { useKitchenData } from "./useKitchenData";
 import { useOrderFlow } from "./useOrderFlow";
 import "./simple.css";
@@ -81,6 +82,7 @@ function Kitchen({ user, onLogout }) {
     ["count", "Count"],
     ...(manager ? [["orders", "Orders"]] : []),
     ["stock", "Stock"],
+    ["recipes", "Recipes"],
     ...(manager ? [["costs", "Costs"]] : []),
     ["settings", "Settings"],
   ];
@@ -107,6 +109,7 @@ function Kitchen({ user, onLogout }) {
         {tab === "count" && <CountScreen user={user} kitchen={data} flow={flow} />}
         {tab === "orders" && manager && <OrdersScreen user={user} kitchen={data} flow={flow} />}
         {tab === "costs" && manager && <CostsScreen user={user} kitchen={data} />}
+        {tab === "recipes" && <RecipesScreen kitchen={data} manager={manager} />}
         <div hidden={tab !== "settings"}>
           <SettingsScreen
             user={user}

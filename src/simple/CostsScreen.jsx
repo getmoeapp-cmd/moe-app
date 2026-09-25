@@ -6,6 +6,9 @@ import {
 import { updateItem } from "../lib/inventoryEdits";
 import { flatItems, sectionLabel } from "../lib/stockMath";
 import UsageScreen from "./UsageScreen";
+import { englishIngredientName, englishSource, stepsFromText } from "../lib/recipeView";
+import { translateRecipe } from "../lib/ai";
+import { preparePhoto, savePhoto, usePhotos } from "../lib/photo";
 
 const baseLabel = (c) => (c.base === "oz" ? "oz" : c.kind === "pack" ? "piece" : "each");
 const unitWord = (kind) => ({ lb: "lb", oz: "oz", kg: "kg", gal: "gal", qt: "qt", L: "L", each: "each", pack: "pack", piece_oz: "piece" }[kind] || "unit");
@@ -145,6 +148,14 @@ function RecipeEditor({ recipe, kitchen, onClose }) {
   const [r, setR] = useState(recipe);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [stepsText, setStepsText] = useState((recipe.steps || []).join("\n"));
+  const [esStepsText, setEsStepsText] = useState((recipe.es?.steps || []).join("\n"));
+  const [photo, setPhoto] = useState(null);          // new photo picked, not saved yet
+  const [photoGone, setPhotoGone] = useState(false);  // owner removed the photo
+  const [photoMsg, setPhotoMsg] = useState("");
+  const [translating, setTranslating] = useState(false);
+  const saved = usePhotos(kitchen.group, [recipe], "full")[recipe.id];
+  const shownPhoto = photo ? photo.full : photoGone ? null : saved;
   const options = useMemo(() => ingredientOptions(kitchen.inventory, kitchen.recipes, recipe.id), [kitchen.inventory, kitchen.recipes, recipe.id]);
   const byRef = Object.fromEntries(options.map((o) => [o.ref, o]));
   const ctx = costContext(kitchen.inventory, [...kitchen.recipes.filter((x) => x.id !== r.id), r], kitchen.priceHistory);
@@ -156,27 +167,74 @@ function RecipeEditor({ recipe, kitchen, onClose }) {
     setIng(idx, { ref, unit: choices[0]?.[0] || "oz" });
   }
 
+  const steps = stepsFromText(stepsText);
+  const sourceNow = englishSource(r, ctx, steps);
+  const esStale = !!r.es && r.es.src && r.es.src !== sourceNow;
+  const refs = [...new Set(r.ingredients.map((g) => g.ref).filter(Boolean))];
+
+  async function pickPhoto(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoMsg("");
+    try {
+      setPhoto(await preparePhoto(file));
+      setPhotoGone(false);
+    } catch (err) {
+      setPhotoMsg(err.message);
+    }
+  }
+
+  async function translate() {
+    setTranslating(true); setMsg("");
+    const ingredients = {};
+    refs.forEach((ref) => { ingredients[ref] = englishIngredientName({ ref }, ctx); });
+    const res = await translateRecipe({ name: r.name.trim(), steps, ingredients });
+    setTranslating(false);
+    if (!res.ok) { setMsg(`Couldn't translate: ${res.error} You can type the Spanish yourself below.`); return; }
+    setR((prev) => ({ ...prev, es: { ...res.value, src: sourceNow, at: new Date().toISOString() } }));
+    setEsStepsText(res.value.steps.join("\n"));
+  }
+
+  const setEs = (patch) => setR((prev) => ({ ...prev, es: { name: "", steps: [], ing: {}, ...(prev.es || {}), ...patch } }));
+
   async function save() {
     if (!r.name.trim()) { setMsg("Give it a name."); return; }
-    setBusy(true);
-    const res = await kitchen.saveRecipe({ ...r, name: r.name.trim(), updatedAt: new Date().toISOString() });
+    setBusy(true); setMsg("");
+    const now = new Date().toISOString();
+    let photoAt = r.photoAt || null;
+    if (photo || (photoGone && r.photoAt)) {
+      photoAt = photo ? now : null;
+      const ph = await savePhoto(kitchen.group, r.id, photo, photoAt);
+      if (!ph.ok) { setBusy(false); setMsg(`Photo didn't save: ${ph.error}`); return; }
+    }
+    const next = { ...r, name: r.name.trim(), steps, photoAt, updatedAt: now };
+    if (r.es) {
+      const esSteps = stepsFromText(esStepsText);
+      const ing = {};
+      refs.forEach((ref) => { if (r.es.ing?.[ref]?.trim()) ing[ref] = r.es.ing[ref].trim(); });
+      next.es = { ...r.es, name: (r.es.name || "").trim(), steps: esSteps, ing };
+      if (!next.es.name && !esSteps.length && !Object.keys(ing).length) delete next.es;
+    }
+    const res = await kitchen.saveRecipe(next);
     setBusy(false);
     if (!res.ok) { setMsg(res.error); return; }
-    onClose();
+    onClose(next);
   }
   async function remove() {
     const usedBy = kitchen.recipes.filter((x) => (x.ingredients || []).some((g) => g.ref === `prep:${r.id}`));
     if (usedBy.length) { setMsg(`Used in ${usedBy.map((x) => x.name).join(", ")} — remove it there first.`); return; }
     if (!window.confirm(`Delete ${r.name || "this recipe"}?`)) return;
     await kitchen.deleteRecipe(r.id);
-    onClose();
+    if (r.photoAt) await savePhoto(kitchen.group, r.id, null, null);
+    onClose(null);
   }
 
   const isMenu = r.type === "menu";
   const pctVal = cost.foodCostPct;
   return (
     <section>
-      <button type="button" className="btn quiet" onClick={onClose}>← Recipes</button>
+      <button type="button" className="btn quiet" onClick={() => onClose()}>← Back</button>
       <div className="seg" role="group" aria-label="Type" style={{ marginTop: 8 }}>
         <button type="button" aria-pressed={!isMenu} onClick={() => setR({ ...r, type: "prep" })}>Prep item (batch)</button>
         <button type="button" aria-pressed={isMenu} onClick={() => setR({ ...r, type: "menu" })}>Menu item (plate)</button>
@@ -210,6 +268,50 @@ function RecipeEditor({ recipe, kitchen, onClose }) {
         );
       })}
       <button type="button" className="btn" onClick={() => setR({ ...r, ingredients: [...r.ingredients, { ref: "", qty: "1", unit: "oz" }] })}>+ Add ingredient</button>
+
+      <h2 className="section-h">Steps</h2>
+      <label className="field">One step per line — this is what the {isMenu ? "cooks" : "prep guys"} see
+        <textarea rows={6} value={stepsText} onChange={(e) => setStepsText(e.target.value)}
+          placeholder={isMenu ? "Stretch dough to 18 inches\nSauce edge to edge, leave ½ inch crust\nBake 500°F for 8 minutes" : "Open 2 cans crushed tomato\nAdd salt, oregano, basil\nMix and label with today's date"} />
+      </label>
+
+      <h2 className="section-h">Photo of the finished {isMenu ? "plate" : "batch"}</h2>
+      {shownPhoto ? <img className="recipe-photo" src={shownPhoto} alt={r.name || "Recipe"} /> : <p className="muted" style={{ marginTop: 0 }}>No photo yet. A photo shows staff exactly how it should look.</p>}
+      <div className="stack">
+        <label className="btn">
+          {shownPhoto ? "Change photo" : "Add photo"}
+          <input type="file" accept="image/*" onChange={pickPhoto} hidden />
+        </label>
+        {shownPhoto && <button type="button" className="btn quiet danger" onClick={() => { setPhoto(null); setPhotoGone(true); }}>Remove photo</button>}
+      </div>
+      {photoMsg && <p className="alert">{photoMsg}</p>}
+
+      <label className="check-row">
+        <input type="checkbox" checked={!r.staffHidden} onChange={(e) => setR({ ...r, staffHidden: !e.target.checked })} />
+        <span>Show this recipe on staff phones (Recipes tab)</span>
+      </label>
+
+      <h2 className="section-h">Spanish</h2>
+      <p className="muted" style={{ marginTop: 0 }}>Staff can switch any recipe to Spanish. Translate it, then fix anything that reads wrong.</p>
+      <button type="button" className="btn" disabled={translating || !r.name.trim()} onClick={translate}>
+        {translating ? "Translating…" : r.es ? "Translate again" : "Translate to Spanish"}
+      </button>
+      {!r.es && <button type="button" className="btn quiet" onClick={() => setEs({})}>Type it myself</button>}
+      {esStale && <p className="alert">The English changed since this was translated. Translate again or update the Spanish.</p>}
+      {r.es && (
+        <div className="card" style={{ marginTop: 10 }}>
+          <label className="field">Name in Spanish<input value={r.es.name || ""} onChange={(e) => setEs({ name: e.target.value })} placeholder="Pizza de queso grande" /></label>
+          <label className="field">Steps in Spanish (one per line)
+            <textarea rows={6} value={esStepsText} onChange={(e) => setEsStepsText(e.target.value)} />
+          </label>
+          {refs.length > 0 && <p className="field" style={{ marginBottom: 6 }}>Ingredient names in Spanish</p>}
+          {refs.map((ref) => (
+            <label className="field" key={ref} style={{ fontWeight: 500 }}>{englishIngredientName({ ref }, ctx) || "Ingredient"}
+              <input value={r.es.ing?.[ref] || ""} placeholder="(same as English)" onChange={(e) => setEs({ ing: { ...(r.es.ing || {}), [ref]: e.target.value } })} />
+            </label>
+          ))}
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: 14 }}>
         {isMenu ? (
@@ -280,7 +382,7 @@ function Recipes({ kitchen }) {
   );
 }
 
-export { ItemCosts, Recipes };
+export { ItemCosts, Recipes, RecipeEditor };
 
 export default function CostsScreen({ user, kitchen }) {
   const [panel, setPanel] = useState("items");
