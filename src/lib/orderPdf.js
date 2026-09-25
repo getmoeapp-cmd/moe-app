@@ -99,10 +99,10 @@ export async function sendOrderPdf({ order, business, vendor }) {
   const blob = makeOrderPdf({ order, business, vendor });
   const name = orderFileName({ order, business });
   const file = new File([blob], name, { type: "application/pdf" });
-  const text = orderText({ order, business, vendor });
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: `${order.vendor} order`, text });
+      // Share the PDF only — no text body, so the rep gets one clean attachment.
+      await navigator.share({ files: [file] });
       return "shared";
     }
   } catch (e) {
