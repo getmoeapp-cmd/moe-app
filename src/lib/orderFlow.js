@@ -84,8 +84,19 @@ export function buildDraft({ id, vendor, date, counts, inventory, closedBy = "",
     const c = counts[String(item.id)];
     const counted = !!c;
     const onHand = counted ? Number(c.q) || 0 : 0;   // not counted → treated as 0, flagged
-    const sug = calcOrderSplit(item, onHand);
     const upu = Math.max(1, Number(item.upu) || 1);
+    // Most a manager may order, in single units. Not counted → only the set amount
+    // (fixed-amount items) or one fill up to par (top-up items).
+    const fixedAmt = orderAmount(item);
+    const capUnits = counted ? orderCapUnits(item, onHand)
+      : (!item.sells_split && fixedAmt != null) ? fixedAmt * upu
+      : Math.max(0, Number(item.max_stock) || 0);
+    const sug = calcOrderSplit(item, onHand);
+    // Never suggest more than the limit (matters for items nobody counted).
+    if (sug.cases * upu + sug.each > capUnits) {
+      sug.cases = Math.floor(capUnits / upu);
+      sug.each = item.sells_split ? Math.max(0, capUnits - sug.cases * upu) : 0;
+    }
     const split = !!item.sells_split;
     const pw = pieceWords(item);
     const cw = caseWords(item);
@@ -103,8 +114,7 @@ export function buildDraft({ id, vendor, date, counts, inventory, closedBy = "",
       orderQty: orderAmount(item),
       split,
       pieceOne: pw.one, pieceMany: pw.many, caseOne: cw.one, caseMany: cw.many,
-      // Most a manager may order, in single units. Not counted → only the set amount (or top-up level).
-      capUnits: counted ? orderCapUnits(item, onHand) : split ? Math.max(0, Number(item.max_stock) || 0) : (orderAmount(item) ?? 0) * upu,
+      capUnits,
       reorder: Number(item.reorder) || 0,
       onHand,
       counted,
@@ -114,7 +124,7 @@ export function buildDraft({ id, vendor, date, counts, inventory, closedBy = "",
       qty: sug.cases,
       each: sug.each,
     };
-  });
+  }).map((line) => ({ ...line, overPar: overLimitUnits(line) }));
   return {
     id,
     vendor: vendor.name,
@@ -140,8 +150,8 @@ export function draftToOrder(draft, user) {
       ...(l.vendor_sku ? { vendor_sku: l.vendor_sku } : {}), ...(l.pack ? { pack: l.pack } : {}),
       pieceOne: l.pieceOne, pieceMany: l.pieceMany, caseOne: l.caseOne, caseMany: l.caseMany,
       vendor: draft.vendor, qty: Number(l.qty) || 0, ...(Number(l.each) > 0 ? { each_qty: Number(l.each) } : {}),
-      currentStock: l.onHand,
-      ...(l.counted ? {} : { notCounted: true }),
+      // Only real counts go into usage — an item nobody counted is not "0 on hand".
+      ...(l.counted ? { currentStock: l.onHand } : { notCounted: true }),
       ...(l.overPar > 0 ? { overPar: l.overPar } : {}),
     }));
   const counts = {};
@@ -155,6 +165,8 @@ export function draftToOrder(draft, user) {
     day: DAYS[countDay.getDay()],
     date: now.toISOString(),
     countDate: draft.date,
+    // When the counts were taken (the count day), even if approved a day later.
+    countedAt: new Date(countDay.getFullYear(), countDay.getMonth(), countDay.getDate(), 20, 0, 0).toISOString(),
     lines,
     totalItems: lines.length,
     orderedBy: user?.name || "",

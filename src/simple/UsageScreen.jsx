@@ -1,11 +1,19 @@
 import { useMemo, useState } from "react";
 import { BASELINE_INTERVALS, analyzeUsage, fmtUnits, sortForReview } from "../lib/usage";
 import { updateItem } from "../lib/inventoryEdits";
-import { countUnit, toCount } from "../lib/costing";
+import { caseWords, countUnit, pieceWords, toCount } from "../lib/costing";
 
-const ou = (row, n) => { const w = String(row.item.order_unit || "case").toLowerCase(); return `${n} ${w}${n === 1 ? "" : "s"}`; };
-const rule = (row, reorder, qty) => `below ${toCount(row.item, reorder)} ${countUnit(row.item).label} → order ${ou(row, qty)}`;
-const splitRule = (row, reorder, fill) => `below ${toCount(row.item, reorder)} ${countUnit(row.item).label} → back up to ${toCount(row.item, fill)}`;
+const ou = (row, n) => { const w = caseWords(row.item); return `${n} ${n === 1 ? w.one : w.many}`; };
+// Amount in the unit the store counts in, rounded the way people count (half cases).
+const cnt = (item, units) => {
+  const cu = countUnit(item);
+  const v = toCount(item, units);
+  const shown = cu.by === "case" ? Math.ceil(v * 2) / 2 : Math.round(v * 10) / 10;
+  const word = cu.by === "case" ? caseWords(item) : pieceWords(item);
+  return `${shown} ${shown === 1 ? word.one : word.many}`;
+};
+const rule = (row, reorder, qty) => `below ${cnt(row.item, reorder)} → order ${ou(row, qty)}`;
+const splitRule = (row, reorder, fill) => `below ${cnt(row.item, reorder)} → back up to ${cnt(row.item, fill)}`;
 const recRule = (row) => (row.split ? splitRule(row, row.recReorder, row.recPar) : rule(row, row.recReorder, row.recOrder));
 
 const LABEL = { raise: "Order more", lower: "Order less", idle: "Not moving", ok: "Rule looks right", learning: "Learning" };
@@ -36,7 +44,7 @@ function Row({ row, isOwner, onApply, onKeep }) {
         <h2>{row.item.name}</h2>
         <span className={`tag ${row.status}`}>{LABEL[row.status]}</span>
       </div>
-      <p className="meta">{row.item.vendor || "No supplier"} · now: {row.split ? splitRule(row, row.reorder, row.par) : row.fixed != null ? rule(row, row.reorder, row.fixed) : `below ${toCount(row.item, row.reorder)} → fill to ${toCount(row.item, row.par)}`}</p>
+      <p className="meta">{row.item.vendor || "No supplier"} · now: {row.split ? splitRule(row, row.reorder, row.par) : row.fixed != null ? rule(row, row.reorder, row.fixed) : `below ${cnt(row.item, row.reorder)} → fill to ${cnt(row.item, row.par)}`}</p>
 
       {row.status === "learning" ? (
         <>

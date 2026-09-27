@@ -6,7 +6,7 @@ import { getSB, sbGetMany, sbSet as sbSetResult, sbMerge, sbPrepend, sbMergeUsag
 import TeamPanel from "./simple/TeamPanel";
 import UsageScreen from "./simple/UsageScreen";
 import { ItemCosts, Recipes as CostRecipes } from "./simple/CostsScreen";
-import { sbArrayUpsert, sbArrayRemove } from "./lib/supabaseClient";
+import { sbArrayUpsert, sbArrayRemove, sbArrayPatch } from "./lib/supabaseClient";
 import { calcQuizSavings, quizPaybackDays, quizRoiMultiple } from "./lib/quizMath";
 import {
   DAYS, DAYS_SHORT, getWeekNumber, getWeekYear, weekKey, getToday, fmtDate, getWeekMonday, fmtWeekLabel,
@@ -228,6 +228,17 @@ export function MoeApp({ initialUser, onLogout }) {
   // ── Save inventory ────────────────────────────────────────────────────────
   const saveInventory = useCallback((newInv) => { setInventory(newInv); save("inventory", newInv); showFlash(); }, [save]);
   const saveHistory = useCallback((newHist) => { setHistory(newHist); save("history", newHist); }, [save]);
+
+  // Change ONE saved order (check-in, invoice review) without rewriting the whole
+  // order list — so an order approved on another phone can't be erased.
+  const patchHistoryOrder = useCallback(async (id, patch) => {
+    const g = groupRef.current;
+    if (!g) return { ok: false, error: "No kitchen" };
+    setHistory(prev => (prev || []).map(o => (o.id === id ? { ...o, ...patch } : o)));
+    const res = noteResult(await sbArrayPatch(g, "history", String(id), patch));
+    if (res.ok && Array.isArray(res.value)) setHistory(res.value);
+    return res;
+  }, [noteResult]);
 
   // ── Load data on login ───────────────────────────────────────────────────
   const KEYS = ["stock","vendors","history","inventory","usageLog","stockSnapshots","subscription","wasteLog","priceHistory","recipes","countLog","permissions","onboarding","autoSubmit","foodCost","lastAutoWeek"];
@@ -488,18 +499,14 @@ export function MoeApp({ initialUser, onLogout }) {
   // ── Check in a delivery: record what actually arrived (does NOT touch stock) ──
   // lineStatuses = { [lineId]: { status, receivedQty } }  status: delivered|short|out_of_stock|damaged
   const checkInDelivery = (orderId, lineStatuses) => {
-    const newHistory = (history || []).map(o => {
-      if (o.id !== orderId) return o;
-      const newLines = (o.lines || []).map(line => {
-        const s = lineStatuses[line.id] || { status: "delivered" };
-        return { ...line, delivered: s.status === "delivered" ? "delivered" : s.status, receivedQty: s.status === "short" ? (s.receivedQty ?? line.qty) : (s.status === "delivered" ? line.qty : 0) };
-      });
-      return { ...o, received: true, receivedAt: new Date().toISOString(), lines: newLines };
+    const target = (history || []).find(o => o.id === orderId);
+    if (!target) return;
+    const newLines = (target.lines || []).map(line => {
+      const s = lineStatuses[line.id] || { status: "delivered" };
+      return { ...line, delivered: s.status === "delivered" ? "delivered" : s.status, receivedQty: s.status === "short" ? (s.receivedQty ?? line.qty) : (s.status === "delivered" ? line.qty : 0) };
     });
-    setHistory(newHistory);
-    save("history", newHistory);
-    const order = newHistory.find(o => o.id === orderId);
-    const shortfalls = (order?.lines || []).filter(l => l.delivered && l.delivered !== "delivered").length;
+    patchHistoryOrder(orderId, { received: true, receivedAt: new Date().toISOString(), lines: newLines });
+    const shortfalls = newLines.filter(l => l.delivered && l.delivered !== "delivered").length;
     showFlash(shortfalls > 0 ? `✓ Delivery checked in — ${shortfalls} item${shortfalls!==1?"s":""} flagged` : `✓ Delivery checked in — all received`);
   };
 
@@ -522,7 +529,17 @@ export function MoeApp({ initialUser, onLogout }) {
   const saveWasteLog = useCallback((newLog) => { setWasteLog(newLog); save("wasteLog", newLog); }, [save]);
 
   // ── Save price history ────────────────────────────────────────────────
-  const savePriceHistory = useCallback((newPH) => { setPriceHistory(newPH); save("priceHistory", newPH); }, [save]);
+  // Only send the items whose prices changed (merged on the server), never the whole list.
+  const priceHistoryRef = useRef(priceHistory);
+  priceHistoryRef.current = priceHistory;
+  const savePriceHistory = useCallback((newPH) => {
+    const prev = priceHistoryRef.current || {};
+    const patch = {};
+    Object.keys(newPH || {}).forEach(k => { if (JSON.stringify(newPH[k]) !== JSON.stringify(prev[k])) patch[k] = newPH[k]; });
+    setPriceHistory(newPH);
+    const g = groupRef.current;
+    if (g && Object.keys(patch).length) sbMerge(g, "priceHistory", patch).then(noteResult);
+  }, [noteResult]);
   const saveRecipes = useCallback((newRecipes) => { setRecipes(newRecipes); save("recipes", newRecipes); showFlash("✓ Recipe saved"); }, [save]);
 
   // ── Save permissions ──────────────────────────────────────────────────
@@ -832,7 +849,7 @@ export function MoeApp({ initialUser, onLogout }) {
               setRecipes={setRecipes} setPriceHistory={setPriceHistory} saveInventory={(inv) => { setInventory(inv); return save("inventory", inv); }} />
           </div>
         )}
-        {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} foodCost={foodCost} history={history} saveHistory={saveHistory} saveInventory={(inv) => { setInventory(inv); save("inventory", inv); }} />}
+        {view === "prices" && canAccess("prices") && <PriceTrackerView inventory={inventory} priceHistory={priceHistory} savePriceHistory={savePriceHistory} vendors={vendors} foodCost={foodCost} history={history} saveHistory={saveHistory} patchHistoryOrder={patchHistoryOrder} saveInventory={(inv) => { setInventory(inv); save("inventory", inv); }} />}
         {view === "import" && canAccess("import") && <ImportView inventory={inventory} saveInventory={saveInventory} vendors={vendors} />}
         {view === "backend" && canAccess("backend") && <BackendView inventory={inventory} saveInventory={saveInventory} vendors={vendors} stock={stock} />}
         {view === "settings" && canAccess("settings") && <SettingsView vendors={vendors} saveVendors={saveVendors} inventory={inventory} currentPlan={currentPlan} isTrialing={isTrialing} permissions={permissions} savePermissions={savePermissions} userRole={user.role} user={user} allFeatures={ALL_FEATURES} autoSubmit={autoSubmit} setAutoSubmit={(v) => { setAutoSubmit(v); save("autoSubmit", v); }} foodCost={foodCost} setFoodCost={(v) => { setFoodCost(v); save("foodCost", v); }} />}
@@ -4344,7 +4361,7 @@ function WasteLogView({ inventory, wasteLog, saveWasteLog, userName, priceHistor
 // ═══════════════════════════════════════════════════════════════════════════════
 // PRICE TRACKER — Track vendor prices, flag increases, upload invoices
 // ═══════════════════════════════════════════════════════════════════════════════
-function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors, foodCost = false, history = [], saveHistory, saveInventory }) {
+function PriceTrackerView({ inventory, priceHistory, savePriceHistory, vendors, foodCost = false, history = [], saveHistory, patchHistoryOrder, saveInventory }) {
   const [mode, setMode] = useState("dashboard"); // "dashboard" | "enter" | "upload"
   const [filterVendor, setFilterVendor] = useState("ALL");
   const [search, setSearch] = useState("");
@@ -4725,8 +4742,7 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
     });
     savePriceHistory(newPH);
     // Mark order costed
-    const newHistory = (history || []).map(o => o.id === order.id ? { ...o, costed: true, total: Math.round(total * 100) / 100, lines: newLines, costedAt: new Date().toISOString() } : o);
-    saveHistory(newHistory);
+    patchHistoryOrder(order.id, { costed: true, total: Math.round(total * 100) / 100, lines: newLines, costedAt: new Date().toISOString() });
     setReviewEdits(prev => { const n = { ...prev }; delete n[order.id]; return n; });
   };
 
@@ -4747,8 +4763,7 @@ In this example, 4 cases at $21.29 each = $85.16 total. Return the $85.16 total,
       seed[idx] = { price: line.unitPrice != null ? String(line.unitPrice) : (standingPrice(line.id) != null ? String(standingPrice(line.id)) : ""), status: line.delivered || "delivered" };
     });
     setReviewEdits(prev => ({ ...prev, [order.id]: seed }));
-    const newHistory = (history || []).map(o => o.id === order.id ? { ...o, costed: false } : o);
-    saveHistory(newHistory);
+    patchHistoryOrder(order.id, { costed: false });
     setOpenOrders(prev => ({ ...prev, [order.id]: true }));
   };
 

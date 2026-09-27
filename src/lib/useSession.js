@@ -13,7 +13,8 @@ export function useSession() {
     const result = await currentUser();
     busy.current = false;
     if (!result.ok) {
-      await signOut();
+      // Only a bad session signs you out. A dropped connection just shows the error.
+      if (result.authFailed) await signOut();
       setState({ status: "signedOut", user: null, error: result.error });
       return;
     }

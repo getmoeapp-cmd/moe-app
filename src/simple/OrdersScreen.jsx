@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { fmtDay, overLimitUnits } from "../lib/orderFlow";
 import { itemCost, money, orderPhrase } from "../lib/costing";
 import { emailHref, sendOrderPdf, textHref } from "../lib/orderPdf";
@@ -7,7 +7,7 @@ import { fmtDate } from "../lib/stockMath";
 const norm = (v) => String(v || "").trim().toLowerCase();
 const fmtQty = (v) => String(Math.round(Number(v) * 100) / 100);
 
-function DraftEditor({ draft, user, vendor, flow, kitchen, onClose, onApproved }) {
+function DraftEditor({ draft, user, vendor, flow, kitchen, onClose, onLeaving, onApproved }) {
   const [lines, setLines] = useState(draft.lines);
   const [note, setNote] = useState(draft.note || "");
   const [showAll, setShowAll] = useState(false);
@@ -54,19 +54,26 @@ function DraftEditor({ draft, user, vendor, flow, kitchen, onClose, onApproved }
     setBusy(false);
     setMsg(res.ok ? "Saved." : res.error);
     if (res.ok) setDirty(false);
+    if (res.gone) setTimeout(onClose, 2500);
   }
 
   async function approve() {
+    if (over.length && !isOwner) {
+      setMsg(`${over.length} item${over.length === 1 ? " is" : "s are"} over the order limit. Lower ${over.length === 1 ? "it" : "them"} — only the owner can approve more.`);
+      return;
+    }
     if (over.length && !window.confirm(`${over.length} item${over.length === 1 ? " is" : "s are"} over the order limit. Approve anyway?`)) return;
     setBusy(true);
+    onLeaving();
     const res = await flow.approveDraft({ ...draft, lines, note });
     setBusy(false);
-    if (!res.ok) { setMsg(res.error); return; }
+    if (!res.ok) { setMsg(res.error); if (res.gone) onLeaving(false); return; }
     onApproved(res.order);
   }
 
   async function remove() {
     if (!window.confirm(`Delete this ${draft.vendor} draft? The counts stay saved.`)) return;
+    onLeaving();
     await flow.deleteDraft(draft.id);
     onClose();
   }
@@ -169,6 +176,7 @@ function SendPanel({ order, user, vendor, kitchen, onDone }) {
 export default function OrdersScreen({ user, kitchen, flow }) {
   const [openDraft, setOpenDraft] = useState(null);
   const [approved, setApproved] = useState(null);
+  const leaving = useRef(null);   // draft this phone is approving/deleting itself
   const [newVendor, setNewVendor] = useState("");
   const [msg, setMsg] = useState("");
   const vendorByName = (name) => (kitchen.vendors || []).find((v) => norm(v.name) === norm(name));
@@ -178,12 +186,14 @@ export default function OrdersScreen({ user, kitchen, flow }) {
     return <SendPanel order={approved} user={user} vendor={vendorByName(approved.vendor)} kitchen={kitchen} onDone={() => setApproved(null)} />;
   }
   const draft = openDraft && flow.drafts.find((d) => d.id === openDraft);
+  const vanished = openDraft && !draft && flow.ready && leaving.current !== openDraft;   // approved or deleted on another phone while open
   if (draft) {
     return (
       <DraftEditor
         key={draft.id}
         draft={draft} user={user} vendor={vendorByName(draft.vendor)} flow={flow} kitchen={kitchen}
         onClose={() => setOpenDraft(null)}
+        onLeaving={(on = true) => { leaving.current = on ? draft.id : null; }}
         onApproved={(order) => { setOpenDraft(null); setApproved(order); }}
       />
     );
@@ -202,6 +212,12 @@ export default function OrdersScreen({ user, kitchen, flow }) {
 
   return (
     <section>
+      {vanished && (
+        <div className="banner" role="status">
+          That order was already approved or deleted on another phone — nothing was sent twice.{" "}
+          <button type="button" className="btn quiet" onClick={() => setOpenDraft(null)}>OK</button>
+        </div>
+      )}
       <h2 className="section-h" style={{ marginTop: 0 }}>Needs review {flow.drafts.length ? `(${flow.drafts.length})` : ""}</h2>
       {flow.drafts.length === 0 && <p className="muted">Nothing waiting. Finished counts show up here as draft orders.</p>}
       {flow.drafts.map((d) => {

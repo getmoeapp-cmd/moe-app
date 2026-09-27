@@ -55,15 +55,16 @@ export async function sbGetMany(group, keys) {
   try {
     const { data, error } = await sb
       .from("moe_data")
-      .select("data_key, data_value")
+      .select("data_key, data_value, updated_at")
       .eq("group_id", group)
       .in("data_key", keys);
-    if (error) return { ok: false, values: {}, error: error.message };
+    if (error) return { ok: false, values: {}, versions: {}, error: error.message };
     const values = {};
+    const versions = {};   // data_key → updated_at, for saves that must not overwrite newer data
     (data || []).forEach((row) => {
-      try { values[row.data_key] = JSON.parse(row.data_value); } catch { /* skip bad row */ }
+      try { values[row.data_key] = JSON.parse(row.data_value); versions[row.data_key] = row.updated_at || null; } catch { /* skip bad row */ }
     });
-    return { ok: true, values };
+    return { ok: true, values, versions };
   } catch (error) {
     return { ok: false, values: {}, error: error.message || "Load failed" };
   }
@@ -138,3 +139,15 @@ export const sbArrayAddOnce = (group, key, item, cap = 500) => rpc("moe_array_ad
 export const sbArrayUpsert = (group, key, item, cap = 500) => rpc("moe_array_upsert", { p_group: group, p_key: key, p_item: item, p_cap: cap });
 export const sbArrayRemove = (group, key, id) => rpc("moe_array_remove", { p_group: group, p_key: key, p_id: String(id) });
 export const sbArrayPatch = (group, key, id, patch) => rpc("moe_array_patch", { p_group: group, p_key: key, p_id: String(id), p_patch: patch });
+
+// Replace a whole value only if nobody saved it since this device loaded it.
+// → { ok:true, value:{ ok:true, updated_at } } or { ok:true, value:{ ok:false, conflict:true, value, updated_at } }
+export const sbSetIfUnchanged = (group, key, value, expected) =>
+  rpc("moe_set_if_unchanged", { p_group: group, p_key: key, p_value: value, p_expected: expected || null });
+
+// Update an existing element only; never re-creates one another phone removed.
+export const sbArrayUpdate = (group, key, item) => rpc("moe_array_update", { p_group: group, p_key: key, p_item: item });
+
+// Approve a draft: remove it and add the order in one step (safe if two phones tap at once).
+export const sbApproveDraft = (group, draftId, order) =>
+  rpc("moe_approve_draft", { p_group: group, p_draft_id: String(draftId), p_order: order });

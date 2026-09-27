@@ -20,6 +20,26 @@ function friendly(error) {
   return msg || "Something went wrong.";
 }
 
+// True only when the session itself is bad (expired/invalid token) — not for a
+// dropped connection, where signing out would throw staff out mid-count.
+export function isAuthError(error) {
+  const msg = error?.message || String(error || "");
+  return /jwt|token|not authenticated|invalid claim|session.*(missing|expired)|401|refresh/i.test(msg)
+    && !/failed to fetch|network|load failed|timeout/i.test(msg);
+}
+
+// Last profile seen on this device, so a phone with bad signal can still open the kitchen.
+const PROFILE_KEY = "moe-last-profile";
+export function rememberProfile(user) {
+  try { if (user) localStorage.setItem(PROFILE_KEY, JSON.stringify(user)); else localStorage.removeItem(PROFILE_KEY); } catch { /* private mode */ }
+}
+export function lastProfile(userId) {
+  try {
+    const u = JSON.parse(localStorage.getItem(PROFILE_KEY) || "null");
+    return u && u.id === userId ? u : null;
+  } catch { return null; }
+}
+
 // Turn the server profile into the user object the app screens use.
 export function toUser(profile, authUser) {
   if (!profile) return null;
@@ -39,7 +59,7 @@ async function finishSignIn(authUser) {
   // A new owner whose email had to be confirmed first: create the kitchen now.
   const pending = authUser?.user_metadata?.pending_kitchen;
   let prof = await sbRpc("moe_my_profile");
-  if (!prof.ok) return { ok: false, error: friendly(prof.error) };
+  if (!prof.ok) return { ok: false, error: friendly(prof.error), authFailed: isAuthError(prof.error) };
   if (!prof.value?.group && pending?.business) {
     const made = await sbRpc("moe_create_kitchen", {
       p_name: pending.business, p_phone: pending.phone || "", p_first: pending.first || "", p_last: pending.last || "",
@@ -56,7 +76,9 @@ async function finishSignIn(authUser) {
   }
   // A login with no kitchen yet (for example an account made in another app)
   // still signs in; the app then offers to set up a kitchen or join one.
-  return { ok: true, user: toUser(prof.value, authUser) };
+  const user = toUser(prof.value, authUser);
+  rememberProfile(user);
+  return { ok: true, user };
 }
 
 export async function currentUser() {
@@ -64,7 +86,13 @@ export async function currentUser() {
   if (!sb) return { ok: false, error: "Supabase is not configured" };
   const { data } = await sb.auth.getSession();
   if (!data?.session) return { ok: true, user: null };
-  return finishSignIn(data.session.user);
+  const result = await finishSignIn(data.session.user);
+  if (!result.ok && !result.authFailed) {
+    // Offline or MOE unreachable: keep the person signed in with their last known profile.
+    const cached = lastProfile(data.session.user.id);
+    if (cached) return { ok: true, user: cached, offline: true };
+  }
+  return result;
 }
 
 export async function signIn(email, password) {
@@ -171,6 +199,7 @@ export async function setNewPassword(password) {
 export async function signOut() {
   const sb = getSB();
   try { await sb?.auth.signOut(); } catch { /* already signed out */ }
+  rememberProfile(null);
   try {
     Object.keys(localStorage).filter((k) => k.startsWith("moe_") && k !== "moe_last_email").forEach((k) => localStorage.removeItem(k));
     sessionStorage.removeItem("moe_session");

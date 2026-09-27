@@ -98,9 +98,9 @@ export default function SettingsScreen({ user, inventory, vendors, priceHistory,
           {isTrialing && <p>Pro trial · {trialDays} day{trialDays === 1 ? "" : "s"} left</p>}
           {subscription?.status === "active" && <p>{PLAN_NAMES[subscription.plan] || "MOE"} plan · active</p>}
           {missing.length > 0 && <p>{missing.length} items still need a supplier.</p>}
-          <p>Recipes, invoices, waste, insights, and role permissions are in the full app.</p>
+          {canEdit && <p>Invoices, waste, insights, and role permissions are in the full app.</p>}
           <div className="stack block">
-            <a className="btn" href="/app?classic=1">Open full MOE</a>
+            {canEdit && <a className="btn" href="/app?classic=1">Open full MOE</a>}
             <button type="button" className="btn quiet" onClick={onLogout}>Sign out</button>
           </div>
         </div>

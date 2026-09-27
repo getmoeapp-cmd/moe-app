@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DEMO_GROUPS } from "../lib/config";
 import { DEFAULT_INVENTORY, DEFAULT_VENDORS } from "../lib/defaults";
 import { appendUsage, weekKeyOf } from "../lib/orders";
-import { loadKitchen, saveKey, writeLocal } from "../lib/storage";
-import { getSB, sbArrayPatch, sbArrayRemove, sbArrayUpsert, sbMerge, sbMergeUsage, sbPrepend } from "../lib/supabaseClient";
+import { loadKitchen, writeLocal } from "../lib/storage";
+import { getSB, sbArrayPatch, sbArrayRemove, sbArrayUpsert, sbMerge, sbMergeUsage, sbPrepend, sbSetIfUnchanged } from "../lib/supabaseClient";
 
 function fallbackInventory(group, value) {
   if (Array.isArray(value)) return value;
@@ -36,6 +36,7 @@ export function useKitchenData(user) {
   userRef.current = user;
   const statusRef = useRef(status);
   statusRef.current = status;
+  const versions = useRef({});             // data_key → updated_at this device last saw
 
   const markSave = useCallback((result) => {
     if (result?.ok) {
@@ -48,18 +49,40 @@ export function useKitchenData(user) {
   }, []);
 
   // Whole-value writes (inventory, vendors). Refused while offline so a stale
-  // or empty list on this device can never replace the kitchen's real list.
-  const persist = useCallback(async (key, value) => {
+  // or empty list on this device can never replace the kitchen's real list, and
+  // refused by the server if another phone saved a newer copy since this one loaded.
+  const persistNow = useCallback(async (key, value, applyServer) => {
     if (statusRef.current !== "ready") {
       const result = { ok: false, error: "Not connected — reload before editing the item list." };
       markSave(result);
       return result;
     }
     setSaveState("saving");
-    const result = await saveKey(group, key, value);
-    markSave(result);
-    return result;
+    const res = await sbSetIfUnchanged(group, key, value, versions.current[key]);
+    if (!res.ok) { markSave(res); return res; }
+    const out = res.value || {};
+    if (out.ok) {
+      versions.current[key] = out.updated_at || null;
+      writeLocal(group, key, value);
+      markSave({ ok: true });
+      return { ok: true };
+    }
+    // Someone else saved first: show their copy and ask to redo the change.
+    versions.current[key] = out.updated_at || null;
+    if (out.value != null && applyServer) { applyServer(out.value); writeLocal(group, key, out.value); }
+    const conflict = { ok: false, conflict: true, error: "Someone else just changed this list. MOE loaded their version — make your change again." };
+    setSaveState("saved");
+    setSaveError(conflict.error);
+    return conflict;
   }, [group, markSave]);
+
+  const chains = useRef({});               // one save at a time per key, so this phone never conflicts with itself
+  const persist = useCallback((key, value, applyServer) => {
+    const run = () => persistNow(key, value, applyServer);
+    const next = (chains.current[key] || Promise.resolve()).then(run, run);
+    chains.current[key] = next;
+    return next;
+  }, [persistNow]);
 
   const flushStock = useCallback(async () => {
     const patch = pendingStock.current;
@@ -93,7 +116,8 @@ export function useKitchenData(user) {
   }, [flushStock]);
 
   const reload = useCallback(async () => {
-    const { data, ok, error } = await loadKitchen(group);
+    const { data, versions: loaded, ok, error } = await loadKitchen(group);
+    if (ok) versions.current = { ...loaded };
     setInventory(fallbackInventory(group, data.inventory));
     setVendors(fallbackVendors(group, data.vendors));
     const remoteStock = data.stock && typeof data.stock === "object" && !Array.isArray(data.stock) ? data.stock : {};
@@ -114,7 +138,13 @@ export function useKitchenData(user) {
   }, [reload]);
 
   useEffect(() => {
-    const onHide = () => { if (document.visibilityState === "hidden") flushStock(); };
+    let hiddenAt = 0;
+    const onHide = () => {
+      if (document.visibilityState === "hidden") { hiddenAt = Date.now(); flushStock(); return; }
+      // Back after a while (phone was in a pocket): pick up what other phones changed.
+      if (hiddenAt && Date.now() - hiddenAt > 2 * 60 * 1000) reload();
+      hiddenAt = 0;
+    };
     const onOnline = () => { flushStock(); if (statusRef.current === "offline") reload(); };
     window.addEventListener("pagehide", flushStock);
     document.addEventListener("visibilitychange", onHide);
@@ -141,6 +171,7 @@ export function useKitchenData(user) {
         try {
           const key = payload.new?.data_key;
           const value = JSON.parse(payload.new?.data_value);
+          if (key && payload.new?.updated_at) versions.current[key] = payload.new.updated_at;
           // Stock: take the server copy, but keep taps from this device that aren't sent yet.
           if (key === "stock" && value && typeof value === "object") setStock({ ...value, ...pendingStock.current });
           if (key === "inventory") setInventory(Array.isArray(value) ? value : []);
@@ -159,16 +190,27 @@ export function useKitchenData(user) {
   }, [group]);
 
   const saveInventory = useCallback(async (next) => {
-    const result = await persist("inventory", next);
+    const result = await persist("inventory", next, (server) => setInventory(Array.isArray(server) ? server : []));
     if (result.ok) setInventory(next);
     return result;
   }, [persist]);
 
   const saveVendors = useCallback(async (next) => {
-    const result = await persist("vendors", next);
+    const result = await persist("vendors", next, (server) => setVendors(Array.isArray(server) ? server : []));
     if (result.ok) setVendors(next);
     return result;
   }, [persist]);
+
+  // After an approve (done atomically on the server): take the new history, add usage.
+  const orderApproved = useCallback(async (entry, serverHistory) => {
+    if (Array.isArray(serverHistory)) setHistory(serverHistory);
+    const usage = appendUsage({}, entry, inventory);
+    const week = weekKeyOf(entry);
+    const lines = usage[week]?.[entry.vendor] || {};
+    const usageResult = await sbMergeUsage(group, week, entry.vendor, lines);
+    markSave(usageResult);
+    return usageResult;
+  }, [group, inventory, markSave]);
 
   const placeOrder = useCallback(async (entry) => {
     setSaveState("saving");
@@ -248,5 +290,6 @@ export function useKitchenData(user) {
     saveInventory,
     saveVendors,
     placeOrder,
+    orderApproved,
   };
 }

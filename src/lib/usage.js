@@ -51,11 +51,12 @@ export function countTimeline(countLog, history) {
   (countLog || []).forEach((e) => add(e.i, e.q, e.at));
   (history || []).forEach((order) => {
     if (order.type === "auto") return;
-    const at = order.date;
+    const at = order.countedAt || order.date;
     if (order.counts && typeof order.counts === "object") {
       Object.entries(order.counts).forEach(([id, q]) => add(id, q, at));
     }
     (order.lines || []).forEach((line) => {
+      if (line.notCounted) return;   // nobody counted it — not a real "0 on hand"
       if (line.currentStock != null && !(order.counts && key(line.id) in order.counts)) add(line.id, line.currentStock, at);
     });
   });

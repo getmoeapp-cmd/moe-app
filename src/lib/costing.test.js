@@ -96,3 +96,12 @@ test("order unit 'Each' never becomes 'EACHES'", () => {
   expect(orderPhrase({ upu: 1, order_unit: "Each" }, 4, 0).main).toBe("4 EACH");
   expect(orderPhrase({ upu: 1, order_unit: "Lbs" }, 3, 0).main).toBe("3 LBS");
 });
+
+test("an 'Each' order unit with 12 inside prints PACKS, not EACH", () => {
+  const cups = { id: 9, name: "Cups", order_unit: "Each", upu: 12, unit_name: "each" };
+  expect(orderPhrase(cups, 3, 0).main).toBe("3 PACKS");
+  expect(orderPhrase(cups, 1, 0).main).toBe("1 PACK");
+  expect(packDescription(cups)).toBe("Pack (12 pieces)");
+  const single = { id: 10, name: "Mop head", order_unit: "Each", upu: 1, unit_name: "each" };
+  expect(orderPhrase(single, 2, 0).main).toBe("2 EACH");
+});

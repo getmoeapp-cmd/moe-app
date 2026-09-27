@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { buildDraft, dayStr, draftToOrder, parseSheetKey, SHEET_PREFIX, sheetKey } from "../lib/orderFlow";
-import { getSB, sbArrayAddOnce, sbArrayRemove, sbArrayUpsert, sbGet, sbGetRange, sbMerge } from "../lib/supabaseClient";
+import { getSB, sbApproveDraft, sbArrayAddOnce, sbArrayRemove, sbArrayUpdate, sbGet, sbGetRange, sbMerge } from "../lib/supabaseClient";
 
 const DRAFTS = "drafts";
 
@@ -127,10 +127,15 @@ export function useOrderFlow(user, kitchen) {
     return res.ok ? { ok: true, draft } : res;
   }, [group]);
 
+  // Save edits to a draft that still exists. If another phone already approved or
+  // deleted it, nothing is written (no "zombie" draft comes back).
   const saveDraft = useCallback(async (draft) => {
-    const res = await sbArrayUpsert(group, DRAFTS, { ...draft, editedBy: userRef.current?.name || "", editedAt: new Date().toISOString() });
-    if (res.ok && Array.isArray(res.value)) setDrafts(res.value);
-    return res;
+    const res = await sbArrayUpdate(group, DRAFTS, { ...draft, editedBy: userRef.current?.name || "", editedAt: new Date().toISOString() });
+    if (!res.ok) return res;
+    const out = res.value || {};
+    if (Array.isArray(out.value)) setDrafts(out.value);
+    if (!out.ok) return { ok: false, gone: true, error: "This order was already approved or deleted on another phone." };
+    return { ok: true };
   }, [group]);
 
   const deleteDraft = useCallback(async (id) => {
@@ -139,15 +144,23 @@ export function useOrderFlow(user, kitchen) {
     return res;
   }, [group]);
 
-  // Approve → saved as a real order (history + usage), draft removed.
+  // Approve → one server step: the draft is removed and the order added together.
+  // Two phones tapping Approve at once still make exactly one order.
   const approveDraft = useCallback(async (draft) => {
     const order = draftToOrder(draft, userRef.current);
     if (order.lines.length === 0) return { ok: false, error: "Nothing to order — every quantity is 0." };
-    const placed = await kitchenRef.current.placeOrder(order);
-    if (!placed?.ok) return placed || { ok: false, error: "Order not saved" };
-    await deleteDraft(draft.id);
+    const res = await sbApproveDraft(group, draft.id, order);
+    if (!res.ok) return res;
+    const out = res.value || {};
+    if (Array.isArray(out.drafts)) setDrafts(out.drafts);
+    if (!out.ok) {
+      const fresh = await sbGet(group, DRAFTS);
+      if (fresh.ok) setDrafts(Array.isArray(fresh.value) ? fresh.value : []);
+      return { ok: false, gone: true, error: "This order was already approved or deleted on another phone." };
+    }
+    await kitchenRef.current.orderApproved(order, out.history);
     return { ok: true, order };
-  }, [deleteDraft]);
+  }, [group]);
 
   return { ready, error, sheets, drafts, countItem, closeSheet, flush, newDraft, saveDraft, deleteDraft, approveDraft, reload };
 }

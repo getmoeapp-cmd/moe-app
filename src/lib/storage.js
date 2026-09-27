@@ -36,13 +36,13 @@ export async function loadKitchen(group) {
         writeLocal(group, key, remote.values[key]);
       }
     });
-    return { data, ok: true, error: "" };
+    return { data, versions: remote.versions || {}, ok: true, error: "" };
   }
   KITCHEN_KEYS.forEach((key) => {
     const local = readLocal(group, key);
     if (local !== null) data[key] = local;
   });
-  return { data, ok: false, error: remote.error || "Couldn't reach MOE." };
+  return { data, versions: {}, ok: false, error: remote.error || "Couldn't reach MOE." };
 }
 
 export async function saveKey(group, key, value) {

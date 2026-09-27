@@ -1,8 +1,12 @@
 export const ORDER_UNITS = ["Case", "Each", "Piece", "Unit", "Bag", "Bundle", "Gallon", "Roll", "Lbs"];
 
+// New ids are time-based so a deleted item's id is never handed out again
+// (a reused id would inherit the old item's prices, counts and recipe links).
+let lastId = 0;
 export function nextItemId(inventory) {
   const ids = (inventory || []).flatMap((section) => (section.items || []).map((item) => Number(item.id) || 0));
-  return Math.max(0, ...ids) + 1;
+  lastId = Math.max(Date.now(), lastId + 1, Math.max(0, ...ids) + 1);
+  return lastId;
 }
 
 export function updateItem(inventory, id, patch) {

@@ -26,7 +26,8 @@ async function verifyUser(token) {
   });
   if (!p.ok) return null;
   const profile = await p.json();
-  return profile?.group || profile?.is_admin ? { id: user.id, group: profile.group } : null;
+  if (!(profile?.group || profile?.is_admin)) return null;
+  return { id: user.id, group: profile.group, role: profile.role || "employee", admin: !!profile.is_admin };
 }
 
 module.exports = async function handler(req, res) {
@@ -40,6 +41,10 @@ module.exports = async function handler(req, res) {
   let user = null;
   try { user = await verifyUser(token); } catch { user = null; }
   if (!user) return res.status(401).json({ error: "Sign in to use import" });
+  // AI tools (invoice import, recipe translation) are for owners and managers only.
+  if (!user.admin && user.role !== "owner" && user.role !== "manager") {
+    return res.status(403).json({ error: "Only an owner or manager can use this." });
+  }
 
   const body = req.body || {};
   const raw = JSON.stringify(body);

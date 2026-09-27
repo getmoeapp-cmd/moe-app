@@ -33,7 +33,11 @@ function AppGate({ surface }) {
   if (session.status !== "signedIn" || !session.user) {
     return <LoginScreen onLogin={session.onLogin} notice={session.error} />;
   }
-  if (surface === "classic" && (session.user.group || session.user.isAdmin)) return <MoeApp key={session.user.id} initialUser={session.user} onLogout={session.onLogout} />;
+  // The full (classic) app is for owners, managers and the platform admin. Employees
+  // only count — they stay in the simple app even if they open the /classic link.
+  const role = String(session.user.role || "").toLowerCase();
+  const mayUseClassic = session.user.isAdmin || (session.user.group && (role === "owner" || role === "manager"));
+  if (surface === "classic" && mayUseClassic) return <MoeApp key={session.user.id} initialUser={session.user} onLogout={session.onLogout} />;
   return <SimpleApp key={session.user.id} user={session.user} onLogout={session.onLogout} onRefresh={session.refresh} />;
 }
 

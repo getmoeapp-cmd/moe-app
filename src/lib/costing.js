@@ -194,6 +194,11 @@ export function pieceWords(item) {
 
 export function caseWords(item) {
   const one = String(item.order_unit || "Case").trim().toLowerCase() || "case";
+  // "Each"/"Piece"/"Unit" with more than one inside is really a pack — never print
+  // "3 EACH" when the rep should send 3 packs of 12.
+  if (["each", "piece", "unit", "pc", "pcs", "ea"].includes(one) && Math.max(1, Number(item.upu) || 1) > 1) {
+    return { one: "pack", many: "packs" };
+  }
   return { one, many: one === "each" ? "each" : one === "lbs" ? "lbs" : plural(one) };
 }
 
@@ -213,7 +218,7 @@ export const fromCount = (item, v) => Math.round(Number(v) * countUnit(item).fac
 // What one order unit is, in words the rep can't misread: "Case (6 loaves)", "Case (16 packs × 250)".
 export function packDescription(item) {
   const s = unitSetup(item);
-  const ou = item.order_unit || "Case";
+  const ou = caseWords(item).one === "pack" ? "Pack" : (item.order_unit || "Case");
   const pw = pieceWords(item);
   if (s.kind === "pack") return `${ou} (${s.packCount} ${s.packCount === 1 ? pw.one : pw.many} × ${s.basePer})`;
   if (s.kind === "piece_oz") return `${ou} (${s.packCount} ${s.packCount === 1 ? pw.one : pw.many} × ${s.basePer} oz)`;
