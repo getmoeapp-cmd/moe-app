@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { dayStr, fmtDay, itemsForVendor, missedCounts, sheetCounts, sheetKey, sheetProgress, vendorsDueOn } from "../lib/orderFlow";
+import { dayStr, fmtDay, itemsForVendor, missedCounts, sheetCounts, sheetKey, sheetProgress, suggestOrder, vendorsDueOn } from "../lib/orderFlow";
 import { sectionLabel } from "../lib/stockMath";
-import { countUnit, fromCount, toCount } from "../lib/costing";
+import { countUnit, fromCount, orderPhrase, toCount } from "../lib/costing";
 import NumInput from "./NumInput";
 
 function Sheet({ sheetId, vendor, date, sheet, inventory, flow, onBack }) {
@@ -55,16 +55,24 @@ function Sheet({ sheetId, vendor, date, sheet, inventory, flow, onBack }) {
             const val = c ? toCount(item, c.q) : 0;
             const step = cu.by === "case" ? 0.5 : 1;
             const setVal = (v) => flow.countItem(sheetId, vendor, item, fromCount(item, Math.max(0, v)));
+            const sug = suggestOrder(item, c);
+            const willOrder = sug.cases || sug.each ? orderPhrase(item, sug.cases, sug.each).main : "";
             return (
               <div className="item" key={item.id} data-counted={c ? "yes" : "no"}>
                 <div>
                   <h2>{item.name}</h2>
                   <p>Count in <strong>{cu.label}</strong>{cu.hint ? ` · ${cu.hint}` : ""}{c ? ` · ✓ ${c.by || "counted"}` : ""}</p>
                 </div>
-                <div className="stepper">
-                  <button type="button" aria-label={`Decrease ${item.name}`} onClick={() => setVal(val - step)}>−</button>
-                  <NumInput aria-label={`${item.name} on hand`} value={c ? val : null} onValue={setVal} />
-                  <button type="button" aria-label={`Increase ${item.name}`} onClick={() => setVal(val + step)}>+</button>
+                <div className="count-row">
+                  <div className="stepper">
+                    <button type="button" aria-label={`Decrease ${item.name}`} onClick={() => setVal(val - step)}>−</button>
+                    <NumInput aria-label={`${item.name} on hand`} value={c ? val : null} onValue={setVal} />
+                    <button type="button" aria-label={`Increase ${item.name}`} onClick={() => setVal(val + step)}>+</button>
+                  </div>
+                  <div className={`will-order${willOrder ? "" : " none"}`} aria-live="polite" data-testid="will-order">
+                    <span>Order</span>
+                    <strong>{willOrder || "None"}</strong>
+                  </div>
                 </div>
               </div>
             );
