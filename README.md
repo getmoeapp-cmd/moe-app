@@ -32,7 +32,7 @@ Create React App builds the client. `vercel.json` rewrites non-API routes to `in
 
 Sign-in does not display a demo password. Create an account from the quiz or from Create an account. The classic menu keeps Place Order, Orders, Order History, Edit items, and Settings in front. Waste, insights, recipes, the price tracker, invoice import, subscription, and admin sit under More. Role permissions are a text link inside Settings, after Vendors and Team.
 
-The quiz reports one monthly total. The four lines are monthly and add up to it. The year figure is that monthly total times 12. Payback uses the same monthly number against the $399 plan.
+The quiz reports one monthly total. The four lines are monthly and add up to it. The year figure is that monthly total times 12. Payback uses the same monthly number against the $249 plan.
 
 ## Accounts and security
 
