@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MOE — The Restaurant Agent | Never run out. Never miss an order.</title>
 <meta name="description" content="MOE counts your stock, builds your orders, catches what didn't get delivered and flags vendor price hikes. Start a 14-day free trial.">
 <style>
@@ -34,14 +34,13 @@ details{border-bottom:1px solid var(--line);padding:14px 0}summary{font-weight:7
 .sticky{display:none}
 @media(max-width:700px){.sticky{display:block;position:fixed;left:0;right:0;bottom:0;padding:10px;background:#fff;border-top:1px solid var(--line);z-index:60}.sticky .btn{display:block;text-align:center}body{padding-bottom:70px}header .btn.sm{display:none}}
 </style></head><body>
-<div class="draft">DRAFT — not published. The signup form below is a placeholder until the MOE GHL sub-account exists.</div>
-<header><div class="w"><div class="logo">M<span>O</span>E</div><div><button class="lang" id="lang" type="button">Español</button><a class="btn sm" href="#trial" data-i="cta">Start free trial</a></div></div></header>
+<header><div class="w"><div class="logo">M<span>O</span>E</div><div><button class="lang" id="lang" type="button">Español</button><a class="btn sm" href="/app?signup=1" data-i="cta">Start free trial</a></div></div></header>
 
 <div class="hero"><div class="w">
 <div class="eyebrow">The Restaurant Agent</div>
 <h1 data-i="h1">Never run out.<br>Never miss an order.</h1>
 <p class="sub" data-i="sub">MOE counts your stock, builds your orders, catches what didn't get delivered, and flags price hikes. Built by a pizzeria owner who was sick of doing it on paper.</p>
-<a class="btn" href="#trial" data-i="cta2">Start your 14-day free trial</a>
+<a class="btn" href="/app?signup=1" data-i="cta2">Start your 14-day free trial</a>
 <p class="fine" data-i="fine">No credit card required. Setup in minutes. Cancel anytime.</p>
 </div></div>
 
@@ -75,9 +74,9 @@ details{border-bottom:1px solid var(--line);padding:14px 0}summary{font-weight:7
 <section class="alt-bg price"><div class="w"><h2 data-i="h_price">Start free. Pick a plan when you're ready.</h2>
 <p class="sub" style="margin-left:0" data-i="price_sub">Every plan starts with a 14-day free trial.</p>
 <div class="grid">
-<div class="card"><h3>Starter</h3><div class="amt">$299<small>/mo</small></div><ul><li>3 vendors</li><li>100 items</li><li>2 users</li></ul><a class="btn alt" href="#trial" data-plan="Starter" data-i="cta">Start free trial</a></div>
-<div class="card pop"><h3>Pro</h3><div class="amt">$399<small>/mo</small></div><ul><li>Unlimited vendors and items</li><li>10 users</li><li>Usage insights and par suggestions</li></ul><a class="btn" href="#trial" data-plan="Pro" data-i="cta">Start free trial</a></div>
-<div class="card"><h3>Enterprise</h3><div class="amt">$499<small>/mo</small></div><ul><li>Everything in Pro</li><li>Unlimited users</li><li>Priority onboarding</li></ul><a class="btn alt" href="#trial" data-plan="Enterprise" data-i="cta">Start free trial</a></div>
+<div class="card"><h3>Starter</h3><div class="amt">$299<small>/mo</small></div><ul><li>3 vendors</li><li>100 items</li><li>2 users</li></ul><a class="btn alt" href="/app?signup=1" data-i="cta">Start free trial</a></div>
+<div class="card pop"><h3>Pro</h3><div class="amt">$399<small>/mo</small></div><ul><li>Unlimited vendors and items</li><li>10 users</li><li>Usage insights and par suggestions</li></ul><a class="btn" href="/app?signup=1" data-i="cta">Start free trial</a></div>
+<div class="card"><h3>Enterprise</h3><div class="amt">$499<small>/mo</small></div><ul><li>Everything in Pro</li><li>Unlimited users</li><li>Priority onboarding</li></ul><a class="btn alt" href="/app?signup=1" data-i="cta">Start free trial</a></div>
 </div></div></section>
 
 <section><div class="w founder"><blockquote data-i="quote">"I own a pizzeria. I got tired of running out of cheese on a Friday and finding price hikes weeks late, so I built MOE myself. It's the tool I wanted in my own kitchen."<br><br><strong>— Ronnie, owner and builder</strong></blockquote></div></section>
@@ -90,26 +89,15 @@ details{border-bottom:1px solid var(--line);padding:14px 0}summary{font-weight:7
 <details><summary data-i="q5">Do I have to install anything?</summary><p data-i="a5">No. MOE runs in your browser on your phone, tablet or desktop.</p></details>
 </div></section>
 
-<section id="trial"><div class="w" style="text-align:center"><h2 data-i="h_trial">Start your 14-day free trial</h2><p class="sub" style="color:#d6cfc4" data-i="trial_sub">Tell us where to send your login. No credit card.</p>
-<!-- GHL BUILD NOTE: replace this form with the native GHL form (MOE sub-account) in a Custom Code element or form element.
-     Fields: first name, restaurant name, mobile, email, plan interest (hidden/select), language. On submit -> redirect to /thank-you. -->
-<form class="form" id="f" onsubmit="event.preventDefault();document.getElementById('f').style.display='none';document.getElementById('ty').style.display='block'">
-<label>First name</label><input required autocomplete="given-name">
-<label>Restaurant name</label><input required autocomplete="organization">
-<label>Mobile phone</label><input type="tel" required autocomplete="tel"><p class="note" style="margin:6px 0 0">By giving us your mobile number, you agree to get text messages from MOE about your trial and account setup. Message and data rates may apply. Consent is not a condition of purchase. See our <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms</a>.</p>
-<label>Email</label><input type="email" required autocomplete="email">
-<label>Preferred language</label><select id="langsel"><option>English</option><option>Español</option></select>
-<label>Plan you're leaning toward</label><select id="plan"><option>Not sure yet</option><option>Starter — $299/mo</option><option>Pro — $399/mo</option><option>Enterprise — $499/mo</option></select>
-<button class="btn" type="submit" data-i="submit">Start my free trial</button>
-<p class="note" data-i="note">No credit card required. <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p></form>
-<div class="form" id="ty" style="display:none"><h3>You're in!</h3><p>Check your email for your MOE login. Ronnie will text you to help you get set up.</p></div>
+<section id="trial"><div class="w" style="text-align:center"><h2 data-i="h_trial">Start your 14-day free trial</h2><p class="sub" style="color:#d6cfc4" data-i="trial_sub">Make your account in a minute and start counting. No credit card.</p>
+<a class="btn" href="/app?signup=1" data-i="submit">Start my free trial</a>
+<p class="note" style="color:#d6cfc4" data-i="note">No credit card required. <a href="/privacy" style="color:#fff">Privacy</a> · <a href="/terms" style="color:#fff">Terms</a></p>
 </div></section>
 
 <footer style="padding:30px 0;text-align:center;color:var(--mute);font-size:14px">© MOE — Make Ordering Easy. <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></footer>
-<div class="sticky"><a class="btn" href="#trial" data-i="cta">Start free trial</a></div>
+<div class="sticky"><a class="btn" href="/app?signup=1" data-i="cta">Start free trial</a></div>
 <script>
 var es={cta:"Empezar prueba gratis",cta2:"Empieza tu prueba gratis de 14 días",h1:"Nunca te quedes sin producto.<br>Nunca pierdas un pedido.",sub:"MOE cuenta tu inventario, arma tus pedidos, detecta lo que no llegó y te avisa cuando suben los precios. Hecho por un dueño de pizzería.",fine:"Sin tarjeta de crédito. Cancela cuando quieras.",submit:"Empezar mi prueba gratis",h_trial:"Empieza tu prueba gratis de 14 días"};
 var en={};document.querySelectorAll('[data-i]').forEach(function(e){en[e.dataset.i]=en[e.dataset.i]||e.innerHTML});
 var on=false;document.getElementById('lang').onclick=function(){on=!on;this.textContent=on?'English':'Español';document.querySelectorAll('[data-i]').forEach(function(e){var k=e.dataset.i;e.innerHTML=(on&&es[k])?es[k]:en[k]})};
-document.querySelectorAll('[data-plan]').forEach(function(a){a.onclick=function(){var s=document.getElementById('plan');for(var i=0;i<s.options.length;i++)if(s.options[i].text.indexOf(a.dataset.plan)==0)s.selectedIndex=i}});
 </script></body></html>
