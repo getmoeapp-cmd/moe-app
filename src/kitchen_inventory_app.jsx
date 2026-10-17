@@ -7,6 +7,8 @@ import TeamPanel from "./simple/TeamPanel";
 import UsageScreen from "./simple/UsageScreen";
 import { ItemCosts, Recipes as CostRecipes } from "./simple/CostsScreen";
 import { sbArrayUpsert, sbArrayRemove, sbArrayPatch } from "./lib/supabaseClient";
+import { existedOn } from "./lib/orderFlow";
+import { receivedUnits } from "./lib/usage";
 import { calcQuizSavings, quizPaybackDays, quizRoiMultiple } from "./lib/quizMath";
 import {
   DAYS, DAYS_SHORT, getWeekNumber, getWeekYear, weekKey, getToday, fmtDate, getWeekMonday, fmtWeekLabel,
@@ -408,6 +410,13 @@ export function MoeApp({ initialUser, onLogout }) {
     vds.forEach(v => {
       if (!v.orderDays || v.orderDays.length === 0 || !normName(v.name)) return;
       if (prevWeekOrders.some(h => normName(h.vendor) === normName(v.name))) return;
+      // Only order days on/after the supplier was created count as missed.
+      const mon = getWeekMonday(prevWeek, prevYear);
+      const hadOrderDay = v.orderDays.some(d => {
+        const day = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + ((d + 6) % 7));
+        return existedOn(v, day);
+      });
+      if (!hadOrderDay) return;
       const { vendorItems, lines } = linesFor(v.name, inv, stk);
       if (lines.length === 0) return;
       usageByVendor[v.name] = usageLinesFor(lines, vendorItems, stk);
@@ -496,7 +505,7 @@ export function MoeApp({ initialUser, onLogout }) {
     if (res.ok) showFlash(`✓ Backfilled ${vendorName} order for WK${wkNum}`);
   };
 
-  // ── Check in a delivery: record what actually arrived (does NOT touch stock) ──
+  // ── Check in a delivery: record what actually arrived and add it to on-hand stock ──
   // lineStatuses = { [lineId]: { status, receivedQty } }  status: delivered|short|out_of_stock|damaged
   const checkInDelivery = (orderId, lineStatuses) => {
     const target = (history || []).find(o => o.id === orderId);
@@ -505,7 +514,17 @@ export function MoeApp({ initialUser, onLogout }) {
       const s = lineStatuses[line.id] || { status: "delivered" };
       return { ...line, delivered: s.status === "delivered" ? "delivered" : s.status, receivedQty: s.status === "short" ? (s.receivedQty ?? line.qty) : (s.status === "delivered" ? line.qty : 0) };
     });
-    patchHistoryOrder(orderId, { received: true, receivedAt: new Date().toISOString(), lines: newLines });
+    // What arrived goes onto the shelf count (single units; short/out/damaged lines add less or nothing).
+    if (!target.received && !target.stockApplied) {
+      const items = flatItems(inventory);
+      const base = { ...stock, ...pendingStockRef.current };
+      newLines.forEach(l => {
+        const item = items.find(i => String(i.id) === String(l.id));
+        const add = receivedUnits(l, item);
+        if (add > 0) updateStock(l.id, Math.round((Number(base[l.id]) || 0) + add));
+      });
+    }
+    patchHistoryOrder(orderId, { received: true, receivedAt: new Date().toISOString(), lines: newLines, stockApplied: true });
     const shortfalls = newLines.filter(l => l.delivered && l.delivered !== "delivered").length;
     showFlash(shortfalls > 0 ? `✓ Delivery checked in — ${shortfalls} item${shortfalls!==1?"s":""} flagged` : `✓ Delivery checked in — all received`);
   };
@@ -1758,7 +1777,9 @@ function OrdersView({ inventory, stock, vendors, submitOrder, logQuickOrder, sub
     // order days that have already passed this week (before today)
     // Weeks run Monday→Sunday, so compare Monday-based positions (Sunday is the LAST day).
     const monIdx = (d) => (d + 6) % 7;
-    const passedDays = v.orderDays.filter(d => monIdx(d) < monIdx(today));
+    const monday = getWeekMonday(weekNum, curYear);
+    const passedDays = v.orderDays.filter(d => monIdx(d) < monIdx(today)
+      && existedOn(v, new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + monIdx(d))));
     if (passedDays.length === 0) return;
     const hasOrder = thisWeekOrders.some(h => normName(h.vendor) === normName(v.name));
     if (!hasOrder && !backfillDone[v.name]) {
@@ -2381,7 +2402,7 @@ function SettingsView({ vendors, saveVendors, inventory, currentPlan, isTrialing
   };
 
   const addVendor = () => {
-    setLocalVendors(prev => [...prev, { id: Date.now(), name: "", orderDays: [] }]);
+    setLocalVendors(prev => [...prev, { id: Date.now(), name: "", orderDays: [], createdAt: new Date().toISOString() }]);
     setDirty(true);
   };
 
@@ -5222,7 +5243,7 @@ function OnboardingFlow({ user, step, vendors, saveVendors, inventory, saveInven
   // Add a vendor
   const addVendor = () => {
     if (!vendorName.trim()) return;
-    const newVendor = { id: Date.now(), name: vendorName.trim(), orderDays: vendorDays };
+    const newVendor = { id: Date.now(), name: vendorName.trim(), orderDays: vendorDays, createdAt: new Date().toISOString() };
     const updated = [...addedVendors, newVendor];
     setAddedVendors(updated);
     saveVendors(updated);
