@@ -3585,7 +3585,7 @@ const FAQS = [
   { q: "Do I need to enter all my items manually?", a: "No. You can upload a CSV file, or just take a photo of any invoice or order sheet. Our AI extracts all the items, units, and quantities for you." },
   { q: "How does the price tracker work?", a: "Enter your vendor prices each week — manually, by uploading a photo of the invoice, or via CSV. MOE compares this week's prices to last week's and flags every increase with the exact dollar and percentage change." },
   { q: "What does the waste log track?", a: "Every item your team throws away — the quantity, the reason (expired, spoiled, damaged, etc.), and who logged it. If you've entered prices, MOE estimates the dollar value of the waste too." },
-  { q: "What happens after the trial?", a: "Choose a plan that fits your business. All your data carries over — nothing is lost. Plans start at $299/month and pay for themselves in the first week." },
+  { q: "What happens after the trial?", a: "Choose a plan that fits your business. All your data carries over — nothing is lost. Plans start at $149/month and pay for themselves in the first week." },
   { q: "Does it work on phones?", a: "MOE is built mobile-first. Your team counts stock on their phones while walking the floor. Orders can be submitted from any device." },
   { q: "Can I use it for multiple locations?", a: "Yes. Enterprise plan supports multiple locations, each with their own inventory, team, and vendor setup." },
 ];
@@ -3697,6 +3697,11 @@ function LandingPage() {
     .lp .price-card, .lp [class*="card"] { box-shadow: 0 1px 2px rgba(28,25,23,0.05); }
     .lp footer a { display: inline-flex; align-items: center; min-height: 44px; }
     .lp details summary, .lp [class*="faq"] button { min-height: 44px; }
+    .lp .hero-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 24px; align-items: center; }
+    .lp .hero-bot { width: 100%; max-width: 300px; height: auto; justify-self: center; display: block; }
+    .lp .hero-txt { text-align: left !important; }
+    .lp .hero-txt > p, .lp .hero-txt h1 + p { margin-left: 0 !important; }
+    .lp .hero-txt .hero-acts, .lp .hero-txt .save-bar, .lp .hero-txt > p:last-of-type { justify-content: flex-start !important; }
     @media (max-width: 768px) {
       .lp .desk-nav { display: none !important; }
       .lp .mob-toggle { display: flex !important; }
@@ -3706,6 +3711,11 @@ function LandingPage() {
       .lp .price-grid { max-width: 400px; margin: 0 auto; }
       .lp .price-card.feat { transform: none !important; }
       .lp .proof-inner { flex-direction: column !important; gap: 24px !important; }
+      .lp .hero-grid { grid-template-columns: 1fr; }
+      .lp .hero-txt { text-align: center !important; }
+      .lp .hero-txt > p, .lp .hero-txt h1 + p { margin-left: auto !important; }
+      .lp .hero-txt .hero-acts, .lp .hero-txt .save-bar, .lp .hero-txt > p:last-of-type { justify-content: center !important; }
+      .lp .hero-bot { order: 2; max-width: 210px; margin: 8px auto 0; }
       .lp .hero-acts { flex-direction: column; align-items: center; }
       .lp .hero-acts .btn-p, .lp .hero-acts .btn-s { width: 100%; justify-content: center; }
       .lp .save-bar { gap: 24px !important; }
@@ -3748,7 +3758,8 @@ function LandingPage() {
       {/* ═══ HERO ═══ */}
       <section style={{ padding: "160px 0 100px", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: -200, left: "50%", transform: "translateX(-50%)", width: 800, height: 800, background: "radial-gradient(circle, var(--glow) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div className="ctn fade-up" style={{ position: "relative", zIndex: 2, textAlign: "center", maxWidth: 720, margin: "0 auto" }}>
+        <div className="ctn fade-up hero-grid" style={{ position: "relative", zIndex: 2, maxWidth: 1100, margin: "0 auto" }}>
+         <div className="hero-txt" style={{ textAlign: "center" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 16px", background: "var(--glow)", border: "1px solid rgba(15,118,110,0.25)", borderRadius: 100, fontSize: "0.8rem", fontWeight: 600, color: "var(--accent)", marginBottom: 28, letterSpacing: "0.04em", textTransform: "uppercase" }}>
             <span style={{ width: 6, height: 6, background: "var(--accent)", borderRadius: "50%", animation: "pulse-dot 2s infinite" }} /> Now in Early Access
           </div>
@@ -3774,6 +3785,8 @@ function LandingPage() {
               </div>
             ))}
           </div>
+         </div>
+         <img className="hero-bot" src="/trial/moe-chef.png" width="460" height="603" loading="eager" alt="Moe, the Restaurant Agent: a friendly white robot with a chef hat and orange headphones, waving, wearing a navy apron" />
         </div>
       </section>
 
@@ -3899,11 +3912,12 @@ function LandingPage() {
             <h2 className="stitle">Start free. Upgrade when you're ready.</h2>
             <p className="ssub" style={{ margin: "0 auto" }}>Every plan starts with a 14-day free trial. No credit card required.</p>
           </div>
-          <div className="price-grid fade-up" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 24, alignItems: "start" }}>
+          <div className="price-grid fade-up" style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 24, alignItems: "start", maxWidth: 760, margin: "0 auto" }}>
             {[
-              { name: "Starter", desc: "For solo operators getting organized", price: "$299", features: ["Inventory tracking","Waste log","Order generation","1 team member"], featured: false },
-              { name: "Pro", desc: "For growing teams that need full visibility", price: "$399", features: ["Everything in Starter","Price tracker & alerts","AI item import","Par level insights","Up to 5 team members"], featured: true },
-              { name: "Enterprise", desc: "For multi-location operations", price: "$499", features: ["Everything in Pro","Unlimited team members","Multi-location support","Priority support","Custom integrations"], featured: false },
+              { name: "Starter", desc: "For solo operators getting organized", price: "$149", features: ["3 vendors","100 items","2 users"], featured: false },
+              { name: "Pro", desc: "For growing teams that need full visibility", price: "$249", features: ["Unlimited vendors and items","10 users","Usage insights and par suggestions","Missed-call recovery","Google review requests"], featured: true },
+              // Enterprise plan hidden for now (matches /trial: two plans only). Previous entry:
+              // { name: "Enterprise", desc: "For multi-location operations", price: "$499", features: ["Everything in Pro","Unlimited team members","Multi-location support","Priority support","Custom integrations"], featured: false },
             ].map(plan => (
               <div key={plan.name} className={plan.featured ? "price-card feat" : "price-card"} style={{ background: "var(--card)", border: plan.featured ? "1px solid var(--accent)" : "1px solid var(--border)", borderRadius: "var(--rl)", padding: "36px 28px", position: "relative", boxShadow: plan.featured ? "0 0 60px var(--glow)" : "none", transform: plan.featured ? "scale(1.04)" : "none" }}>
                 {plan.featured && <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", padding: "4px 16px", background: "var(--accent)", color: "var(--on-accent)", fontSize: "0.7rem", fontWeight: 700, borderRadius: 100, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>Most Popular</div>}
