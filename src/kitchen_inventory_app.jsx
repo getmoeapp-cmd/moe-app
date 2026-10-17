@@ -3779,7 +3779,7 @@ function LandingPage() {
           </p>
           <figure className="save-bar" style={{ margin: "48px 0 0", padding: 0, maxWidth: 460 }}>
             <blockquote style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700, lineHeight: 1.3, letterSpacing: "-0.02em", color: "var(--accent)" }}>
-              “I saved over $500 a week on ordering at my pizzeria.”
+              “I saved $26,000 in a year on ordering at my pizzeria.”
             </blockquote>
             <figcaption style={{ fontSize: "0.8rem", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 8 }}>Ronnie, owner and founder</figcaption>
           </figure>
