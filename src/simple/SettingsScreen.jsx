@@ -67,7 +67,7 @@ function SupplierEditor({ vendors, inventory, saveVendors, saveInventory }) {
         </article>
       ))}
       <div className="stack">
-        <button type="button" className="btn" onClick={() => { setDraft((prev) => [...prev, { id: Date.now(), name: "", orderDays: [] }]); setDirty(true); }}>Add supplier</button>
+        <button type="button" className="btn" onClick={() => { setDraft((prev) => [...prev, { id: Date.now(), name: "", orderDays: [], createdAt: new Date().toISOString() }]); setDirty(true); }}>Add supplier</button>
         <button type="button" className="btn primary" disabled={!dirty} onClick={save}>Save suppliers</button>
       </div>
     </div>

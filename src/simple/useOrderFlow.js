@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { buildDraft, dayStr, draftToOrder, parseSheetKey, SHEET_PREFIX, sheetKey } from "../lib/orderFlow";
+import { registerFlusher } from "../lib/flushRegistry";
 import { getSB, sbApproveDraft, sbArrayAddOnce, sbArrayRemove, sbArrayUpdate, sbGet, sbGetRange, sbMerge } from "../lib/supabaseClient";
 
 const DRAFTS = "drafts";
@@ -91,6 +92,8 @@ export function useOrderFlow(user, kitchen) {
     }).subscribe();
     return () => { sb.removeChannel(ch); };
   }, [group]);
+
+  useEffect(() => registerFlusher(flush), [flush]);
 
   useEffect(() => {
     const onHide = () => flush();

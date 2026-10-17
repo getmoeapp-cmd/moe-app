@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DEMO_GROUPS } from "../lib/config";
 import { DEFAULT_INVENTORY, DEFAULT_VENDORS } from "../lib/defaults";
 import { appendUsage, weekKeyOf } from "../lib/orders";
+import { registerFlusher } from "../lib/flushRegistry";
+import { receivedUnits } from "../lib/usage";
 import { loadKitchen, writeLocal } from "../lib/storage";
 import { getSB, sbArrayPatch, sbArrayRemove, sbArrayUpsert, sbMerge, sbMergeUsage, sbPrepend, sbSetIfUnchanged } from "../lib/supabaseClient";
 
@@ -22,6 +24,8 @@ export function useKitchenData(user) {
   const [loadError, setLoadError] = useState("");
   const [inventory, setInventory] = useState([]);
   const [stock, setStock] = useState({});
+  const stockRef = useRef({});
+  stockRef.current = stock;
   const [vendors, setVendors] = useState([]);
   const [history, setHistory] = useState([]);
   const [subscription, setSubscription] = useState(null);
@@ -114,6 +118,8 @@ export function useKitchenData(user) {
     clearTimeout(stockTimer.current);
     stockTimer.current = setTimeout(flushStock, 800);
   }, [flushStock]);
+
+  useEffect(() => registerFlusher(flushStock), [flushStock]);
 
   const reload = useCallback(async () => {
     const { data, versions: loaded, ok, error } = await loadKitchen(group);
@@ -266,10 +272,38 @@ export function useKitchenData(user) {
     return res;
   }, [group, markSave]);
 
+  // Mark an order received AND add what arrived to on-hand stock (single units, so
+  // pack sizes are respected; short / out / damaged lines add less or nothing).
+  // Goes straight to the stock merge, not the count log, because a delivery is not
+  // a count and usage tracking already adds deliveries to the counts itself.
+  const receiveOrder = useCallback(async (order) => {
+    if (!order || order.received) return { ok: true };
+    let stockResult = { ok: true };
+    if (!order.stockApplied) {
+      const byId = {};
+      (inventory || []).forEach((sec) => (sec.items || []).forEach((it) => { byId[String(it.id)] = it; }));
+      const base = { ...stockRef.current, ...pendingStock.current };
+      const patch = {};
+      (order.lines || []).forEach((line) => {
+        const add = receivedUnits(line, byId[String(line.id)]);
+        if (add > 0) patch[line.id] = Math.round(((Number(base[line.id]) || 0) + add) * 100) / 100;
+      });
+      if (Object.keys(patch).length) {
+        setSaveState("saving");
+        stockResult = await sbMerge(group, "stock", patch);
+        if (!stockResult.ok) { markSave(stockResult); return stockResult; }   // order stays "waiting", nothing double-counted
+        setStock((prev) => ({ ...prev, ...patch }));
+        writeLocal(group, "stock", stockResult.value);
+      }
+    }
+    return patchOrder(order.id, { received: true, receivedAt: new Date().toISOString(), receivedBy: userRef.current?.name || "", stockApplied: true });
+  }, [group, inventory, markSave, patchOrder]);
+
   return {
     status,
     group,
     patchOrder,
+    receiveOrder,
     loadError,
     reload,
     inventory,
