@@ -5,6 +5,16 @@ export function canManage(user) {
   return role === "owner" || role === "manager";
 }
 
+// Where Supabase confirm / reset emails send people back to. Never a localhost
+// URL in production: a dev server's origin is only used on a dev machine.
+export const PROD_APP_URL = "https://www.getmoe.ai/app";
+export function appUrl(suffix = "") {
+  const host = typeof window !== "undefined" ? window.location.hostname : "";
+  const local = !host || host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.endsWith(".local");
+  const base = local && process.env.NODE_ENV === "production" ? PROD_APP_URL : `${window.location.origin}/app`;
+  return `${base}${suffix}`;
+}
+
 function clean(value) {
   return String(value || "").trim();
 }
@@ -135,7 +145,7 @@ export async function signUp({ first, last, email, phone, password, business }) 
     password,
     options: {
       data: { name: `${pending.first} ${pending.last}`, phone: pending.phone, pending_kitchen: pending },
-      emailRedirectTo: `${window.location.origin}/app`,
+      emailRedirectTo: appUrl(),
     },
   });
   if (error) return { ok: false, error: friendly(error) };
@@ -164,7 +174,7 @@ export async function joinWithInvite({ code, name, email, password }) {
   const pending = { invite: clean(code).toUpperCase(), name: clean(name) };
   let { data, error } = await sb.auth.signUp({
     email: emailLower, password,
-    options: { data: { name: pending.name, pending_kitchen: pending }, emailRedirectTo: `${window.location.origin}/app` },
+    options: { data: { name: pending.name, pending_kitchen: pending }, emailRedirectTo: appUrl() },
   });
   if (!error && data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
     // Existing login (for example someone who works at two places): sign in and join.
@@ -183,7 +193,7 @@ export async function sendPasswordReset(email) {
   const sb = getSB();
   const emailLower = clean(email).toLowerCase();
   if (!emailLower.includes("@")) return { ok: false, error: "Enter the email you sign in with." };
-  const { error } = await sb.auth.resetPasswordForEmail(emailLower, { redirectTo: `${window.location.origin}/app?reset=1` });
+  const { error } = await sb.auth.resetPasswordForEmail(emailLower, { redirectTo: appUrl("?reset=1") });
   if (error) return { ok: false, error: friendly(error) };
   return { ok: true };
 }

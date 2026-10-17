@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { currentUser, signOut } from "./auth";
+import { flushAll } from "./flushRegistry";
 import { getSB } from "./supabaseClient";
 
 // status: "loading" | "signedOut" | "signedIn" | "recovery"
@@ -38,6 +39,7 @@ export function useSession() {
 
   const onLogin = useCallback((user) => setState({ status: "signedIn", user, error: "" }), []);
   const onLogout = useCallback(async () => {
+    await flushAll();   // send unsaved counts while still signed in
     await signOut();
     setState({ status: "signedOut", user: null, error: "" });
   }, []);

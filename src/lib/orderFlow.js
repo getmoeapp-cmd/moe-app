@@ -34,6 +34,24 @@ export function parseSheetKey(key) {
   return m ? { date: m[1], vendorId: m[2] } : null;
 }
 
+// When a supplier was added, in ms (0 = unknown, so nothing is hidden for old data).
+// New suppliers carry createdAt; older ones were created with id = Date.now(), which
+// is a timestamp too. Tiny ids (1, 2…) are seeded defaults and count as unknown.
+export function vendorCreatedMs(v) {
+  const t = v?.createdAt ? new Date(v.createdAt).getTime() : NaN;
+  if (Number.isFinite(t)) return t;
+  const n = Number(v?.id);
+  return Number.isFinite(n) && n > 1e12 && n < 4e12 ? n : 0;
+}
+
+// A supplier can't have missed an order day before it existed.
+export function existedOn(v, date) {
+  const made = vendorCreatedMs(v);
+  if (!made) return true;
+  const c = new Date(made);
+  return date.getTime() >= new Date(c.getFullYear(), c.getMonth(), c.getDate()).getTime();
+}
+
 const norm = (v) => String(v || "").trim().toLowerCase();
 
 export function itemsForVendor(inventory, vendorName) {
@@ -68,6 +86,7 @@ export function missedCounts({ vendors, sheets, history, drafts, today = new Dat
     const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - back);
     const ds = dayStr(d);
     vendorsDueOn(vendors, d).forEach((v) => {
+      if (!existedOn(v, d)) return;
       if (sheets[sheetKey(ds, v.id)]) return;
       const since = d.getTime();
       const ordered = (history || []).some((h) => norm(h.vendor) === norm(v.name) && new Date(h.date).getTime() >= since);
