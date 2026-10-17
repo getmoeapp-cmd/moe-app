@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOE — The Restaurant Agent | Never run out. Never miss an order.</title>
+<meta name="description" content="MOE counts your stock, builds your orders, catches what didn't get delivered and flags vendor price hikes. Start a 14-day free trial.">
+<style>
+:root{--red:#c8281e;--ink:#1c1917;--cream:#fbf6ee;--mute:#6b625a;--line:#e7dfd2}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:#fff;line-height:1.5}
+.w{max-width:1040px;margin:0 auto;padding:0 20px}
+header{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--line);z-index:50}
+header .w{display:flex;align-items:center;justify-content:space-between;height:60px}
+.logo{font-weight:900;font-size:22px;letter-spacing:.5px}.logo span{color:var(--red)}
+.btn{display:inline-block;background:var(--red);color:#fff;font-weight:700;padding:14px 24px;border-radius:10px;text-decoration:none;border:0;font-size:16px;cursor:pointer}
+.btn.sm{padding:9px 16px;font-size:14px}.btn.alt{background:#fff;color:var(--ink);border:2px solid var(--ink)}
+.lang{background:none;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-weight:600;cursor:pointer;margin-right:10px}
+.hero{background:var(--cream);padding:64px 0 56px;text-align:center}
+.eyebrow{color:var(--red);font-weight:800;text-transform:uppercase;letter-spacing:1.5px;font-size:13px}
+h1{font-size:clamp(34px,6vw,56px);line-height:1.08;margin:12px 0}h2{font-size:clamp(26px,4vw,36px);margin:0 0 10px}
+.sub{font-size:19px;color:var(--mute);max-width:640px;margin:0 auto 26px}.fine{font-size:14px;color:var(--mute);margin-top:12px}
+section{padding:56px 0}.alt-bg{background:var(--cream)}
+.grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:26px}
+.card{border:1px solid var(--line);border-radius:14px;padding:22px;background:#fff}.card h3{margin:0 0 6px;font-size:19px}.card p{margin:0;color:var(--mute)}
+.steps{counter-reset:s}.steps .card::before{counter-increment:s;content:counter(s);display:inline-flex;width:32px;height:32px;border-radius:50%;background:var(--red);color:#fff;font-weight:800;align-items:center;justify-content:center;margin-bottom:10px}
+.price .card{text-align:center}.price .amt{font-size:42px;font-weight:900}.price .amt small{font-size:16px;color:var(--mute);font-weight:600}
+.price ul{text-align:left;padding-left:18px;color:var(--mute);min-height:84px}.pop{border:2px solid var(--red)}
+.founder{display:grid;gap:20px;grid-template-columns:1fr;align-items:center}
+blockquote{margin:0;font-size:20px;border-left:4px solid var(--red);padding-left:18px}
+details{border-bottom:1px solid var(--line);padding:14px 0}summary{font-weight:700;cursor:pointer}details p{color:var(--mute);margin:8px 0 0}
+#trial{background:var(--ink);color:#fff}#trial h2{color:#fff}
+.form{background:#fff;color:var(--ink);border-radius:16px;padding:26px;max-width:560px;margin:24px auto 0}
+.form label{display:block;font-weight:600;font-size:14px;margin:12px 0 4px}
+.form input,.form select{width:100%;padding:13px;border:1px solid #cfc6b8;border-radius:8px;font-size:16px}
+.form .btn{width:100%;margin-top:18px}.note{font-size:13px;color:var(--mute);margin-top:10px}
+.draft{background:#fff3cd;color:#664d03;font-size:13px;padding:8px;text-align:center}
+.sticky{display:none}
+@media(max-width:700px){.sticky{display:block;position:fixed;left:0;right:0;bottom:0;padding:10px;background:#fff;border-top:1px solid var(--line);z-index:60}.sticky .btn{display:block;text-align:center}body{padding-bottom:70px}header .btn.sm{display:none}}
+</style></head><body>
+<header><div class="w"><div class="logo">M<span>O</span>E</div><div><button class="lang" id="lang" type="button">Español</button><a class="btn sm" href="/app?signup=1" data-i="cta">Start free trial</a></div></div></header>
+
+<div class="hero"><div class="w">
+<div class="eyebrow">The Restaurant Agent</div>
+<h1 data-i="h1">Never run out.<br>Never miss an order.</h1>
+<p class="sub" data-i="sub">MOE counts your stock, builds your orders, catches what didn't get delivered, and flags price hikes. Built by a pizzeria owner who was sick of doing it on paper.</p>
+<a class="btn" href="/app?signup=1" data-i="cta2">Start your 14-day free trial</a>
+<p class="fine" data-i="fine">No credit card required. Setup in minutes. Cancel anytime.</p>
+</div></div>
+
+<section><div class="w"><h2 data-i="h_pain">Running a kitchen is hard enough.</h2>
+<div class="grid">
+<div class="card"><h3 data-i="p1t">You run out mid-rush</h3><p data-i="p1">Somebody forgot to order it, or the order never went in.</p></div>
+<div class="card"><h3 data-i="p2t">The truck shows up short</h3><p data-i="p2">You find out when you reach for it, not when it's dropped off.</p></div>
+<div class="card"><h3 data-i="p3t">Prices creep up</h3><p data-i="p3">Vendors raise a price a little at a time and you never see it.</p></div>
+<div class="card"><h3 data-i="p4t">Food cost is a guess</h3><p data-i="p4">Waste and over-ordering eat your margin every week.</p></div>
+</div></div></section>
+
+<section class="alt-bg"><div class="w"><h2 data-i="h_feat">What MOE does for you</h2>
+<div class="grid">
+<div class="card"><h3 data-i="f1t">Missed-order detection</h3><p data-i="f1">MOE spots what you forgot to order and can auto-submit the order for you.</p></div>
+<div class="card"><h3 data-i="f2t">Delivery check-in</h3><p data-i="f2">Check the truck in seconds. Short or missing items get flagged the same day.</p></div>
+<div class="card"><h3 data-i="f3t">Vendor price-increase alerts</h3><p data-i="f3">See it the moment a vendor's price goes up, before it hits your margin.</p></div>
+<div class="card"><h3 data-i="f4t">Usage and par suggestions</h3><p data-i="f4">MOE learns what you really use and tells you what to keep on hand.</p></div>
+<div class="card"><h3 data-i="f5t">Plate and food cost %</h3><p data-i="f5">Know what every plate costs you and where your food cost stands.</p></div>
+<div class="card"><h3 data-i="f6t">Waste log</h3><p data-i="f6">Log what hits the trash and why. Find the leaks and fix them.</p></div>
+<div class="card"><h3 data-i="f7t">AI invoice photo import</h3><p data-i="f7">Snap a photo of an invoice and your item list builds itself.</p></div>
+<div class="card"><h3 data-i="f8t">Spanish toggle for staff</h3><p data-i="f8">Your crew can switch the app to Spanish with one tap.</p></div>
+</div></div></section>
+
+<section><div class="w"><h2 data-i="h_how">How it works</h2>
+<div class="grid steps">
+<div class="card"><h3 data-i="s1t">Sign up free</h3><p data-i="s1">Start your 14-day trial. No credit card.</p></div>
+<div class="card"><h3 data-i="s2t">Snap your invoice</h3><p data-i="s2">MOE builds your item list from the photo.</p></div>
+<div class="card"><h3 data-i="s3t">Count and order</h3><p data-i="s3">Do a quick count. MOE builds the order and watches the rest.</p></div>
+</div></div></section>
+
+<section class="alt-bg price"><div class="w"><h2 data-i="h_price">Start free. Pick a plan when you're ready.</h2>
+<p class="sub" style="margin-left:0" data-i="price_sub">Every plan starts with a 14-day free trial.</p>
+<div class="grid">
+<div class="card"><h3>Starter</h3><div class="amt">$299<small>/mo</small></div><ul><li>3 vendors</li><li>100 items</li><li>2 users</li></ul><a class="btn alt" href="/app?signup=1" data-i="cta">Start free trial</a></div>
+<div class="card pop"><h3>Pro</h3><div class="amt">$399<small>/mo</small></div><ul><li>Unlimited vendors and items</li><li>10 users</li><li>Usage insights and par suggestions</li></ul><a class="btn" href="/app?signup=1" data-i="cta">Start free trial</a></div>
+<div class="card"><h3>Enterprise</h3><div class="amt">$499<small>/mo</small></div><ul><li>Everything in Pro</li><li>Unlimited users</li><li>Priority onboarding</li></ul><a class="btn alt" href="/app?signup=1" data-i="cta">Start free trial</a></div>
+</div></div></section>
+
+<section><div class="w founder"><blockquote data-i="quote">"I own a pizzeria. I got tired of running out of cheese on a Friday and finding price hikes weeks late, so I built MOE myself. It's the tool I wanted in my own kitchen."<br><br><strong>— Ronnie, owner and builder</strong></blockquote></div></section>
+
+<section class="alt-bg"><div class="w"><h2>FAQ</h2>
+<details><summary data-i="q1">Do I need a credit card to start?</summary><p data-i="a1">No. The 14-day trial is free with no card.</p></details>
+<details><summary data-i="q2">How long does setup take?</summary><p data-i="a2">A few minutes. Snap an invoice photo and MOE builds your item list.</p></details>
+<details><summary data-i="q3">Can my staff use it in Spanish?</summary><p data-i="a3">Yes. There's a Spanish toggle for your crew.</p></details>
+<details><summary data-i="q4">Can I cancel anytime?</summary><p data-i="a4">Yes. No contract.</p></details>
+<details><summary data-i="q5">Do I have to install anything?</summary><p data-i="a5">No. MOE runs in your browser on your phone, tablet or desktop.</p></details>
+</div></section>
+
+<section id="trial"><div class="w" style="text-align:center"><h2 data-i="h_trial">Start your 14-day free trial</h2><p class="sub" style="color:#d6cfc4" data-i="trial_sub">Make your account in a minute and start counting. No credit card.</p>
+<a class="btn" href="/app?signup=1" data-i="submit">Start my free trial</a>
+<p class="note" style="color:#d6cfc4" data-i="note">No credit card required. <a href="/privacy" style="color:#fff">Privacy</a> · <a href="/terms" style="color:#fff">Terms</a></p>
+</div></section>
+
+<footer style="padding:30px 0;text-align:center;color:var(--mute);font-size:14px">© MOE — Make Ordering Easy. <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></footer>
+<div class="sticky"><a class="btn" href="/app?signup=1" data-i="cta">Start free trial</a></div>
+<script>
+var es={cta:"Empezar prueba gratis",cta2:"Empieza tu prueba gratis de 14 días",h1:"Nunca te quedes sin producto.<br>Nunca pierdas un pedido.",sub:"MOE cuenta tu inventario, arma tus pedidos, detecta lo que no llegó y te avisa cuando suben los precios. Hecho por un dueño de pizzería.",fine:"Sin tarjeta de crédito. Cancela cuando quieras.",submit:"Empezar mi prueba gratis",h_trial:"Empieza tu prueba gratis de 14 días"};
+var en={};document.querySelectorAll('[data-i]').forEach(function(e){en[e.dataset.i]=en[e.dataset.i]||e.innerHTML});
+var on=false;document.getElementById('lang').onclick=function(){on=!on;this.textContent=on?'English':'Español';document.querySelectorAll('[data-i]').forEach(function(e){var k=e.dataset.i;e.innerHTML=(on&&es[k])?es[k]:en[k]})};
+</script></body></html>
