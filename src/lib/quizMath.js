@@ -3,7 +3,7 @@
 // and the year figure is that monthly total times 12.
 const WEEKS_PER_YEAR = 52;
 const MONTHS_PER_YEAR = 12;
-export const QUIZ_PLAN_PRICE = 399;
+export const QUIZ_PLAN_PRICE = 249;
 
 const SPEND = {
   "$1,000-$3,000": 2000,
