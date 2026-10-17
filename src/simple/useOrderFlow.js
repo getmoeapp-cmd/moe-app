@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { buildDraft, dayStr, draftToOrder, parseSheetKey, SHEET_PREFIX, sheetKey } from "../lib/orderFlow";
+import { buildDraft, dayStr, draftToOrder, hasOrderForSheet, parseSheetKey, recentSheets, SHEET_PREFIX, sheetKey } from "../lib/orderFlow";
 import { registerFlusher } from "../lib/flushRegistry";
-import { getSB, sbApproveDraft, sbArrayAddOnce, sbArrayRemove, sbArrayUpdate, sbGet, sbGetRange, sbMerge } from "../lib/supabaseClient";
+import { getSB, sbApproveDraft, sbArrayAddOnce, sbArrayRemove, sbArrayUpdate, sbGet, sbGetPrefix, sbMerge } from "../lib/supabaseClient";
 
 const DRAFTS = "drafts";
 
@@ -45,6 +45,8 @@ export function useOrderFlow(user, kitchen) {
     setSheets((prev) => ({ ...prev, [key]: closed.value }));
     const counts = {};
     Object.entries(closed.value || {}).forEach(([id, v]) => { if (!id.startsWith("_") && v && typeof v === "object") counts[id] = v; });
+    // Already approved into an order? Don't re-open it as a new draft (that made duplicate orders).
+    if (hasOrderForSheet(k.history, key)) return { ok: true, value: null, alreadyOrdered: true };
     const draft = buildDraft({ id: key, vendor, date: parsed.date, counts, inventory: k.inventory, closedBy: closed.value?._closed?.by || "", auto });
     const res = await sbArrayAddOnce(group, DRAFTS, draft);
     if (res.ok && Array.isArray(res.value)) setDrafts(res.value);
@@ -55,15 +57,16 @@ export function useOrderFlow(user, kitchen) {
   const reload = useCallback(async () => {
     const from = new Date(); from.setDate(from.getDate() - 14);
     const [s, d] = await Promise.all([
-      sbGetRange(group, sheetKey(dayStr(from), ""), `${SHEET_PREFIX}~`),
+      sbGetPrefix(group, SHEET_PREFIX),
       sbGet(group, DRAFTS),
     ]);
     if (!s.ok || !d.ok) { setError(s.error || d.error || "Couldn't load orders"); return; }
-    setSheets(s.values);
+    const recent = recentSheets(s.values, dayStr(from));
+    setSheets(recent);
     setDrafts(Array.isArray(d.value) ? d.value : []);
     setReady(true);
     const today = dayStr();
-    for (const [key, sheet] of Object.entries(s.values)) {
+    for (const [key, sheet] of Object.entries(recent)) {
       const p = parseSheetKey(key);
       if (p && p.date < today && !sheet?._closed) await closeSheet(key, { auto: true });
     }
