@@ -34,6 +34,24 @@ export function parseSheetKey(key) {
   return m ? { date: m[1], vendorId: m[2] } : null;
 }
 
+// When a supplier was added, in ms (0 = unknown, so nothing is hidden for old data).
+// New suppliers carry createdAt; older ones were created with id = Date.now(), which
+// is a timestamp too. Tiny ids (1, 2…) are seeded defaults and count as unknown.
+export function vendorCreatedMs(v) {
+  const t = v?.createdAt ? new Date(v.createdAt).getTime() : NaN;
+  if (Number.isFinite(t)) return t;
+  const n = Number(v?.id);
+  return Number.isFinite(n) && n > 1e12 && n < 4e12 ? n : 0;
+}
+
+// A supplier can't have missed an order day before it existed.
+export function existedOn(v, date) {
+  const made = vendorCreatedMs(v);
+  if (!made) return true;
+  const c = new Date(made);
+  return date.getTime() >= new Date(c.getFullYear(), c.getMonth(), c.getDate()).getTime();
+}
+
 const norm = (v) => String(v || "").trim().toLowerCase();
 
 export function itemsForVendor(inventory, vendorName) {
@@ -43,6 +61,23 @@ export function itemsForVendor(inventory, vendorName) {
 export function vendorsDueOn(vendors, date = new Date()) {
   const dow = date.getDay();
   return (vendors || []).filter((v) => (v.name || "").trim() && (v.orderDays || []).includes(dow));
+}
+
+// Keep only sheets dated on/after `fromDay` ("YYYY-MM-DD"); drops keys that aren't sheets.
+export function recentSheets(values, fromDay) {
+  const out = {};
+  Object.entries(values || {}).forEach(([k, v]) => {
+    const p = parseSheetKey(k);
+    if (p && p.date >= fromDay) out[k] = v;
+  });
+  return out;
+}
+
+// True when an approved order already came from this count sheet (order ids are
+// "ord_<sheetKey>_<time>"), so closing the sheet again must not make a second draft.
+export function hasOrderForSheet(history, key) {
+  const pre = `ord_${key}_`;
+  return (history || []).some((o) => typeof o?.id === "string" && o.id.startsWith(pre));
 }
 
 // Counts on a sheet: { [itemId]: { q, by, at } } plus "_meta" / "_closed" keys.
@@ -68,6 +103,7 @@ export function missedCounts({ vendors, sheets, history, drafts, today = new Dat
     const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - back);
     const ds = dayStr(d);
     vendorsDueOn(vendors, d).forEach((v) => {
+      if (!existedOn(v, d)) return;
       if (sheets[sheetKey(ds, v.id)]) return;
       const since = d.getTime();
       const ordered = (history || []).some((h) => norm(h.vendor) === norm(v.name) && new Date(h.date).getTime() >= since);

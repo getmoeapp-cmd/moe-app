@@ -265,7 +265,7 @@ export default function OrdersScreen({ user, kitchen, flow }) {
                 </p>
                 <div className="stack">
                   <button type="button" className="btn" onClick={() => setApproved(o)}>{o.sentAt ? "Send again" : "Send PDF"}</button>
-                  <button type="button" className="btn quiet" onClick={() => kitchen.patchOrder(o.id, { received: true, receivedAt: new Date().toISOString(), receivedBy: user.name || "" })}>Mark received</button>
+                  <button type="button" className="btn quiet" onClick={() => kitchen.receiveOrder(o)}>Mark received</button>
                 </div>
                 {vendor?.repName ? <p className="note">Rep: {vendor.repName}</p> : null}
               </article>

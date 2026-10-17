@@ -211,7 +211,7 @@ function ImportCsv({ inventory, vendors, saveInventory, saveVendors, savePrices,
     });
     const vendorNames = new Set(vendors.map((v) => (v.name || "").trim().toLowerCase()));
     const newVendors = [...new Set(rows.map((r) => r.vendor.trim()).filter((v) => v && !vendorNames.has(v.toLowerCase())))];
-    if (newVendors.length) await saveVendors([...vendors, ...newVendors.map((name, i) => ({ id: Date.now() + i, name, orderDays: [] }))]);
+    if (newVendors.length) await saveVendors([...vendors, ...newVendors.map((name, i) => ({ id: Date.now() + i, name, orderDays: [], createdAt: new Date().toISOString() }))]);
     await saveInventory(inv);
     if (Object.keys(prices).length) await savePrices(prices);
     setBusy(false);

@@ -112,6 +112,32 @@ export const sbMergeUsage = (group, week, vendor, lines) =>
 
 export const sbRpc = rpc;
 
+// All keys for one kitchen that start with `prefix` (newest-updated first). Callers filter
+// by date themselves: a text range (>= / <) is unreliable here because the database's
+// locale collation ignores "_" and "~" when ordering, so a range like sheet_<date>_ .. sheet_~
+// can match nothing.
+export async function sbGetPrefix(group, prefix, limit = 500) {
+  const sb = getSB();
+  if (!sb) return { ok: false, values: {}, error: "Supabase is not configured" };
+  try {
+    const { data, error } = await sb
+      .from("moe_data")
+      .select("data_key, data_value")
+      .eq("group_id", group)
+      .like("data_key", `${prefix}*`)
+      .order("updated_at", { ascending: false })
+      .limit(limit);
+    if (error) return { ok: false, values: {}, error: error.message };
+    const values = {};
+    (data || []).forEach((row) => {
+      try { values[row.data_key] = JSON.parse(row.data_value); } catch { /* skip bad row */ }
+    });
+    return { ok: true, values };
+  } catch (error) {
+    return { ok: false, values: {}, error: error.message || "Load failed" };
+  }
+}
+
 // All keys for one kitchen in [fromKey, toKey) — e.g. the last two weeks of count sheets.
 export async function sbGetRange(group, fromKey, toKey) {
   const sb = getSB();
