@@ -22,7 +22,7 @@ section{padding:56px 0}.alt-bg{background:var(--cream)}
 .card{border:1px solid var(--line);border-radius:14px;padding:22px;background:#fff}.card h3{margin:0 0 6px;font-size:19px}.card p{margin:0;color:var(--mute)}
 .steps{counter-reset:s}.steps .card::before{counter-increment:s;content:counter(s);display:inline-flex;width:32px;height:32px;border-radius:50%;background:var(--orange);color:var(--navy);font-weight:800;align-items:center;justify-content:center;margin-bottom:10px}
 .price .card{text-align:center}.price .amt{font-size:42px;font-weight:900}.price .amt small{font-size:16px;color:var(--mute);font-weight:600}
-.price ul{text-align:left;padding-left:18px;color:var(--mute);min-height:84px}.pop{border:2px solid var(--orange)}
+.price ul{text-align:left;padding-left:18px;color:var(--mute);min-height:84px}.price .grid{max-width:760px;margin-left:auto;margin-right:auto}.price li em{font-style:normal;color:var(--orange);font-weight:700}.pop{border:2px solid var(--orange)}
 .founder{display:grid;gap:20px;grid-template-columns:1fr;align-items:center}
 blockquote{margin:0;font-size:20px;border-left:4px solid var(--orange);padding-left:18px}
 details{border-bottom:1px solid var(--line);padding:14px 0}summary{font-weight:700;cursor:pointer}details p{color:var(--mute);margin:8px 0 0}
@@ -85,9 +85,11 @@ details{border-bottom:1px solid var(--line);padding:14px 0}summary{font-weight:7
 <section class="alt-bg price"><div class="w"><h2 data-i="h_price">Start free. Pick a plan when you're ready.</h2>
 <p class="sub" style="margin-left:0" data-i="price_sub">Every plan starts with a 14-day free trial.</p>
 <div class="grid">
-<div class="card"><h3>Starter</h3><div class="amt">$299<small>/mo</small></div><ul><li>3 vendors</li><li>100 items</li><li>2 users</li></ul><a class="btn alt" href="/app?signup=1" data-i="cta">Start free trial</a></div>
-<div class="card pop"><h3>Pro</h3><div class="amt">$399<small>/mo</small></div><ul><li>Unlimited vendors and items</li><li>10 users</li><li>Usage insights and par suggestions</li></ul><a class="btn" href="/app?signup=1" data-i="cta">Start free trial</a></div>
+<div class="card"><h3>Starter</h3><div class="amt">$149<small>/mo</small></div><ul><li>3 vendors</li><li>100 items</li><li>2 users</li></ul><a class="btn alt" href="/app?signup=1" data-i="cta">Start free trial</a></div>
+<div class="card pop"><h3>Pro</h3><div class="amt">$249<small>/mo</small></div><ul><li>Unlimited vendors and items</li><li>10 users</li><li>Usage insights and par suggestions</li><li>Missed-call recovery <em>(coming soon)</em></li><li>Google review requests <em>(coming soon)</em></li></ul><a class="btn" href="/app?signup=1" data-i="cta">Start free trial</a></div>
+<!-- Enterprise plan hidden until pricing is decided:
 <div class="card"><h3>Enterprise</h3><div class="amt">$499<small>/mo</small></div><ul><li>Everything in Pro</li><li>Unlimited users</li><li>Priority onboarding</li></ul><a class="btn alt" href="/app?signup=1" data-i="cta">Start free trial</a></div>
+-->
 </div></div></section>
 
 <section><div class="w founder"><blockquote data-i="quote">"I own a pizzeria. I got tired of running out of cheese on a Friday and finding price hikes weeks late, so I built MOE myself. It's the tool I wanted in my own kitchen."<br><br><strong>— Ronnie, owner and builder</strong></blockquote></div></section>
