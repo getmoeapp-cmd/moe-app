@@ -137,8 +137,8 @@ const compressImage = (file, maxWidth = 1200, quality = 0.7) => new Promise(asyn
 
 // ─── SUBSCRIPTION PLANS ──────────────────────────────────────────────────────
 const PLANS = {
-  starter:    { name: "Starter",    price: 299, vendors: 3,        items: 100,      users: 2,        label: "For small kitchens" },
-  pro:        { name: "Pro",        price: 399, vendors: Infinity, items: Infinity,  users: 10,       label: "For growing operations" },
+  starter:    { name: "Starter",    price: 149, vendors: 3,        items: 100,      users: 2,        label: "For small kitchens" },
+  pro:        { name: "Pro",        price: 249, vendors: Infinity, items: Infinity,  users: 10,       label: "For growing operations" },
   enterprise: { name: "Enterprise", price: 499, vendors: Infinity, items: Infinity,  users: Infinity, label: "For multi-location businesses" },
 };
 const TRIAL_DAYS = 14;
@@ -2992,7 +2992,7 @@ function PricingPage({ subscription, user, onLogout }) {
 
         {/* Plan cards */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))", gap:16, marginBottom:40 }}>
-          {Object.entries(PLANS).map(([key, plan]) => {
+          {Object.entries(PLANS).filter(([k]) => k !== "enterprise").map(([key, plan]) => {
             const isSelected = selected === key;
             const isPro = key === "pro";
             return (
@@ -3143,7 +3143,7 @@ function SubscriptionView({ subscription, user, trialDaysLeft, isTrialing, isAct
       {/* Change plan */}
       <h3 style={{ color:"#94a3b8", fontSize:14, fontWeight:600, margin:"0 0 12px" }}>{isActive ? "Change Plan" : "Upgrade Plan"}</h3>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))", gap:12 }}>
-        {Object.entries(PLANS).map(([key, plan]) => {
+        {Object.entries(PLANS).filter(([k]) => k !== "enterprise").map(([key, plan]) => {
           const isCurrent = key === currentPlanKey;
           return (
             <div key={key} style={{ background:"#0f1a2e", border:`1px solid ${isCurrent ? "#e2e8f0" : "#1e2d45"}`, borderRadius:12, padding:"18px 20px" }}>
@@ -3556,8 +3556,8 @@ French Fries, Case, , 12, 3, Freezer`}
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const LANDING_PLANS = [
-  { name: "Starter", price: 299, vendors: "3", items: "100", users: "2", features: ["Inventory tracking", "Order submission & history", "PDF export with business name", "Waste log with cost tracking", "Real-time sync across devices"], cta: "Start Free Trial" },
-  { name: "Pro", price: 399, vendors: "Unlimited", items: "Unlimited", users: "10", features: ["Everything in Starter", "AI-powered invoice import", "Insights & smart par suggestions", "Price tracker — flag vendor increases", "Waste log with $ loss estimates"], popular: true, cta: "Start Free Trial" },
+  { name: "Starter", price: 149, vendors: "3", items: "100", users: "2", features: ["Inventory tracking", "Order submission & history", "PDF export with business name", "Waste log with cost tracking", "Real-time sync across devices"], cta: "Start Free Trial" },
+  { name: "Pro", price: 249, vendors: "Unlimited", items: "Unlimited", users: "10", features: ["Everything in Starter", "AI-powered invoice import", "Insights & smart par suggestions", "Price tracker — flag vendor increases", "Waste log with $ loss estimates"], popular: true, cta: "Start Free Trial" },
   { name: "Enterprise", price: 499, vendors: "Unlimited", items: "Unlimited", users: "Unlimited", features: ["Everything in Pro", "Priority support", "Custom onboarding", "Multi-location ready", "Dedicated account manager"], cta: "Contact Sales" },
 ];
 
@@ -5632,7 +5632,7 @@ function SavingsQuiz() {
             <div style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:12, padding:"16px 20px", marginBottom:20, textAlign:"left" }}>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                 <div>
-                  <div style={{ color:"#4ade80", fontSize:14, fontWeight:700 }}>MOE Pro — $399/month</div>
+                  <div style={{ color:"#4ade80", fontSize:14, fontWeight:700 }}>MOE Pro — $249/month</div>
                   <div style={{ color:"#22c55e", fontSize:12, marginTop:2 }}>{paybackDays ? `Pays for itself in ${paybackDays} days` : "These answers do not show a monthly loss"}</div>
                 </div>
                 <div style={{ textAlign:"right" }}>
