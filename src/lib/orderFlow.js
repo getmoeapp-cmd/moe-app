@@ -63,6 +63,23 @@ export function vendorsDueOn(vendors, date = new Date()) {
   return (vendors || []).filter((v) => (v.name || "").trim() && (v.orderDays || []).includes(dow));
 }
 
+// Keep only sheets dated on/after `fromDay` ("YYYY-MM-DD"); drops keys that aren't sheets.
+export function recentSheets(values, fromDay) {
+  const out = {};
+  Object.entries(values || {}).forEach(([k, v]) => {
+    const p = parseSheetKey(k);
+    if (p && p.date >= fromDay) out[k] = v;
+  });
+  return out;
+}
+
+// True when an approved order already came from this count sheet (order ids are
+// "ord_<sheetKey>_<time>"), so closing the sheet again must not make a second draft.
+export function hasOrderForSheet(history, key) {
+  const pre = `ord_${key}_`;
+  return (history || []).some((o) => typeof o?.id === "string" && o.id.startsWith(pre));
+}
+
 // Counts on a sheet: { [itemId]: { q, by, at } } plus "_meta" / "_closed" keys.
 export function sheetCounts(sheet) {
   const out = {};
