@@ -18,7 +18,7 @@ export const SUPPORT_EMAIL = process.env.REACT_APP_SUPPORT_EMAIL || "hello@getmo
 export const DEMO_GROUPS = ["demo"];
 
 export const PLANS = [
-  { id: "starter", name: "Starter", price: 299 },
-  { id: "pro", name: "Pro", price: 399 },
+  { id: "starter", name: "Starter", price: 149 },
+  { id: "pro", name: "Pro", price: 249 },
   { id: "enterprise", name: "Enterprise", price: 499 },
 ];
