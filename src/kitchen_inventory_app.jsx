@@ -3768,7 +3768,7 @@ function LandingPage() {
             Stop losing money<br/>on <span style={{ color: "var(--accent)" }}>inventory</span>
           </h1>
           <p style={{ fontSize: "1.2rem", color: "var(--t2)", maxWidth: 560, margin: "0 auto 40px", lineHeight: 1.7 }}>
-            MOE counts your stock, builds your orders, catches what didn't get delivered, and flags price hikes — so you stop losing $500+ a week to over-ordering, waste, and emergency runs.
+            MOE counts your stock, builds your orders, catches what didn't get delivered, and flags price hikes — so you can cut down on over-ordering, waste, and emergency runs.
           </p>
           <div className="hero-acts" style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }}>
             <button className="btn-p" onClick={() => window.__moeNavigate("/quiz")}>Start Free 14-Day Trial {arrowSvg}</button>
@@ -3777,14 +3777,12 @@ function LandingPage() {
           <p style={{ fontSize: "0.82rem", color: "var(--t3)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
             {checkSvg} No credit card required · Setup in under 5 minutes
           </p>
-          <div className="save-bar" style={{ marginTop: 60, display: "flex", justifyContent: "center", gap: 48, flexWrap: "wrap" }}>
-            {[["$500+","Saved per Week","var(--green)"],["80%","Less Waste","var(--amber)"],["Seconds","To Place an Order","var(--accent)"]].map(([num,lbl,col]) => (
-              <div key={lbl} style={{ textAlign: "center" }}>
-                <div className="snum" style={{ fontFamily: "var(--fm)", fontSize: "2.2rem", fontWeight: 700, color: col, letterSpacing: "-0.03em" }}>{num}</div>
-                <div style={{ fontSize: "0.8rem", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 4 }}>{lbl}</div>
-              </div>
-            ))}
-          </div>
+          <figure className="save-bar" style={{ margin: "48px 0 0", padding: 0, maxWidth: 460 }}>
+            <blockquote style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700, lineHeight: 1.3, letterSpacing: "-0.02em", color: "var(--accent)" }}>
+              “I saved over $500 a week on ordering at my pizzeria.”
+            </blockquote>
+            <figcaption style={{ fontSize: "0.8rem", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 8 }}>Ronnie, owner and founder</figcaption>
+          </figure>
          </div>
          <img className="hero-bot" src="/trial/moe-chef.png" width="460" height="603" loading="eager" alt="Moe, the Restaurant Agent: a friendly white robot with a chef hat and orange headphones, waving, wearing a navy apron" />
         </div>
@@ -3982,7 +3980,7 @@ function LandingPage() {
         <div style={{ position: "absolute", bottom: -300, left: "50%", transform: "translateX(-50%)", width: 800, height: 800, background: "radial-gradient(circle, var(--glow) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div className="ctn fade-up" style={{ position: "relative", zIndex: 2 }}>
           <h2 style={{ fontSize: "clamp(1.8rem,4vw,2.8rem)", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 16, lineHeight: 1.15 }}>Ready to stop bleeding money<br/>on inventory?</h2>
-          <p style={{ fontSize: "1.1rem", color: "var(--t2)", marginBottom: 36 }}>Join the small businesses saving $500+ per week with smarter ordering.</p>
+          <p style={{ fontSize: "1.1rem", color: "var(--t2)", marginBottom: 36 }}>Join the restaurants taking the guesswork out of ordering.</p>
           <button className="btn-p" onClick={() => window.__moeNavigate("/quiz")} style={{ fontSize: "1.1rem", padding: "18px 48px" }}>
             Start Your Free 14-Day Trial {arrowSvg}
           </button>
