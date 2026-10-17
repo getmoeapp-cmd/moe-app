@@ -33,6 +33,7 @@ details{border-bottom:1px solid var(--line);padding:14px 0}summary{font-weight:7
 .form .btn{width:100%;margin-top:18px}.note{font-size:13px;color:var(--mute);margin-top:10px}
 .sticky{display:none}
 @media(max-width:700px){.hero .w{grid-template-columns:1fr}.hero .txt{padding-bottom:8px;text-align:center}.hero img{max-width:260px;order:2}.hero .sub{margin:0 auto 22px}h1{font-size:34px}.sticky{display:block;position:fixed;left:0;right:0;bottom:0;padding:10px;background:#fff;border-top:1px solid var(--line);z-index:60}.sticky .btn{display:block;text-align:center}body{padding-bottom:70px}header .btn.sm{display:none}}
+.trust{background:#fff;padding:36px 0;border-bottom:1px solid var(--line)}.trust .story{max-width:720px;margin:0 auto 22px;text-align:center}.trust .story strong{display:block;color:var(--navy);font-size:20px;margin-bottom:6px}.trust .story p{margin:0;color:var(--mute);font-size:17px}.trust .pts{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.trust .pt{border:1px solid var(--line);border-top:3px solid var(--orange);border-radius:12px;padding:14px 16px;font-weight:600;color:var(--navy);text-align:center}.trust .slot{margin-top:18px;text-align:center;color:var(--mute);font-size:14px;border:1px dashed var(--line);border-radius:12px;padding:12px}
 </style></head><body>
 <header><div class="w"><div class="logo">Moe</div><div><button class="lang" id="lang" type="button">Español</button><a class="btn sm" href="/app?signup=1" data-i="cta">Start free trial</a></div></div></header>
 
@@ -46,6 +47,12 @@ details{border-bottom:1px solid var(--line);padding:14px 0}summary{font-weight:7
 <p class="fine" data-i="fine">No credit card required. Setup in minutes. Cancel anytime.</p>
 </div>
 <img src="/trial/moe-hero.png" width="304" height="293" alt="Moe, the Restaurant Agent: a friendly white robot with orange headphones, waving, wearing a navy apron">
+</div></div>
+<!-- OWNER QUOTES SLOT: replace the placeholder below with real, permissioned owner quotes only. -->
+<div class="trust"><div class="w">
+<div class="story"><strong data-i="t_h">Built by a working pizzeria owner</strong><p data-i="t_p">"I own a pizzeria and built MOE because I was tired of paper counts and guessing at orders." <span style="white-space:nowrap">— Ronnie, owner and builder</span></p></div>
+<div class="pts"><div class="pt" data-i="t1">Catches vendor price hikes</div><div class="pt" data-i="t2">Auto-submits missed orders</div><div class="pt" data-i="t3">Counts in minutes on a phone</div></div>
+<div class="slot" id="owner-quotes-slot" data-i="t_slot">Owner quotes coming soon.</div>
 </div></div>
 
 <section><div class="w"><h2 data-i="h_pain">Running a kitchen is hard enough.</h2>
@@ -101,7 +108,7 @@ details{border-bottom:1px solid var(--line);padding:14px 0}summary{font-weight:7
 <footer style="padding:30px 0;text-align:center;color:var(--mute);font-size:14px">© MOE — Make Ordering Easy. <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></footer>
 <div class="sticky"><a class="btn" href="/app?signup=1" data-i="cta">Start free trial</a></div>
 <script>
-var es={cta:"Empezar prueba gratis",cta2:"Empieza tu prueba gratis de 14 días",h1:"Nunca te quedes sin producto.<br>Nunca pierdas un pedido.",sub:"MOE cuenta tu inventario, arma tus pedidos, detecta lo que no llegó y te avisa cuando suben los precios. Hecho por un dueño de pizzería.",fine:"Sin tarjeta de crédito. Cancela cuando quieras.",submit:"Empezar mi prueba gratis",h_trial:"Empieza tu prueba gratis de 14 días"};
+var es={t_h:"Hecho por un dueño de pizzería en activo",t_p:"\"Tengo una pizzería y creé MOE porque estaba cansado de contar a mano y adivinar los pedidos.\" <span style=\"white-space:nowrap\">— Ronnie, dueño y creador</span>",t1:"Detecta aumentos de precio de proveedores",t2:"Envía automáticamente los pedidos que faltan",t3:"Cuenta en minutos desde el teléfono",t_slot:"Próximamente: opiniones de dueños.",cta:"Empezar prueba gratis",cta2:"Empieza tu prueba gratis de 14 días",h1:"Nunca te quedes sin producto.<br>Nunca pierdas un pedido.",sub:"MOE cuenta tu inventario, arma tus pedidos, detecta lo que no llegó y te avisa cuando suben los precios. Hecho por un dueño de pizzería.",fine:"Sin tarjeta de crédito. Cancela cuando quieras.",submit:"Empezar mi prueba gratis",h_trial:"Empieza tu prueba gratis de 14 días"};
 var en={};document.querySelectorAll('[data-i]').forEach(function(e){en[e.dataset.i]=en[e.dataset.i]||e.innerHTML});
 var on=false;document.getElementById('lang').onclick=function(){on=!on;this.textContent=on?'English':'Español';document.querySelectorAll('[data-i]').forEach(function(e){var k=e.dataset.i;e.innerHTML=(on&&es[k])?es[k]:en[k]})};
 </script></body></html>
