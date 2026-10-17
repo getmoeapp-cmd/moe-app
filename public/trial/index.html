@@ -13,7 +13,7 @@ header .w{display:flex;align-items:center;justify-content:space-between;height:6
 .btn{display:inline-block;background:var(--orange);color:var(--navy);font-weight:700;padding:14px 24px;border-radius:10px;text-decoration:none;border:0;font-size:16px;cursor:pointer}
 .btn.sm{padding:9px 16px;font-size:14px}.btn.alt{background:#fff;color:var(--navy);border:2px solid var(--navy)}
 .lang{background:none;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-weight:600;cursor:pointer;margin-right:10px}
-.hero{background:var(--cream);padding:48px 0 0;overflow:hidden}.hero .w{display:grid;gap:12px;grid-template-columns:1.15fr .85fr;align-items:end}.hero .txt{padding-bottom:56px;text-align:left}.hero .sub{margin:0 0 26px}.hero img{width:100%;max-width:380px;height:auto;justify-self:center;display:block}.tag{font-family:'Pacifico',cursive;color:var(--navy);font-size:22px;margin:0 0 20px}.tag span{color:var(--orange)}
+.hero{background:var(--cream);padding:48px 0 0;overflow:hidden}.hero .w{display:grid;gap:12px;grid-template-columns:1.15fr .85fr;align-items:end}.hero .txt{padding-bottom:56px;text-align:left}.hero .sub{margin:0 0 26px}.hero img{width:100%;max-width:270px;height:auto;justify-self:center;display:block}.tag{font-family:'Pacifico',cursive;color:var(--navy);font-size:22px;margin:0 0 20px}.tag span{color:var(--orange)}
 .eyebrow{color:var(--coral);font-weight:800;text-transform:uppercase;letter-spacing:1.5px;font-size:13px}
 h1{font-size:clamp(32px,5vw,48px);line-height:1.08;margin:12px 0}h2{font-size:clamp(26px,4vw,36px);margin:0 0 10px}
 .sub{font-size:19px;color:var(--mute);max-width:640px;margin:0 auto 26px}.fine{font-size:14px;color:var(--mute);margin-top:12px}
@@ -32,7 +32,7 @@ details{border-bottom:1px solid var(--line);padding:14px 0}summary{font-weight:7
 .form input,.form select{width:100%;padding:13px;border:1px solid #cfc6b8;border-radius:8px;font-size:16px}
 .form .btn{width:100%;margin-top:18px}.note{font-size:13px;color:var(--mute);margin-top:10px}
 .sticky{display:none}
-@media(max-width:700px){.hero .w{grid-template-columns:1fr}.hero .txt{padding-bottom:8px;text-align:center}.hero img{max-width:260px;order:2}.hero .sub{margin:0 auto 22px}h1{font-size:34px}.sticky{display:block;position:fixed;left:0;right:0;bottom:0;padding:10px;background:#fff;border-top:1px solid var(--line);z-index:60}.sticky .btn{display:block;text-align:center}body{padding-bottom:70px}header .btn.sm{display:none}}
+@media(max-width:700px){.hero .w{grid-template-columns:1fr}.hero .txt{padding-bottom:8px;text-align:center}.hero img{max-width:200px;order:2}.hero .sub{margin:0 auto 22px}h1{font-size:34px}.sticky{display:block;position:fixed;left:0;right:0;bottom:0;padding:10px;background:#fff;border-top:1px solid var(--line);z-index:60}.sticky .btn{display:block;text-align:center}body{padding-bottom:70px}header .btn.sm{display:none}}
 .trust{background:#fff;padding:36px 0;border-bottom:1px solid var(--line)}.trust .story{max-width:720px;margin:0 auto 22px;text-align:center}.trust .story strong{display:block;color:var(--navy);font-size:20px;margin-bottom:6px}.trust .story p{margin:0;color:var(--mute);font-size:17px}.trust .pts{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.trust .pt{border:1px solid var(--line);border-top:3px solid var(--orange);border-radius:12px;padding:14px 16px;font-weight:600;color:var(--navy);text-align:center}.trust .slot{margin-top:18px;text-align:center;color:var(--mute);font-size:14px;border:1px dashed var(--line);border-radius:12px;padding:12px}
 /* MOE app look: cream/teal palette, Segoe UI, 12px radii (override layer) */
 :root{--navy:#1E2D3D;--orange:#0f766e;--cream:#f4f1ea;--gray:#e7e0d6;--coral:#0f766e;--ink:#1c1917;--mute:#57534e;--line:#e7e0d6;--surface:#fffcf7}
@@ -76,7 +76,7 @@ html,body{overflow-x:hidden}
 <a class="btn" href="/app?signup=1" data-i="cta2">Start your 14-day free trial</a>
 <p class="fine" data-i="fine">No credit card required. Setup in minutes. Cancel anytime.</p>
 </div>
-<img src="/trial/moe-hero.png" width="304" height="293" alt="Moe, the Restaurant Agent: a friendly white robot with orange headphones, waving, wearing a navy apron">
+<img src="/trial/moe-chef.png" width="460" height="603" alt="Moe, the Restaurant Agent: a friendly white robot with a chef hat and orange headphones, waving, wearing a navy apron">
 </div></div>
 <!-- OWNER QUOTES SLOT: remove display:none from the slot below and replace its text with real, permissioned owner quotes only. -->
 <div class="trust"><div class="w">
