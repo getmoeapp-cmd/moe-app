@@ -684,7 +684,7 @@ export function MoeApp({ initialUser, onLogout }) {
         button:not(:disabled):hover{filter:brightness(1.08)}
         button:not(:disabled):active{transform:translateY(1px) scale(0.99)}
         input,select,textarea{transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;}
-        input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px rgba(56,189,248,0.12)}
+        input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px rgba(15,118,110,0.10)}
         a{transition:color .15s ease}
 
         /* Custom dark scrollbars */
@@ -1112,7 +1112,7 @@ function DashboardView({ user, inventory, stock, vendors, history, stockSnapshot
             { key: "insights", icon: "insights", title: "View Insights", sub: "Usage & par suggestions" },
           ].map(a => (
             <button key={a.key} onClick={() => setView(a.key)} style={{ ...cardBase, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, padding: "16px 18px" }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(56,189,248,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(15,118,110,0.10)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <Icon name={a.icon} size={20} color="#38bdf8" />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1376,7 +1376,7 @@ function RecipeEditor({ initial, allItems, latestPricePerUnit, onSave, onCancel,
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <div style={{ color: "#f1f5f9", fontSize: 16, fontWeight: 600 }}>Ingredients</div>
           <button onClick={() => setPickerOpen(true)}
-            style={{ background: "rgba(56,189,248,0.12)", border: "1px solid rgba(56,189,248,0.3)", borderRadius: 8, color: "#38bdf8", padding: "7px 12px", cursor: "pointer", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
+            style={{ background: "rgba(15,118,110,0.10)", border: "1px solid rgba(56,189,248,0.3)", borderRadius: 8, color: "#38bdf8", padding: "7px 12px", cursor: "pointer", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
             <Icon name="plus" size={14} color="#38bdf8" /> Add ingredient
           </button>
         </div>
@@ -3585,7 +3585,7 @@ const FAQS = [
   { q: "Do I need to enter all my items manually?", a: "No. You can upload a CSV file, or just take a photo of any invoice or order sheet. Our AI extracts all the items, units, and quantities for you." },
   { q: "How does the price tracker work?", a: "Enter your vendor prices each week — manually, by uploading a photo of the invoice, or via CSV. MOE compares this week's prices to last week's and flags every increase with the exact dollar and percentage change." },
   { q: "What does the waste log track?", a: "Every item your team throws away — the quantity, the reason (expired, spoiled, damaged, etc.), and who logged it. If you've entered prices, MOE estimates the dollar value of the waste too." },
-  { q: "What happens after the trial?", a: "Choose a plan that fits your business. All your data carries over — nothing is lost. Plans start at $299/month and pay for themselves in the first week." },
+  { q: "What happens after the trial?", a: "Choose a plan that fits your business. All your data carries over — nothing is lost. Plans start at $149/month and pay for themselves in the first week." },
   { q: "Does it work on phones?", a: "MOE is built mobile-first. Your team counts stock on their phones while walking the floor. Orders can be submitted from any device." },
   { q: "Can I use it for multiple locations?", a: "Yes. Enterprise plan supports multiple locations, each with their own inventory, team, and vendor setup." },
 ];
@@ -3652,15 +3652,15 @@ function LandingPage() {
     { q: "Do I need to install anything?", a: "No. MOE runs entirely in your browser — desktop, tablet, or phone. No downloads needed." },
   ];
 
-  const checkSvg = <svg width="14" height="14" fill="none" stroke="#34d399" strokeWidth="2.5"><path d="M2 7l3.5 3.5 7-7"/></svg>;
-  const bulletSvg = <svg width="16" height="16" fill="none" stroke="#34d399" strokeWidth="2.5"><path d="M2 8.5l4 4 8-8"/></svg>;
+  const checkSvg = <svg width="14" height="14" fill="none" stroke="#0f766e" strokeWidth="2.5"><path d="M2 7l3.5 3.5 7-7"/></svg>;
+  const bulletSvg = <svg width="16" height="16" fill="none" stroke="#0f766e" strokeWidth="2.5"><path d="M2 8.5l4 4 8-8"/></svg>;
   const arrowSvg = <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 8h10M9 4l4 4-4 4"/></svg>;
   const plusSvg = <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 3v12M3 9h12"/></svg>;
 
   const css = `
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
     .lp * { box-sizing: border-box; margin: 0; padding: 0; }
-    .lp { --bg: #060a12; --card: #0c1220; --card-h: #111827; --surface: #141c2e; --border: rgba(148,163,184,0.1); --border-b: rgba(148,163,184,0.2); --t1: #f1f5f9; --t2: #94a3b8; --t3: #64748b; --accent: #38bdf8; --glow: rgba(56,189,248,0.15); --green: #34d399; --amber: #fbbf24; --rose: #fb7185; --r: 12px; --rl: 20px; --ff: 'DM Sans',sans-serif; --fm: 'Space Mono',monospace; font-family: var(--ff); background: var(--bg); color: var(--t1); line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+    .lp { --bg: #f4f1ea; --card: #fffcf7; --card-h: #fbf7ef; --surface: #f1ece2; --border: #e7e0d6; --border-b: #d6cdbf; --t1: #1c1917; --t2: #57534e; --t3: #78716c; --accent: #0f766e; --on-accent: #ffffff; --glow: rgba(15,118,110,0.10); --green: #0f766e; --amber: #b45309; --rose: #be123c; --r: 12px; --rl: 16px; --ff: 'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif; --fm: 'Segoe UI',system-ui,sans-serif; font-family: var(--ff); background: var(--bg); color: var(--t1); line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
     .lp a { color: inherit; text-decoration: none; }
     .lp .ctn { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
     .lp .fade-up { opacity: 0; transform: translateY(30px); transition: opacity 0.7s, transform 0.7s; }
@@ -3680,6 +3680,28 @@ function LandingPage() {
     .lp .mock-row .vl.blu { color: var(--accent); }
     .lp .mock-row .vl.amb { color: var(--amber); }
     .lp .mock-hdr { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--t3); margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .lp button { font-family: inherit; }
+    body:has(.lp) { background: #f4f1ea; }
+    .lp .moe-wordmark { font-family: 'Pacifico', cursive; font-weight: 400; font-size: 32px; letter-spacing: 0; color: #1E2D3D; line-height: 1; padding: 6px 0; }
+    .lp h1, .lp h2, .lp h3, .lp h4, .lp .stitle { color: var(--t1); letter-spacing: -0.03em; }
+    .lp .slbl { font-weight: 700; }
+    .lp .btn-p { color: var(--on-accent); min-height: 48px; justify-content: center; box-shadow: 0 1px 2px rgba(28,25,23,0.12); border-radius: 12px; }
+    .lp .btn-p:hover { background: #0d6660; box-shadow: 0 6px 16px rgba(15,118,110,0.22); }
+    .lp .btn-s { background: var(--card); border-radius: 12px; min-height: 48px; justify-content: center; }
+    .lp .btn-s:hover { background: #fff; border-color: var(--accent); }
+    .lp nav button, .lp nav a { min-height: 44px; }
+    .lp nav button[style*="var(--accent)"] { color: var(--on-accent) !important; border-radius: 12px !important; }
+    .lp .mob-toggle { min-width: 44px; justify-content: center; }
+    .lp .mock-row { background: var(--surface); }
+    .lp section button[style*="var(--accent)"] { color: var(--on-accent) !important; }
+    .lp .price-card, .lp [class*="card"] { box-shadow: 0 1px 2px rgba(28,25,23,0.05); }
+    .lp footer a { display: inline-flex; align-items: center; min-height: 44px; }
+    .lp details summary, .lp [class*="faq"] button { min-height: 44px; }
+    .lp .hero-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 24px; align-items: center; }
+    .lp .hero-bot { width: 100%; max-width: 300px; height: auto; justify-self: center; display: block; }
+    .lp .hero-txt { text-align: left !important; }
+    .lp .hero-txt > p, .lp .hero-txt h1 + p { margin-left: 0 !important; }
+    .lp .hero-txt .hero-acts, .lp .hero-txt .save-bar, .lp .hero-txt > p:last-of-type { justify-content: flex-start !important; }
     @media (max-width: 768px) {
       .lp .desk-nav { display: none !important; }
       .lp .mob-toggle { display: flex !important; }
@@ -3689,6 +3711,11 @@ function LandingPage() {
       .lp .price-grid { max-width: 400px; margin: 0 auto; }
       .lp .price-card.feat { transform: none !important; }
       .lp .proof-inner { flex-direction: column !important; gap: 24px !important; }
+      .lp .hero-grid { grid-template-columns: 1fr; }
+      .lp .hero-txt { text-align: center !important; }
+      .lp .hero-txt > p, .lp .hero-txt h1 + p { margin-left: auto !important; }
+      .lp .hero-txt .hero-acts, .lp .hero-txt .save-bar, .lp .hero-txt > p:last-of-type { justify-content: center !important; }
+      .lp .hero-bot { order: 2; max-width: 210px; margin: 8px auto 0; }
       .lp .hero-acts { flex-direction: column; align-items: center; }
       .lp .hero-acts .btn-p, .lp .hero-acts .btn-s { width: 100%; justify-content: center; }
       .lp .save-bar { gap: 24px !important; }
@@ -3701,28 +3728,10 @@ function LandingPage() {
       <style>{css}</style>
 
       {/* ═══ NAV ═══ */}
-      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "16px 0", background: "rgba(6,10,18,0.8)", backdropFilter: "blur(20px)", borderBottom: "1px solid var(--border)" }}>
+      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "16px 0", background: "rgba(244,241,234,0.92)", backdropFilter: "blur(20px)", borderBottom: "1px solid var(--border)" }}>
         <div className="ctn" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, fontSize: "1.25rem", letterSpacing: "-0.02em", color: "inherit", textDecoration: "none" }}>
-            <svg viewBox="0 0 40 40" fill="none" width="36" height="36">
-              <polygon points="20,2.5 36.5,11.25 36.5,28.75 20,37.5 3.5,28.75 3.5,11.25" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.35"/>
-              <polygon points="20,8 31,14 31,26 20,32 9,26 9,14" fill="none" stroke="#38bdf8" strokeWidth="1.2" opacity="0.5"/>
-              <polygon points="20,13 25.5,16.5 25.5,23.5 20,27 14.5,23.5 14.5,16.5" fill="#38bdf8" opacity="0.12"/>
-              <line x1="20" y1="2.5" x2="20" y2="8" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
-              <line x1="36.5" y1="11.25" x2="31" y2="14" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
-              <line x1="36.5" y1="28.75" x2="31" y2="26" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
-              <line x1="20" y1="37.5" x2="20" y2="32" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
-              <line x1="3.5" y1="28.75" x2="9" y2="26" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
-              <line x1="3.5" y1="11.25" x2="9" y2="14" stroke="#38bdf8" strokeWidth="0.8" opacity="0.3"/>
-              <circle cx="20" cy="2.5" r="1.8" fill="#38bdf8" opacity="0.5"/>
-              <circle cx="36.5" cy="11.25" r="1.8" fill="#38bdf8" opacity="0.5"/>
-              <circle cx="36.5" cy="28.75" r="1.8" fill="#38bdf8" opacity="0.5"/>
-              <circle cx="20" cy="37.5" r="1.8" fill="#38bdf8" opacity="0.5"/>
-              <circle cx="3.5" cy="28.75" r="1.8" fill="#38bdf8" opacity="0.5"/>
-              <circle cx="3.5" cy="11.25" r="1.8" fill="#38bdf8" opacity="0.5"/>
-              <text x="20" y="24.5" textAnchor="middle" fill="#38bdf8" fontFamily="DM Sans,sans-serif" fontWeight="700" fontSize="13">M</text>
-            </svg>
-            MOE
+          <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, fontSize: "1.25rem", color: "inherit", textDecoration: "none" }}>
+            <span className="moe-wordmark">Moe</span>
           </a>
           <button className="mob-toggle" onClick={() => setMenuOpen(!menuOpen)} style={{ display: "none", background: "none", border: "none", color: "var(--t1)", cursor: "pointer", alignItems: "center" }}>
             <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
@@ -3732,7 +3741,7 @@ function LandingPage() {
             <a href="#pricing" style={{ fontSize: "0.875rem", color: "var(--t2)", fontWeight: 500 }}>Pricing</a>
             <a href="#faq" style={{ fontSize: "0.875rem", color: "var(--t2)", fontWeight: 500 }}>FAQ</a>
             <button onClick={() => window.__moeNavigate("/app")} style={{ fontSize: "0.875rem", color: "var(--t2)", fontWeight: 500, background: "none", border: "none", cursor: "pointer" }}>Sign In</button>
-            <button onClick={() => window.__moeNavigate("/quiz")} style={{ background: "var(--accent)", color: "var(--bg)", padding: "10px 22px", borderRadius: 8, fontWeight: 600, fontSize: "0.875rem", border: "none", cursor: "pointer" }}>Start Free Trial</button>
+            <button onClick={() => window.__moeNavigate("/quiz")} style={{ background: "var(--accent)", color: "var(--on-accent)", padding: "10px 22px", borderRadius: 8, fontWeight: 600, fontSize: "0.875rem", border: "none", cursor: "pointer" }}>Start Free Trial</button>
           </div>
         </div>
         {menuOpen && (
@@ -3741,7 +3750,7 @@ function LandingPage() {
             <a href="#pricing" onClick={() => setMenuOpen(false)} style={{ fontSize: 15, color: "var(--t2)", fontWeight: 500, padding: "8px 0" }}>Pricing</a>
             <a href="#faq" onClick={() => setMenuOpen(false)} style={{ fontSize: 15, color: "var(--t2)", fontWeight: 500, padding: "8px 0" }}>FAQ</a>
             <button onClick={() => { window.__moeNavigate("/app"); setMenuOpen(false); }} style={{ fontSize: 15, color: "var(--t2)", fontWeight: 500, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: "8px 0" }}>Sign In</button>
-            <button onClick={() => { window.__moeNavigate("/quiz"); setMenuOpen(false); }} style={{ background: "var(--accent)", color: "var(--bg)", padding: "12px", borderRadius: 8, fontWeight: 600, border: "none", cursor: "pointer", textAlign: "center" }}>Start Free Trial</button>
+            <button onClick={() => { window.__moeNavigate("/quiz"); setMenuOpen(false); }} style={{ background: "var(--accent)", color: "var(--on-accent)", padding: "12px", borderRadius: 8, fontWeight: 600, border: "none", cursor: "pointer", textAlign: "center" }}>Start Free Trial</button>
           </div>
         )}
       </nav>
@@ -3749,16 +3758,17 @@ function LandingPage() {
       {/* ═══ HERO ═══ */}
       <section style={{ padding: "160px 0 100px", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: -200, left: "50%", transform: "translateX(-50%)", width: 800, height: 800, background: "radial-gradient(circle, var(--glow) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div className="ctn fade-up" style={{ position: "relative", zIndex: 2, textAlign: "center", maxWidth: 720, margin: "0 auto" }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 16px", background: "var(--glow)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 100, fontSize: "0.8rem", fontWeight: 600, color: "var(--accent)", marginBottom: 28, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+        <div className="ctn fade-up hero-grid" style={{ position: "relative", zIndex: 2, maxWidth: 1100, margin: "0 auto" }}>
+         <div className="hero-txt" style={{ textAlign: "center" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 16px", background: "var(--glow)", border: "1px solid rgba(15,118,110,0.25)", borderRadius: 100, fontSize: "0.8rem", fontWeight: 600, color: "var(--accent)", marginBottom: 28, letterSpacing: "0.04em", textTransform: "uppercase" }}>
             <span style={{ width: 6, height: 6, background: "var(--accent)", borderRadius: "50%", animation: "pulse-dot 2s infinite" }} /> Now in Early Access
           </div>
           <style>{`@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
           <h1 style={{ fontSize: "clamp(2.5rem,6vw,4rem)", fontWeight: 700, lineHeight: 1.08, letterSpacing: "-0.035em", marginBottom: 24 }}>
-            Stop losing money<br/>on <span style={{ background: "linear-gradient(135deg,var(--accent),#a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>inventory</span>
+            Stop losing money<br/>on <span style={{ color: "var(--accent)" }}>inventory</span>
           </h1>
           <p style={{ fontSize: "1.2rem", color: "var(--t2)", maxWidth: 560, margin: "0 auto 40px", lineHeight: 1.7 }}>
-            MOE counts your stock, builds your orders, catches what didn't get delivered, and flags price hikes — so you stop losing $500+ a week to over-ordering, waste, and emergency runs.
+            MOE counts your stock, builds your orders, catches what didn't get delivered, and flags price hikes — so you can cut down on over-ordering, waste, and emergency runs.
           </p>
           <div className="hero-acts" style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }}>
             <button className="btn-p" onClick={() => window.__moeNavigate("/quiz")}>Start Free 14-Day Trial {arrowSvg}</button>
@@ -3767,14 +3777,14 @@ function LandingPage() {
           <p style={{ fontSize: "0.82rem", color: "var(--t3)", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
             {checkSvg} No credit card required · Setup in under 5 minutes
           </p>
-          <div className="save-bar" style={{ marginTop: 60, display: "flex", justifyContent: "center", gap: 48, flexWrap: "wrap" }}>
-            {[["$500+","Saved per Week","var(--green)"],["80%","Less Waste","var(--amber)"],["Seconds","To Place an Order","var(--accent)"]].map(([num,lbl,col]) => (
-              <div key={lbl} style={{ textAlign: "center" }}>
-                <div className="snum" style={{ fontFamily: "var(--fm)", fontSize: "2.2rem", fontWeight: 700, color: col, letterSpacing: "-0.03em" }}>{num}</div>
-                <div style={{ fontSize: "0.8rem", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 4 }}>{lbl}</div>
-              </div>
-            ))}
-          </div>
+          <figure className="save-bar" style={{ margin: "48px 0 0", padding: 0, maxWidth: 460 }}>
+            <blockquote style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700, lineHeight: 1.3, letterSpacing: "-0.02em", color: "var(--accent)" }}>
+              “I saved $26,000 in a year on ordering at my pizzeria.”
+            </blockquote>
+            <figcaption style={{ fontSize: "0.8rem", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 8 }}>Ronnie, owner and founder</figcaption>
+          </figure>
+         </div>
+         <img className="hero-bot" src="/trial/moe-chef.png" width="460" height="603" loading="eager" alt="Moe, the Restaurant Agent: a friendly white robot with a chef hat and orange headphones, waving, wearing a navy apron" />
         </div>
       </section>
 
@@ -3832,17 +3842,17 @@ function LandingPage() {
           </div>
 
           {[
-            { tag: "Inventory", tagCls: "rgba(56,189,248,0.12)", tagCol: "var(--accent)", title: "Know exactly what you have — and what to order", desc: "Do a quick count and MOE builds the order for you based on what you actually use. No more guessing, no more spreadsheets.", bullets: ["Fast stock counts by section","Usage-based par suggestions","Orders build themselves"],
+            { tag: "Inventory", tagCls: "rgba(15,118,110,0.10)", tagCol: "var(--accent)", title: "Know exactly what you have — and what to order", desc: "Do a quick count and MOE builds the order for you based on what you actually use. No more guessing, no more spreadsheets.", bullets: ["Fast stock counts by section","Usage-based par suggestions","Orders build themselves"],
               mock: [["Mozzarella (5lb)","12 units","blu"],["Flour (50lb bag)","8 units","grn"],["Olive Oil (gal)","2 units ⚠","red"],["Pepperoni (10lb)","6 units","grn"]], mockTitle: "Your Stock Count" },
-            { tag: "Delivery Check-In", tagCls: "rgba(56,189,248,0.12)", tagCol: "var(--accent)", title: "Never get blindsided by a missing item again", desc: "When a delivery arrives, check it in seconds. MOE flags anything short, out of stock, or left off the truck — so you find out today, not when you've run out mid-rush.", bullets: ["Catch shortfalls the day they happen","One-tap add back to your next order","Flags items you forgot to order at all"],
+            { tag: "Delivery Check-In", tagCls: "rgba(15,118,110,0.10)", tagCol: "var(--accent)", title: "Never get blindsided by a missing item again", desc: "When a delivery arrives, check it in seconds. MOE flags anything short, out of stock, or left off the truck — so you find out today, not when you've run out mid-rush.", bullets: ["Catch shortfalls the day they happen","One-tap add back to your next order","Flags items you forgot to order at all"],
               mock: [["Penne (case)","Out of stock ⚠","red"],["Mozzarella (5lb)","Came in ✓","grn"],["Tomatoes (case)","Short 2 of 5 ⚠","red"],["Flour (50lb)","Came in ✓","grn"]], mockTitle: "Delivery Check-In" },
-            { tag: "Usage Insights", tagCls: "rgba(167,139,250,0.12)", tagCol: "#a78bfa", title: "See what you actually use every week", desc: "MOE measures real usage from your stock counts — so if you carry 20 but only use 13, it tells you to trim to 16 and stop tying up cash in your walk-in.", bullets: ["Tracks true weekly usage","Flags over-ordering & dead stock","Set the right par in one tap"],
+            { tag: "Usage Insights", tagCls: "rgba(15,118,110,0.10)", tagCol: "var(--accent)", title: "See what you actually use every week", desc: "MOE measures real usage from your stock counts — so if you carry 20 but only use 13, it tells you to trim to 16 and stop tying up cash in your walk-in.", bullets: ["Tracks true weekly usage","Flags over-ordering & dead stock","Set the right par in one tap"],
               mock: [["Flour","13 used / 20 stocked","amb"],["→ Recommended par","16 units","grn"],["Mozzarella","9 used / 14 stocked","amb"],["→ You're over by","5 cases","red"]], mockTitle: "Usage Insights" },
-            { tag: "Waste Log", tagCls: "rgba(251,113,133,0.12)", tagCol: "var(--rose)", title: "See where your money goes to die", desc: "Log every item that hits the trash with reason codes and cost estimates. Spot the patterns, fix the leaks.", bullets: ["Reason-coded waste tracking","Automatic cost estimation","Weekly trend analysis"],
+            { tag: "Waste Log", tagCls: "rgba(190,18,60,0.08)", tagCol: "var(--rose)", title: "See where your money goes to die", desc: "Log every item that hits the trash with reason codes and cost estimates. Spot the patterns, fix the leaks.", bullets: ["Reason-coded waste tracking","Automatic cost estimation","Weekly trend analysis"],
               mock: [["Total waste cost","-$127.40","red"],["vs. last week","↓ 34%","grn"],["Expired produce","$68.20","red"],["Over-prepped","$41.00","red"]], mockTitle: "This Week's Waste" },
-            { tag: "Price Tracker", tagCls: "rgba(251,191,36,0.12)", tagCol: "var(--amber)", title: "Catch price hikes before they eat your margin", desc: "Set a price once and MOE carries it across every order. After each order, do a 30-second price check — confirm what's the same, edit only what changed, and get a weekly food spend total.", bullets: ["Set it once, it carries over","Flags week-over-week increases","Weekly food spend, automatically"],
+            { tag: "Price Tracker", tagCls: "rgba(180,83,9,0.10)", tagCol: "var(--amber)", title: "Catch price hikes before they eat your margin", desc: "Set a price once and MOE carries it across every order. After each order, do a 30-second price check — confirm what's the same, edit only what changed, and get a weekly food spend total.", bullets: ["Set it once, it carries over","Flags week-over-week increases","Weekly food spend, automatically"],
               mock: [["Chicken breast (/lb)","$3.89 → $4.42 ↑14%","red"],["Heavy cream (qt)","$4.10 → $4.55 ↑11%","red"],["Romaine lettuce","$2.20 → $2.15 ↓2%","grn"],["This week's spend","$3,840","blu"]], mockTitle: "Price Alerts" },
-            { tag: "AI Import", tagCls: "rgba(52,211,153,0.12)", tagCol: "var(--green)", title: "Build your inventory in minutes, not hours", desc: "Just snap a photo of your invoice and MOE's AI builds your full item list.", bullets: ["AI-generated item lists","Pre-set categories & units","Edit anything after import"],
+            { tag: "AI Import", tagCls: "rgba(15,118,110,0.10)", tagCol: "var(--green)", title: "Build your inventory in minutes, not hours", desc: "Just snap a photo of your invoice and MOE's AI builds your full item list.", bullets: ["AI-generated item lists","Pre-set categories & units","Edit anything after import"],
               mock: [["✓ Dough & Flour (6 items)","Added","blu"],["✓ Cheese & Dairy (8 items)","Added","blu"],["✓ Meats & Proteins (10 items)","Added","blu"],["✓ Produce & Vegetables (12 items)","Added","blu"]], mockTitle: "AI Import" },
           ].map((feat, idx) => (
             <div key={feat.tag} className="feat-row fade-up" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "center", marginBottom: 80 }}>
@@ -3900,14 +3910,15 @@ function LandingPage() {
             <h2 className="stitle">Start free. Upgrade when you're ready.</h2>
             <p className="ssub" style={{ margin: "0 auto" }}>Every plan starts with a 14-day free trial. No credit card required.</p>
           </div>
-          <div className="price-grid fade-up" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 24, alignItems: "start" }}>
+          <div className="price-grid fade-up" style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 24, alignItems: "start", maxWidth: 760, margin: "0 auto" }}>
             {[
-              { name: "Starter", desc: "For solo operators getting organized", price: "$299", features: ["Inventory tracking","Waste log","Order generation","1 team member"], featured: false },
-              { name: "Pro", desc: "For growing teams that need full visibility", price: "$399", features: ["Everything in Starter","Price tracker & alerts","AI item import","Par level insights","Up to 5 team members"], featured: true },
-              { name: "Enterprise", desc: "For multi-location operations", price: "$499", features: ["Everything in Pro","Unlimited team members","Multi-location support","Priority support","Custom integrations"], featured: false },
+              { name: "Starter", desc: "For solo operators getting organized", price: "$149", features: ["3 vendors","100 items","2 users"], featured: false },
+              { name: "Pro", desc: "For growing teams that need full visibility", price: "$249", features: ["Unlimited vendors and items","10 users","Usage insights and par suggestions","Missed-call recovery","Google review requests"], featured: true },
+              // Enterprise plan hidden for now (matches /trial: two plans only). Previous entry:
+              // { name: "Enterprise", desc: "For multi-location operations", price: "$499", features: ["Everything in Pro","Unlimited team members","Multi-location support","Priority support","Custom integrations"], featured: false },
             ].map(plan => (
               <div key={plan.name} className={plan.featured ? "price-card feat" : "price-card"} style={{ background: "var(--card)", border: plan.featured ? "1px solid var(--accent)" : "1px solid var(--border)", borderRadius: "var(--rl)", padding: "36px 28px", position: "relative", boxShadow: plan.featured ? "0 0 60px var(--glow)" : "none", transform: plan.featured ? "scale(1.04)" : "none" }}>
-                {plan.featured && <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", padding: "4px 16px", background: "var(--accent)", color: "var(--bg)", fontSize: "0.7rem", fontWeight: 700, borderRadius: 100, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>Most Popular</div>}
+                {plan.featured && <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", padding: "4px 16px", background: "var(--accent)", color: "var(--on-accent)", fontSize: "0.7rem", fontWeight: 700, borderRadius: 100, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>Most Popular</div>}
                 <div style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 4 }}>{plan.name}</div>
                 <div style={{ fontSize: "0.8rem", color: "var(--t3)", marginBottom: 24 }}>{plan.desc}</div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 24 }}>
@@ -3917,7 +3928,7 @@ function LandingPage() {
                 <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12, marginBottom: 28 }}>
                   {plan.features.map(f => <li key={f} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: "0.85rem", color: "var(--t2)" }}>{checkSvg} {f}</li>)}
                 </ul>
-                <button onClick={() => window.__moeNavigate("/quiz")} style={{ display: "block", width: "100%", padding: 14, textAlign: "center", borderRadius: 10, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", background: plan.featured ? "var(--accent)" : "transparent", color: plan.featured ? "var(--bg)" : "var(--t1)", border: plan.featured ? "none" : "1px solid var(--border-b)" }}>
+                <button onClick={() => window.__moeNavigate("/quiz")} style={{ display: "block", width: "100%", padding: 14, textAlign: "center", borderRadius: 10, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", background: plan.featured ? "var(--accent)" : "transparent", color: plan.featured ? "var(--on-accent)" : "var(--t1)", border: plan.featured ? "none" : "1px solid var(--border-b)" }}>
                   Start Free Trial
                 </button>
               </div>
@@ -3969,7 +3980,7 @@ function LandingPage() {
         <div style={{ position: "absolute", bottom: -300, left: "50%", transform: "translateX(-50%)", width: 800, height: 800, background: "radial-gradient(circle, var(--glow) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div className="ctn fade-up" style={{ position: "relative", zIndex: 2 }}>
           <h2 style={{ fontSize: "clamp(1.8rem,4vw,2.8rem)", fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 16, lineHeight: 1.15 }}>Ready to stop bleeding money<br/>on inventory?</h2>
-          <p style={{ fontSize: "1.1rem", color: "var(--t2)", marginBottom: 36 }}>Join the small businesses saving $500+ per week with smarter ordering.</p>
+          <p style={{ fontSize: "1.1rem", color: "var(--t2)", marginBottom: 36 }}>Join the restaurants taking the guesswork out of ordering.</p>
           <button className="btn-p" onClick={() => window.__moeNavigate("/quiz")} style={{ fontSize: "1.1rem", padding: "18px 48px" }}>
             Start Your Free 14-Day Trial {arrowSvg}
           </button>
