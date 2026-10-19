@@ -4022,7 +4022,7 @@ export default function Router() {
   const [route, setRoute] = useState(getRoute);
 
   useEffect(() => {
-    const onNav = () => setRoute(getRoute());
+    const onNav = () => { setRoute(getRoute()); try { window.__moeTrackPage && window.__moeTrackPage(); } catch { /* ignore */ } };
     window.addEventListener("popstate", onNav);
     window.addEventListener("hashchange", onNav);
     return () => { window.removeEventListener("popstate", onNav); window.removeEventListener("hashchange", onNav); };
@@ -4040,6 +4040,7 @@ export default function Router() {
     }
     if (to === "/quiz" || (typeof to === "string" && to.startsWith("/quiz"))) setRoute("quiz");
     else setRoute("landing");
+    try { window.__moeTrackPage && window.__moeTrackPage(); } catch { /* ignore */ }
   };
 
   if (route === "app") { window.location.assign("/app"); return null; }
