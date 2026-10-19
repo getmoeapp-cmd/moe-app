@@ -153,6 +153,8 @@ export async function signUp({ first, last, email, phone, password, business }) 
   if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
     return { ok: false, error: "An account with this email already exists. Sign in instead." };
   }
+  // Account created: tell the Meta pixel (no personal data is sent).
+  try { if (typeof window !== "undefined" && typeof window.fbq === "function") window.fbq("track", "CompleteRegistration"); } catch { /* tracking must never break signup */ }
   if (!data.session) return { ok: true, needsConfirm: true, email: emailLower };
   return finishSignIn(data.user);
 }
