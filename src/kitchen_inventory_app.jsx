@@ -3702,6 +3702,8 @@ function LandingPage() {
     .lp .hero-txt { text-align: left !important; }
     .lp .hero-txt > p, .lp .hero-txt h1 + p { margin-left: 0 !important; }
     .lp .hero-txt .hero-acts, .lp .hero-txt .save-bar, .lp .hero-txt > p:last-of-type { justify-content: flex-start !important; }
+    @media (max-width: 1024px) { .lp .fe-grid { grid-template-columns: repeat(2,1fr) !important; } }
+    @media (max-width: 560px) { .lp .fe-grid { grid-template-columns: 1fr !important; } }
     @media (max-width: 768px) {
       .lp .desk-nav { display: none !important; }
       .lp .mob-toggle { display: flex !important; }
@@ -3710,7 +3712,7 @@ function LandingPage() {
       .lp .aud-grid, .lp .price-grid { grid-template-columns: 1fr !important; }
       .lp .price-grid { max-width: 400px; margin: 0 auto; }
       .lp .price-card.feat { transform: none !important; }
-      .lp .proof-inner { flex-direction: column !important; gap: 24px !important; }
+      .lp .proof-inner { flex-direction: column !important; gap: 24px !important; align-items: flex-start !important; max-width: 360px; }
       .lp .hero-grid { grid-template-columns: 1fr; }
       .lp .hero-txt { text-align: center !important; }
       .lp .hero-txt > p, .lp .hero-txt h1 + p { margin-left: auto !important; }
@@ -3793,7 +3795,7 @@ function LandingPage() {
         <div className="ctn proof-inner fade-up" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 48, flexWrap: "wrap" }}>
           {[
             ["Built by an Owner","Created by a real pizzeria operator","M12 2l2.09 6.26L21 9.27l-5 3.9L17.18 20 12 16.77 6.82 20 8 13.17l-5-3.9 6.91-1.01z","var(--accent)"],
-            ["AI-Powered","Import items & get insights instantly","M9 12l2 2 4-4","var(--green)"],
+            ["AI-Powered","Import items & get insights instantly","M13 2L3 14h9l-1 8 10-12h-9l1-8z","var(--green)"],
             ["Built for Restaurants","Takeout, fast food & sit-down","M3 3h18v18H3zM3 9h18M9 3v18","var(--amber)"],
           ].map(([title,desc,path,color]) => (
             <div key={title} style={{ display: "flex", alignItems: "center", gap: 12, color: "var(--t2)", fontSize: "0.9rem" }}>
@@ -3843,7 +3845,7 @@ function LandingPage() {
 
           {[
             { tag: "Inventory", tagCls: "rgba(15,118,110,0.10)", tagCol: "var(--accent)", title: "Know exactly what you have — and what to order", desc: "Do a quick count and MOE builds the order for you based on what you actually use. No more guessing, no more spreadsheets.", bullets: ["Fast stock counts by section","Usage-based par suggestions","Orders build themselves"],
-              mock: [["Mozzarella (5lb)","12 units","blu"],["Flour (50lb bag)","8 units","grn"],["Olive Oil (gal)","2 units ⚠","red"],["Pepperoni (10lb)","6 units","grn"]], mockTitle: "Your Stock Count" },
+              mock: [["Mozzarella (5lb)","12 units","blu"],["Flour (50lb bag)","8 units","grn"],["Olive Oil (3L)","2 units ⚠","red"],["Pepperoni (10lb)","6 units","grn"]], mockTitle: "Your Stock Count" },
             { tag: "Delivery Check-In", tagCls: "rgba(15,118,110,0.10)", tagCol: "var(--accent)", title: "Never get blindsided by a missing item again", desc: "When a delivery arrives, check it in seconds. MOE flags anything short, out of stock, or left off the truck — so you find out today, not when you've run out mid-rush.", bullets: ["Catch shortfalls the day they happen","One-tap add back to your next order","Flags items you forgot to order at all"],
               mock: [["Penne (case)","Out of stock ⚠","red"],["Mozzarella (5lb)","Came in ✓","grn"],["Tomatoes (case)","Short 2 of 5 ⚠","red"],["Flour (50lb)","Came in ✓","grn"]], mockTitle: "Delivery Check-In" },
             { tag: "Usage Insights", tagCls: "rgba(15,118,110,0.10)", tagCol: "var(--accent)", title: "See what you actually use every week", desc: "MOE measures real usage from your stock counts — so if you carry 20 but only use 13, it tells you to trim to 16 and stop tying up cash in your walk-in.", bullets: ["Tracks true weekly usage","Flags over-ordering & dead stock","Set the right par in one tap"],
@@ -3872,6 +3874,36 @@ function LandingPage() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ═══ EVERYTHING MOE DOES ═══ */}
+      <section id="all-features" style={{ padding: "0 0 100px" }}>
+        <div className="ctn">
+          <div className="fade-up" style={{ textAlign: "center", marginBottom: 48 }}>
+            <div className="slbl">All Features</div>
+            <h2 className="stitle">Everything Moe does</h2>
+            <p className="ssub" style={{ margin: "0 auto" }}>From the first count to the plate cost, one app for the whole kitchen.</p>
+          </div>
+          <div className="fe-grid fade-up" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 20 }}>
+            {[
+              ["📱","Counts on your phone","Count inventory by section right on your phone. Anyone on shift can do the count.",false],
+              ["🧾","Orders build from the count","Moe builds the order from your count. Only the owner or a manager approves it, then Moe makes a PDF or a ready-to-send text or email.",false],
+              ["👥","A login for every employee","Owner, manager and employee roles. Add your crew with an invite code.",false],
+              ["🚚","Delivery check-in","Check in each item as came in, short, out of stock or damaged. Only what actually arrived goes into stock.",false],
+              ["🍳","Recipes and plate cost","Ingredients, steps and a photo for each recipe. Moe works out the cost per plate and your food cost %. Recipes in English and Spanish. Staff can view; only managers edit.",false],
+              ["📈","Price tracker","See which vendor prices went up, in dollars and percent.",true],
+              ["📸","Invoice photo import","Snap a photo of an invoice and Moe builds your item list.",true],
+              ["📞","Missed-call text-back and Google reviews","Text back the calls you missed and ask customers for Google reviews. Set up per restaurant.",true],
+            ].map(([icon,title,desc,pro]) => (
+              <div key={title} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: 28, position: "relative" }}>
+                {pro && <span style={{ position: "absolute", top: 16, right: 16, padding: "2px 8px", borderRadius: 6, fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", background: "rgba(15,118,110,0.10)", color: "var(--accent)" }}>Pro</span>}
+                <div style={{ fontSize: "1.5rem", marginBottom: 14 }}>{icon}</div>
+                <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 8, letterSpacing: "-0.01em", paddingRight: pro ? 36 : 0 }}>{title}</h3>
+                <p style={{ fontSize: "0.85rem", color: "var(--t2)", lineHeight: 1.6 }}>{desc}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -5322,7 +5354,7 @@ function OnboardingFlow({ user, step, vendors, saveVendors, inventory, saveInven
           <div style={{ textAlign:"center" }}>
             <MoeLogo size="lg" />
             <h1 style={{ color:"#f1f5f9", fontSize:24, fontWeight:700, margin:"24px 0 8px" }}>Welcome to MOE, {user.name?.split(" ")[0]}!</h1>
-            <p style={{ color:"#475569", fontSize:14, lineHeight:1.6, margin:"0 0 8px" }}>Let's get your business set up. This takes about 2 minutes.</p>
+            <p style={{ color:"#475569", fontSize:14, lineHeight:1.6, margin:"0 0 8px" }}>Let's get your restaurant set up. This takes about 2 minutes.</p>
             <div style={{ background:"#0f1a2e", border:"1px solid #1e2d45", borderRadius:12, padding:20, margin:"24px 0", textAlign:"left" }}>
               <div style={{ color:"#94a3b8", fontSize:12, fontWeight:600, marginBottom:12, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>Here's what we'll do:</div>
               {[
