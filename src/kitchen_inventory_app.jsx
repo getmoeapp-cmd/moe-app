@@ -3644,7 +3644,7 @@ function LandingPage() {
   const faqToggle = (idx) => setOpenFaq(openFaq === idx ? null : idx);
 
   const faqs = [
-    { q: "What kind of businesses is MOE for?", a: "Any small business that orders supplies and tracks inventory — restaurants, salons, retail shops, contractors, fitness studios, medical offices, and more." },
+    { q: "What kind of restaurants is MOE for?", a: "Takeout and delivery spots, fast food, and sit-down restaurants. If your kitchen orders from vendors and counts stock, MOE was built for you." },
     { q: "How long does setup take?", a: "Under 5 minutes. Create your account, use AI Import to generate your item list, and you're ready to go." },
     { q: "Is my data secure?", a: "Yes. MOE uses Supabase for secure cloud storage with row-level security. Your data is encrypted and only accessible to your team." },
     { q: "Can I cancel anytime?", a: "Absolutely. No contracts, no cancellation fees. Your 14-day trial is completely free with no credit card required." },
@@ -3794,7 +3794,7 @@ function LandingPage() {
           {[
             ["Built by an Owner","Created by a real pizzeria operator","M12 2l2.09 6.26L21 9.27l-5 3.9L17.18 20 12 16.77 6.82 20 8 13.17l-5-3.9 6.91-1.01z","var(--accent)"],
             ["AI-Powered","Import items & get insights instantly","M9 12l2 2 4-4","var(--green)"],
-            ["Works for Any Business","Restaurants, salons, retail & more","M3 3h18v18H3zM3 9h18M9 3v18","var(--amber)"],
+            ["Built for Restaurants","Takeout, fast food & sit-down","M3 3h18v18H3zM3 9h18M9 3v18","var(--amber)"],
           ].map(([title,desc,path,color]) => (
             <div key={title} style={{ display: "flex", alignItems: "center", gap: 12, color: "var(--t2)", fontSize: "0.9rem" }}>
               <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--surface)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -3812,7 +3812,7 @@ function LandingPage() {
           <div className="fade-up">
             <div className="slbl">The Problem</div>
             <h2 className="stitle">Inventory chaos is costing<br/>you thousands</h2>
-            <p className="ssub">Most small businesses still manage stock with pen-and-paper, messy spreadsheets, or pure guesswork. The result? Over-ordering, waste, and margin erosion every single week.</p>
+            <p className="ssub">Most restaurants still manage stock with pen-and-paper, messy spreadsheets, or pure guesswork. The result? Over-ordering, waste, and margin erosion every single week.</p>
           </div>
           <div className="prob-grid fade-up" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 48 }}>
             {[
@@ -3880,17 +3880,14 @@ function LandingPage() {
         <div className="ctn">
           <div className="fade-up" style={{ textAlign: "center", marginBottom: 48 }}>
             <div className="slbl">Who It's For</div>
-            <h2 className="stitle">Built for any business with inventory</h2>
-            <p className="ssub" style={{ margin: "0 auto" }}>If you order supplies, track stock, or deal with waste — MOE was built for you.</p>
+            <h2 className="stitle">Built for restaurants</h2>
+            <p className="ssub" style={{ margin: "0 auto" }}>Takeout, fast food, or sit-down — if your kitchen orders supplies, counts stock, or deals with waste, MOE was built for you.</p>
           </div>
           <div className="aud-grid fade-up" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20 }}>
             {[
-              ["🍕","Restaurants & Cafés","Kitchens, pizzerias, bakeries, food trucks"],
-              ["💇","Salons & Spas","Hair products, skincare, supplies, retail"],
-              ["🏪","Retail & Convenience","Shops, bodegas, boutiques, specialty stores"],
-              ["🔧","Contractors & Trades","Parts, materials, tools, equipment"],
-              ["💪","Fitness & Wellness","Supplements, retail, cleaning, equipment"],
-              ["🏥","Medical & Dental","Office supplies, consumables, disposables"],
+              ["🥡","Takeout & Delivery","Pizzerias, wings, Chinese, delivery-first kitchens"],
+              ["🍔","Fast Food & Quick Service","Burgers, chicken, sandwiches, counter service"],
+              ["🍽️","Sit-Down Restaurants","Family restaurants, diners, full-service dining rooms"],
             ].map(([icon,title,desc]) => (
               <div key={title} style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: 28, textAlign: "center", transition: "all 0.3s" }}>
                 <div style={{ fontSize: "2rem", marginBottom: 12 }}>{icon}</div>
@@ -3944,7 +3941,7 @@ function LandingPage() {
           <div className="fade-up" style={{ maxWidth: 640, margin: "0 auto", textAlign: "center" }}>
             <p style={{ fontSize: "1.25rem", fontStyle: "italic", lineHeight: 1.7, marginBottom: 24, position: "relative" }}>
               <span style={{ position: "absolute", top: -20, left: -10, fontSize: "4rem", color: "var(--accent)", fontFamily: "Georgia,serif", opacity: 0.5 }}>"</span>
-              I built MOE because I was tired of losing money on over-ordering and catching supplier price hikes too late. If you run a small business with inventory, this is the tool I wish I had years ago.
+              I built MOE because I was tired of losing money on over-ordering and catching supplier price hikes too late. If you run a restaurant, this is the tool I wish I had years ago.
             </p>
             <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>Ronnie</div>
             <div style={{ fontSize: "0.82rem", color: "var(--t3)" }}>Pizzeria Owner & MOE Creator</div>
@@ -5537,11 +5534,11 @@ function SavingsQuiz() {
 
         {step === 1 && !showResults && (
           <div>
-            <h1 style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, margin:"0 0 6px" }}>How much is your business losing?</h1>
+            <h1 style={{ color:"#f1f5f9", fontSize:22, fontWeight:700, margin:"0 0 6px" }}>How much is your restaurant losing?</h1>
             <p style={{ color:"#475569", fontSize:14, margin:"0 0 24px" }}>Answer 3 quick questions. Takes 30 seconds.</p>
-            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:10, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>What type of business do you run?</div>
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:10, textTransform:"uppercase", letterSpacing:"0.5px", fontFamily:"'DM Mono',monospace" }}>What kind of restaurant do you run?</div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
-              {[["Restaurant","🍕"],["Pizzeria","🍕"],["Bakery","🥐"],["Deli","🥪"],["Retail Shop","🏪"],["Salon","💇"],["Auto Shop","🔧"],["Warehouse","📦"],["Other","🏢"]].map(([v,i]) => optBtn("bizType", v, i))}
+              {[["Takeout & Delivery","🥡"],["Fast Food","🍔"],["Sit-Down Restaurant","🍽️"]].map(([v,i]) => optBtn("bizType", v, i))}
             </div>
             {nextBtn(2)}
           </div>
